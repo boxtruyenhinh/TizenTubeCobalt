@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/shared/starboard/player/filter/audio_decoder_internal.h"
+// clang-format on
 
 #include <algorithm>
 #include <memory>
@@ -28,14 +30,7 @@
 #include "third_party/google_benchmark/src/include/benchmark/benchmark.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
-namespace testing {
 namespace {
-
-using video_dmp::VideoDmpReader;
 
 const size_t kMaxNumberOfInputs = 256;
 
@@ -46,8 +41,8 @@ class AudioDecoderHelper {
         number_of_inputs_(std::min(dmp_reader_.number_of_audio_buffers(),
                                    kMaxNumberOfInputs)) {
     const bool kUseStubDecoder = false;
-    SB_CHECK(number_of_inputs_ > 0);
-    SB_CHECK(CreateAudioComponents(kUseStubDecoder,
+    SB_CHECK_GT(number_of_inputs_, 0);
+    SB_CHECK(CreateAudioComponents(kUseStubDecoder, &job_queue_,
                                    dmp_reader_.audio_stream_info(),
                                    &audio_decoder_, &audio_renderer_sink_));
     SB_CHECK(audio_decoder_);
@@ -58,7 +53,7 @@ class AudioDecoderHelper {
   size_t number_of_inputs() const { return number_of_inputs_; }
 
   void DecodeAll() {
-    SB_CHECK(current_input_buffer_index_ == 0);
+    SB_CHECK_EQ(current_input_buffer_index_, 0);
     OnConsumed();  // Kick off the first Decode() call
     // Note that we deliberately don't add any time out to the loop, to ensure
     // that the benchmark is accurate.
@@ -97,7 +92,7 @@ class AudioDecoderHelper {
                              std::bind(&AudioDecoderHelper::OnConsumed, this));
       ++current_input_buffer_index_;
     } else {
-      SB_CHECK(current_input_buffer_index_ == number_of_inputs_);
+      SB_CHECK_EQ(current_input_buffer_index_, number_of_inputs_);
       audio_decoder_->WriteEndOfStream();
       // Increment so we can know if WriteEndOfStream() is called twice.
       ++current_input_buffer_index_;
@@ -129,18 +124,12 @@ void RunBenchmark(::benchmark::State& state, const char* filename) {
   state.SetItemsProcessed(state.iterations() * number_of_inputs);
 }
 
-}  // namespace testing
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 // This function has to reside in the global namespace for BENCHMARK_CAPTURE to
 // pick it up.
 void BM_AudioDecoder(::benchmark::State& state, const char* filename) {
-  starboard::shared::starboard::player::filter::testing::RunBenchmark(state,
-                                                                      filename);
+  starboard::RunBenchmark(state, filename);
 }
 
 BENCHMARK_CAPTURE(BM_AudioDecoder,

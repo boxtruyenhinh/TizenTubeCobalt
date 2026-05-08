@@ -27,26 +27,26 @@
 #ifndef STARBOARD_CONFIGURATION_H_
 #define STARBOARD_CONFIGURATION_H_
 
-#if !defined(STARBOARD)
-#error "You must define STARBOARD in Starboard builds."
+#include "build/build_config.h"
+
+#if !BUILDFLAG(IS_COBALT)
+#error "IS_COBALT should be defined while building this file"
 #endif
 
 // --- Common Defines --------------------------------------------------------
 
 // The minimum API version allowed by this version of the Starboard headers,
 // inclusive.
-#define SB_MINIMUM_API_VERSION 14
+#define SB_MINIMUM_API_VERSION 18
 
 // The maximum API version allowed by this version of the Starboard headers,
 // inclusive. The API version is not stable and is open for changes.
-#define SB_MAXIMUM_API_VERSION 16
+#define SB_MAXIMUM_API_VERSION 19
 
 // --- Common Detected Features ----------------------------------------------
 
 #if defined(__GNUC__)
 #define SB_IS_COMPILER_GCC 1
-#elif defined(_MSC_VER)
-#define SB_IS_COMPILER_MSVC 1
 #endif
 
 // --- Common Helper Macros --------------------------------------------------
@@ -327,11 +327,6 @@ struct CompileAssert {};
 #endif
 
 // SB_C_FORCE_INLINE annotation for forcing a C function to be inlined.
-#if SB_API_VERSION < 16
-#if !defined(SB_C_FORCE_INLINE)
-#error "Your platform must define SB_C_FORCE_INLINE."
-#endif
-#else  //  SB_API_VERSION < 16
 #if defined(SB_C_FORCE_INLINE)
 #error "Your platform must not define SB_C_FORCE_INLINE"
 #else  // defined(SB_C_FORCE_INLINE)
@@ -343,32 +338,15 @@ struct CompileAssert {};
 #define SB_C_FORCE_INLINE inline
 #endif
 #endif  // defined(SB_C_FORCE_INLINE)
-#endif  // SB_API_VERSION < 16
 
-#if SB_API_VERSION < 16
-#if !defined(SB_C_INLINE)
-#error "Your platform must define SB_C_INLINE."
-#endif
-#else
 #if defined(SB_C_INLINE)
 #error "Your platform should not define SB_C_INLINE, it is deprecated."
 #else
 #define SB_C_INLINE inline
 #endif
-#endif
 
-#if SB_API_VERSION >= 16
-#if defined(SB_HAS_QUIRK_SUPPORT_INT16_AUDIO_SAMPLES)
-#error "SB_HAS_QUIRK_SUPPORT_INT16_AUDIO_SAMPLES is deprecated in SB16 or later"
-#endif  // defined(SB_HAS_QUIRK_SUPPORT_INT16_AUDIO_SAMPLES)
-#endif  // SB_API_VERSION >= 16
-
-// SB_EXPORT_PLATFORM annotates symbols as exported from shared libraries.
-#if SB_API_VERSION < 16
-#if !defined(SB_EXPORT_PLATFORM)
-#error "Your platform must define SB_EXPORT_PLATFORM."
-#endif
-#else                             // SB_API_VERSION >= 16
+// SB_EXPORT_PLATFORM annotates symbols as exported from shared libraries. //
+// SB_API_VERSION >= 16
 #if !defined(SB_EXPORT_PLATFORM)  // auto-configure
 #if SB_IS(COMPILER_GCC)
 #define SB_EXPORT_PLATFORM __attribute__((visibility("default")))
@@ -378,14 +356,9 @@ struct CompileAssert {};
 #error "Could not determine compiler, you must define SB_EXPORT_PLATFORM."
 #endif
 #endif  // !defined(SB_EXPORT_PLATFORM)
-#endif  // SB_API_VERSION >= 16
 
-// SB_IMPORT_PLATFORM annotates symbols as imported from shared libraries.
-#if SB_API_VERSION < 16
-#if !defined(SB_IMPORT_PLATFORM)
-#error "Your platform must define SB_IMPORT_PLATFORM."
-#endif
-#else                             // SB_API_VERSION >= 16
+// SB_IMPORT_PLATFORM annotates symbols as imported from shared libraries. //
+// SB_API_VERSION >= 16
 #if !defined(SB_IMPORT_PLATFORM)  // auto-configure
 #if SB_IS(COMPILER_GCC)
 #define SB_IMPORT_PLATFORM
@@ -395,7 +368,6 @@ struct CompileAssert {};
 #error "Could not determine compiler, you must define SB_IMPORT_PLATFORM."
 #endif
 #endif  // !defined(SB_IMPORT_PLATFORM)
-#endif  // SB_API_VERSION >= 16
 
 // --- Derived Configuration -------------------------------------------------
 
@@ -420,9 +392,5 @@ struct CompileAssert {};
 // implementation that supports any of these macros should be modified to no
 // longer rely on them, and operate with the assumption that their values are
 // always 1.
-
-// TODO(b/325626249): Remove the ALLOW_EVERGREEN_SIDELOADING check once we're
-// fully launched.
-#define ALLOW_EVERGREEN_SIDELOADING 0
 
 #endif  // STARBOARD_CONFIGURATION_H_

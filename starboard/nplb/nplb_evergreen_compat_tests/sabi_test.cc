@@ -16,25 +16,26 @@
 #include <set>
 #include <string>
 
+#include "starboard/common/log.h"
 #include "starboard/configuration.h"
 #include "starboard/nplb/nplb_evergreen_compat_tests/checks.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if SB_IS(EVERGREEN_COMPATIBLE)
+#if !SB_IS(EVERGREEN_COMPATIBLE)
+#error These tests apply only to EVERGREEN_COMPATIBLE platforms.
+#endif
 
-namespace starboard {
 namespace nplb {
-namespace nplb_evergreen_compat_tests {
 
 namespace {
 
-#if SB_API_VERSION == 14
+#if SB_API_VERSION == 18
 const char* kSabiJsonIdArmHardfp =
     "{\"alignment_char\":1,\"alignment_double\":8,\"alignment_float\":4,"
     "\"alignment_int\":4,\"alignment_llong\":8,\"alignment_long\":4,"
     "\"alignment_pointer\":4,\"alignment_short\":2,\"calling_convention\":"
     "\"eabi\",\"endianness\":\"little\",\"floating_point_abi\":\"hard\","
-    "\"floating_point_fpu\":\"vfpv3\",\"sb_api_version\":14,\"signedness_of_"
+    "\"floating_point_fpu\":\"vfpv3\",\"sb_api_version\":18,\"signedness_of_"
     "char\":\"signed\",\"signedness_of_enum\":\"signed\",\"size_of_char\":1,"
     "\"size_of_double\":8,\"size_of_enum\":4,\"size_of_float\":4,\"size_of_"
     "int\":4,\"size_of_llong\":8,\"size_of_long\":4,\"size_of_pointer\":4,"
@@ -46,7 +47,7 @@ const char* kSabiJsonIdArmSoftfp =
     "\"alignment_int\":4,\"alignment_llong\":8,\"alignment_long\":4,"
     "\"alignment_pointer\":4,\"alignment_short\":2,\"calling_convention\":"
     "\"eabi\",\"endianness\":\"little\",\"floating_point_abi\":\"softfp\","
-    "\"floating_point_fpu\":\"vfpv3\",\"sb_api_version\":14,\"signedness_of_"
+    "\"floating_point_fpu\":\"vfpv3\",\"sb_api_version\":18,\"signedness_of_"
     "char\":\"signed\",\"signedness_of_enum\":\"signed\",\"size_of_char\":1,"
     "\"size_of_double\":8,\"size_of_enum\":4,\"size_of_float\":4,\"size_of_"
     "int\":4,\"size_of_llong\":8,\"size_of_long\":4,\"size_of_pointer\":4,"
@@ -58,43 +59,32 @@ const char* kSabiJsonIdArm64 =
     "\"alignment_int\":4,\"alignment_llong\":8,\"alignment_long\":8,"
     "\"alignment_pointer\":8,\"alignment_short\":2,\"calling_convention\":"
     "\"aarch64\",\"endianness\":\"little\",\"floating_point_abi\":\"\","
-    "\"floating_point_fpu\":\"\",\"sb_api_version\":14,\"signedness_of_char\":"
+    "\"floating_point_fpu\":\"\",\"sb_api_version\":18,\"signedness_of_char\":"
     "\"signed\",\"signedness_of_enum\":\"signed\",\"size_of_char\":1,\"size_of_"
     "double\":8,\"size_of_enum\":4,\"size_of_float\":4,\"size_of_int\":4,"
     "\"size_of_llong\":8,\"size_of_long\":8,\"size_of_pointer\":8,\"size_of_"
     "short\":2,\"target_arch\":\"arm64\",\"target_arch_sub\":\"v8a\",\"word_"
     "size\":64}";
 
-const char* kSabiJsonIdX86 =
-    "{\"alignment_char\":1,\"alignment_double\":8,\"alignment_float\":4,"
-    "\"alignment_int\":4,\"alignment_llong\":8,\"alignment_long\":4,"
-    "\"alignment_pointer\":4,\"alignment_short\":2,\"calling_convention\":"
-    "\"sysv\",\"endianness\":\"little\",\"floating_point_abi\":\"\",\"floating_"
-    "point_fpu\":\"\",\"sb_api_version\":14,\"signedness_of_char\":\"signed\","
-    "\"signedness_of_enum\":\"signed\",\"size_of_char\":1,\"size_of_double\":8,"
-    "\"size_of_enum\":4,\"size_of_float\":4,\"size_of_int\":4,\"size_of_"
-    "llong\":8,\"size_of_long\":4,\"size_of_pointer\":4,\"size_of_short\":2,"
-    "\"target_arch\":\"x86\",\"target_arch_sub\":\"\",\"word_size\":32}";
-
 const char* kSabiJsonIdX64Sysv =
     "{\"alignment_char\":1,\"alignment_double\":8,\"alignment_float\":4,"
     "\"alignment_int\":4,\"alignment_llong\":8,\"alignment_long\":8,"
     "\"alignment_pointer\":8,\"alignment_short\":2,\"calling_convention\":"
     "\"sysv\",\"endianness\":\"little\",\"floating_point_abi\":\"\",\"floating_"
-    "point_fpu\":\"\",\"sb_api_version\":14,\"signedness_of_char\":\"signed\","
+    "point_fpu\":\"\",\"sb_api_version\":18,\"signedness_of_char\":\"signed\","
     "\"signedness_of_enum\":\"signed\",\"size_of_char\":1,\"size_of_double\":8,"
     "\"size_of_enum\":4,\"size_of_float\":4,\"size_of_int\":4,\"size_of_"
     "llong\":8,\"size_of_long\":8,\"size_of_pointer\":8,\"size_of_short\":2,"
     "\"target_arch\":\"x64\",\"target_arch_sub\":\"\",\"word_size\":64}";
-#endif  // SB_API_VERSION == 14
+#endif  // SB_API_VERSION == 18
 
-#if SB_API_VERSION == 15
+#if SB_API_VERSION == 17
 const char* kSabiJsonIdArmHardfp =
     "{\"alignment_char\":1,\"alignment_double\":8,\"alignment_float\":4,"
     "\"alignment_int\":4,\"alignment_llong\":8,\"alignment_long\":4,"
     "\"alignment_pointer\":4,\"alignment_short\":2,\"calling_convention\":"
     "\"eabi\",\"endianness\":\"little\",\"floating_point_abi\":\"hard\","
-    "\"floating_point_fpu\":\"vfpv3\",\"sb_api_version\":15,\"signedness_of_"
+    "\"floating_point_fpu\":\"vfpv3\",\"sb_api_version\":17,\"signedness_of_"
     "char\":\"signed\",\"signedness_of_enum\":\"signed\",\"size_of_char\":1,"
     "\"size_of_double\":8,\"size_of_enum\":4,\"size_of_float\":4,\"size_of_"
     "int\":4,\"size_of_llong\":8,\"size_of_long\":4,\"size_of_pointer\":4,"
@@ -106,7 +96,7 @@ const char* kSabiJsonIdArmSoftfp =
     "\"alignment_int\":4,\"alignment_llong\":8,\"alignment_long\":4,"
     "\"alignment_pointer\":4,\"alignment_short\":2,\"calling_convention\":"
     "\"eabi\",\"endianness\":\"little\",\"floating_point_abi\":\"softfp\","
-    "\"floating_point_fpu\":\"vfpv3\",\"sb_api_version\":15,\"signedness_of_"
+    "\"floating_point_fpu\":\"vfpv3\",\"sb_api_version\":17,\"signedness_of_"
     "char\":\"signed\",\"signedness_of_enum\":\"signed\",\"size_of_char\":1,"
     "\"size_of_double\":8,\"size_of_enum\":4,\"size_of_float\":4,\"size_of_"
     "int\":4,\"size_of_llong\":8,\"size_of_long\":4,\"size_of_pointer\":4,"
@@ -118,67 +108,7 @@ const char* kSabiJsonIdArm64 =
     "\"alignment_int\":4,\"alignment_llong\":8,\"alignment_long\":8,"
     "\"alignment_pointer\":8,\"alignment_short\":2,\"calling_convention\":"
     "\"aarch64\",\"endianness\":\"little\",\"floating_point_abi\":\"\","
-    "\"floating_point_fpu\":\"\",\"sb_api_version\":15,\"signedness_of_char\":"
-    "\"signed\",\"signedness_of_enum\":\"signed\",\"size_of_char\":1,\"size_of_"
-    "double\":8,\"size_of_enum\":4,\"size_of_float\":4,\"size_of_int\":4,"
-    "\"size_of_llong\":8,\"size_of_long\":8,\"size_of_pointer\":8,\"size_of_"
-    "short\":2,\"target_arch\":\"arm64\",\"target_arch_sub\":\"v8a\",\"word_"
-    "size\":64}";
-
-const char* kSabiJsonIdX86 =
-    "{\"alignment_char\":1,\"alignment_double\":8,\"alignment_float\":4,"
-    "\"alignment_int\":4,\"alignment_llong\":8,\"alignment_long\":4,"
-    "\"alignment_pointer\":4,\"alignment_short\":2,\"calling_convention\":"
-    "\"sysv\",\"endianness\":\"little\",\"floating_point_abi\":\"\",\"floating_"
-    "point_fpu\":\"\",\"sb_api_version\":15,\"signedness_of_char\":\"signed\","
-    "\"signedness_of_enum\":\"signed\",\"size_of_char\":1,\"size_of_double\":8,"
-    "\"size_of_enum\":4,\"size_of_float\":4,\"size_of_int\":4,\"size_of_"
-    "llong\":8,\"size_of_long\":4,\"size_of_pointer\":4,\"size_of_short\":2,"
-    "\"target_arch\":\"x86\",\"target_arch_sub\":\"\",\"word_size\":32}";
-
-const char* kSabiJsonIdX64Sysv =
-    "{\"alignment_char\":1,\"alignment_double\":8,\"alignment_float\":4,"
-    "\"alignment_int\":4,\"alignment_llong\":8,\"alignment_long\":8,"
-    "\"alignment_pointer\":8,\"alignment_short\":2,\"calling_convention\":"
-    "\"sysv\",\"endianness\":\"little\",\"floating_point_abi\":\"\",\"floating_"
-    "point_fpu\":\"\",\"sb_api_version\":15,\"signedness_of_char\":\"signed\","
-    "\"signedness_of_enum\":\"signed\",\"size_of_char\":1,\"size_of_double\":8,"
-    "\"size_of_enum\":4,\"size_of_float\":4,\"size_of_int\":4,\"size_of_"
-    "llong\":8,\"size_of_long\":8,\"size_of_pointer\":8,\"size_of_short\":2,"
-    "\"target_arch\":\"x64\",\"target_arch_sub\":\"\",\"word_size\":64}";
-#endif  // SB_API_VERSION == 15
-
-#if SB_API_VERSION == 16
-const char* kSabiJsonIdArmHardfp =
-    "{\"alignment_char\":1,\"alignment_double\":8,\"alignment_float\":4,"
-    "\"alignment_int\":4,\"alignment_llong\":8,\"alignment_long\":4,"
-    "\"alignment_pointer\":4,\"alignment_short\":2,\"calling_convention\":"
-    "\"eabi\",\"endianness\":\"little\",\"floating_point_abi\":\"hard\","
-    "\"floating_point_fpu\":\"vfpv3\",\"sb_api_version\":16,\"signedness_of_"
-    "char\":\"signed\",\"signedness_of_enum\":\"signed\",\"size_of_char\":1,"
-    "\"size_of_double\":8,\"size_of_enum\":4,\"size_of_float\":4,\"size_of_"
-    "int\":4,\"size_of_llong\":8,\"size_of_long\":4,\"size_of_pointer\":4,"
-    "\"size_of_short\":2,\"target_arch\":\"arm\",\"target_arch_sub\":\"v7a\","
-    "\"word_size\":32}";
-
-const char* kSabiJsonIdArmSoftfp =
-    "{\"alignment_char\":1,\"alignment_double\":8,\"alignment_float\":4,"
-    "\"alignment_int\":4,\"alignment_llong\":8,\"alignment_long\":4,"
-    "\"alignment_pointer\":4,\"alignment_short\":2,\"calling_convention\":"
-    "\"eabi\",\"endianness\":\"little\",\"floating_point_abi\":\"softfp\","
-    "\"floating_point_fpu\":\"vfpv3\",\"sb_api_version\":16,\"signedness_of_"
-    "char\":\"signed\",\"signedness_of_enum\":\"signed\",\"size_of_char\":1,"
-    "\"size_of_double\":8,\"size_of_enum\":4,\"size_of_float\":4,\"size_of_"
-    "int\":4,\"size_of_llong\":8,\"size_of_long\":4,\"size_of_pointer\":4,"
-    "\"size_of_short\":2,\"target_arch\":\"arm\",\"target_arch_sub\":\"v7a\","
-    "\"word_size\":32}";
-
-const char* kSabiJsonIdArm64 =
-    "{\"alignment_char\":1,\"alignment_double\":8,\"alignment_float\":4,"
-    "\"alignment_int\":4,\"alignment_llong\":8,\"alignment_long\":8,"
-    "\"alignment_pointer\":8,\"alignment_short\":2,\"calling_convention\":"
-    "\"aarch64\",\"endianness\":\"little\",\"floating_point_abi\":\"\","
-    "\"floating_point_fpu\":\"\",\"sb_api_version\":16,\"signedness_of_char\":"
+    "\"floating_point_fpu\":\"\",\"sb_api_version\":17,\"signedness_of_char\":"
     "\"signed\",\"signedness_of_enum\":\"signed\",\"size_of_char\":1,\"size_of_"
     "double\":8,\"size_of_enum\":4,\"size_of_float\":4,\"size_of_int\":4,"
     "\"size_of_llong\":8,\"size_of_long\":8,\"size_of_pointer\":8,\"size_of_"
@@ -190,20 +120,14 @@ const char* kSabiJsonIdX64Sysv =
     "\"alignment_int\":4,\"alignment_llong\":8,\"alignment_long\":8,"
     "\"alignment_pointer\":8,\"alignment_short\":2,\"calling_convention\":"
     "\"sysv\",\"endianness\":\"little\",\"floating_point_abi\":\"\",\"floating_"
-    "point_fpu\":\"\",\"sb_api_version\":16,\"signedness_of_char\":\"signed\","
+    "point_fpu\":\"\",\"sb_api_version\":17,\"signedness_of_char\":\"signed\","
     "\"signedness_of_enum\":\"signed\",\"size_of_char\":1,\"size_of_double\":8,"
     "\"size_of_enum\":4,\"size_of_float\":4,\"size_of_int\":4,\"size_of_"
     "llong\":8,\"size_of_long\":8,\"size_of_pointer\":8,\"size_of_short\":2,"
     "\"target_arch\":\"x64\",\"target_arch_sub\":\"\",\"word_size\":64}";
-#endif  // SB_API_VERSION == 16
+#endif  // SB_API_VERSION == 17
 
-class SabiTest : public ::testing::Test {
- protected:
-  SabiTest() {}
-  ~SabiTest() {}
-};
-
-TEST_F(SabiTest, VerifySABI) {
+TEST(SabiTest, VerifySABI) {
   SB_LOG(INFO) << "Using SB_API_VERSION=" << SB_API_VERSION;
   SB_LOG(INFO) << "Using SABI=" << SB_SABI_JSON_ID;
 
@@ -214,9 +138,6 @@ TEST_F(SabiTest, VerifySABI) {
   sabi_set.insert(kSabiJsonIdArmHardfp);
   sabi_set.insert(kSabiJsonIdArmSoftfp);
   sabi_set.insert(kSabiJsonIdArm64);
-#if SB_API_VERSION < 16
-  sabi_set.insert(kSabiJsonIdX86);
-#endif
   sabi_set.insert(kSabiJsonIdX64Sysv);
 
   ASSERT_NE(sabi_set.find(SB_SABI_JSON_ID), sabi_set.end())
@@ -230,16 +151,9 @@ TEST_F(SabiTest, VerifySABI) {
       << std::endl
       << "  starboard/sabi/arm64/sabi-v" << SB_API_VERSION << ".json"
       << std::endl
-#if SB_API_VERSION < 16
-      << "  starboard/sabi/x86/sabi-v" << SB_API_VERSION << ".json" << std::endl
-#endif
       << "  starboard/sabi/x64/sysv/sabi-v" << SB_API_VERSION << ".json"
       << std::endl;
 }
 
 }  // namespace
-}  // namespace nplb_evergreen_compat_tests
 }  // namespace nplb
-}  // namespace starboard
-
-#endif  // SB_IS(EVERGREEN_COMPATIBLE)

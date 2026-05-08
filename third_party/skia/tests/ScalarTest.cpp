@@ -5,24 +5,40 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkMath.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
-#include "include/private/SkFloatingPoint.h"
-#include "include/utils/SkRandom.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkFloatBits.h"
 #include "tests/Test.h"
+
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 
 static void test_roundtoint(skiatest::Reporter* reporter) {
     SkScalar x = 0.49999997f;
     int ix = SkScalarRoundToInt(x);
-    // We "should" get 0, since x < 0.5, but we don't due to float addition rounding up the low
+    int badIx = (int) floorf(x + 0.5f);
+    // We should get 0, since x < 0.5, but we wouldn't if SkScalarRoundToInt uses the commonly
+    // recommended approach shown in 'badIx' due to float addition rounding up the low
     // bit after adding 0.5.
-    REPORTER_ASSERT(reporter, 1 == ix);
-
-    // This version explicitly performs the +0.5 step using double, which should avoid losing the
-    // low bits.
-    ix = SkDScalarRoundToInt(x);
     REPORTER_ASSERT(reporter, 0 == ix);
+    REPORTER_ASSERT(reporter, 1 == badIx);
+
+    // Additionally, when the float value is between (2^23,2^24], it's precision is equal to
+    // 1 integral value. Adding 0.5f rounds up automatically *before* the floor, so naive
+    // rounding is also incorrect. Float values <= 2^23 and > 2^24 don't have this problem
+    // because either the sum can be represented sufficiently for floor() to do the right thing,
+    // or the sum will always round down to the integer multiple.
+    x = 8388609.f;
+    ix = SkScalarRoundToInt(x);
+    badIx = (int) floorf(x + 0.5f);
+    REPORTER_ASSERT(reporter, 8388609 == ix);
+    REPORTER_ASSERT(reporter, 8388610 == badIx);
 }
 
 struct PointSet {
@@ -57,16 +73,16 @@ static void test_isRectFinite(skiatest::Reporter* reporter) {
         int            fCount;
         bool           fIsFinite;
     } gSets[] = {
-        { gF0, SK_ARRAY_COUNT(gF0), true },
-        { gF1, SK_ARRAY_COUNT(gF1), true },
+        { gF0, std::size(gF0), true },
+        { gF1, std::size(gF1), true },
 
-        { gI0, SK_ARRAY_COUNT(gI0), false },
-        { gI1, SK_ARRAY_COUNT(gI1), false },
-        { gI2, SK_ARRAY_COUNT(gI2), false },
-        { gI3, SK_ARRAY_COUNT(gI3), false },
+        { gI0, std::size(gI0), false },
+        { gI1, std::size(gI1), false },
+        { gI2, std::size(gI2), false },
+        { gI3, std::size(gI3), false },
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gSets); ++i) {
+    for (size_t i = 0; i < std::size(gSets); ++i) {
         SkRect r;
         r.setBounds(gSets[i].fPts, gSets[i].fCount);
         bool rectIsFinite = !r.isEmpty();
@@ -81,7 +97,7 @@ static bool isFinite_int(float x) {
 }
 
 static bool isFinite_float(float x) {
-    return SkToBool(sk_float_isfinite(x));
+    return SkToBool(SkIsFinite(x));
 }
 
 static bool isFinite_mulzero(float x) {
@@ -112,16 +128,16 @@ enum FloatClass {
 static void test_floatclass(skiatest::Reporter* reporter, float value, FloatClass fc) {
     // our sk_float_is... function may return int instead of bool,
     // hence the double ! to turn it into a bool
-    REPORTER_ASSERT(reporter, !!sk_float_isfinite(value) == (fc == kFinite));
-    REPORTER_ASSERT(reporter, !!sk_float_isinf(value) == (fc == kInfinite));
-    REPORTER_ASSERT(reporter, !!sk_float_isnan(value) == (fc == kNaN));
+    REPORTER_ASSERT(reporter, !!SkIsFinite(value) == (fc == kFinite));
+    REPORTER_ASSERT(reporter, !!std::isinf(value) == (fc == kInfinite));
+    REPORTER_ASSERT(reporter, !!SkIsNaN(value)    == (fc == kNaN));
 }
 
 #if defined _WIN32
-#pragma warning ( push )
+#pragma warning(push)
 // we are intentionally causing an overflow here
 //      (warning C4756: overflow in constant arithmetic)
-#pragma warning ( disable : 4756 )
+#pragma warning(disable : 4756)
 #endif
 
 static void test_isfinite(skiatest::Reporter* reporter) {
@@ -165,10 +181,10 @@ static void test_isfinite(skiatest::Reporter* reporter) {
         isFinite2_mulzeroadd
     };
 
-    size_t i, n = SK_ARRAY_COUNT(data);
+    size_t i, n = std::size(data);
 
     for (i = 0; i < n; ++i) {
-        for (size_t k = 0; k < SK_ARRAY_COUNT(gProc1); ++k) {
+        for (size_t k = 0; k < std::size(gProc1); ++k) {
             const Rec& rec = data[i];
             bool finite = gProc1[k](rec.fValue);
             REPORTER_ASSERT(reporter, rec.fIsFinite == finite);
@@ -179,10 +195,10 @@ static void test_isfinite(skiatest::Reporter* reporter) {
         const Rec& rec0 = data[i];
         for (size_t j = 0; j < n; ++j) {
             const Rec& rec1 = data[j];
-            for (size_t k = 0; k < SK_ARRAY_COUNT(gProc1); ++k) {
+            for (size_t k = 0; k < std::size(gProc1); ++k) {
                 IsFiniteProc1 proc1 = gProc1[k];
 
-                for (size_t m = 0; m < SK_ARRAY_COUNT(gProc2); ++m) {
+                for (size_t m = 0; m < std::size(gProc2); ++m) {
                     bool finite = gProc2[m](rec0.fValue, rec1.fValue, proc1);
                     bool finite2 = rec0.fIsFinite && rec1.fIsFinite;
                     REPORTER_ASSERT(reporter, finite2 == finite);

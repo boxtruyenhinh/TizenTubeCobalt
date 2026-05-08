@@ -32,11 +32,6 @@ class MemoryProgramCache final : angle::NonCopyable
                             const Program *program,
                             egl::BlobCache::Key *hashOut);
 
-    // Check if the cache contains a binary matching the specified program.
-    bool get(const Context *context,
-             const egl::BlobCache::Key &programHash,
-             egl::BlobCache::Value *programOut);
-
     // For querying the contents of the cache.
     bool getAt(size_t index,
                const egl::BlobCache::Key **hashOut,
@@ -46,22 +41,25 @@ class MemoryProgramCache final : angle::NonCopyable
     void remove(const egl::BlobCache::Key &programHash);
 
     // Helper method that serializes a program.
-    void putProgram(const egl::BlobCache::Key &programHash,
-                    const Context *context,
-                    const Program *program);
+    angle::Result putProgram(const egl::BlobCache::Key &programHash,
+                             const Context *context,
+                             Program *program);
 
     // Same as putProgram but computes the hash.
-    void updateProgram(const Context *context, const Program *program);
+    angle::Result updateProgram(const Context *context, Program *program);
 
     // Store a binary directly.  TODO(syoussefi): deprecated.  Will be removed once Chrome supports
-    // EGL_ANDROID_blob_cache. http://anglebug.com/2516
-    void putBinary(const egl::BlobCache::Key &programHash, const uint8_t *binary, size_t length);
+    // EGL_ANDROID_blob_cache. http://anglebug.com/42261225
+    [[nodiscard]] bool putBinary(const egl::BlobCache::Key &programHash,
+                                 const uint8_t *binary,
+                                 size_t length);
 
     // Check the cache, and deserialize and load the program if found. Evict existing hash if load
     // fails.
     angle::Result getProgram(const Context *context,
                              Program *program,
-                             egl::BlobCache::Key *hashOut);
+                             egl::BlobCache::Key *hashOut,
+                             egl::CacheGetResult *resultOut);
 
     // Empty the cache.
     void clear();
@@ -83,7 +81,6 @@ class MemoryProgramCache final : angle::NonCopyable
 
   private:
     egl::BlobCache &mBlobCache;
-    unsigned int mIssuedWarnings;
 };
 
 }  // namespace gl

@@ -13,11 +13,9 @@
 // limitations under the License.
 
 #include "starboard/drm.h"
-
 #include "starboard/nplb/drm_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -50,4 +48,3 @@ TEST(SbDrmIsServerCertificateUpdatableTest, Consistency) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

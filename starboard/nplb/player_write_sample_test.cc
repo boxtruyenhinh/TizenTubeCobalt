@@ -12,29 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <limits>
+
 #include "starboard/common/time.h"
 #include "starboard/nplb/drm_helpers.h"
 #include "starboard/nplb/player_creation_param_helpers.h"
 #include "starboard/nplb/player_test_fixture.h"
 #include "starboard/nplb/player_test_util.h"
 #include "starboard/nplb/posix_compliance/posix_thread_helpers.h"
-#include "starboard/string.h"
 #include "starboard/testing/fake_graphics_context_provider.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "starboard/nplb/testcase_helpers.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
+using ::starboard::FakeGraphicsContextProvider;
 using ::testing::ValuesIn;
 
-typedef SbPlayerTestFixture::GroupedSamples GroupedSamples;
-typedef testing::FakeGraphicsContextProvider FakeGraphicsContextProvider;
+using GroupedSamples = SbPlayerTestFixture::GroupedSamples;
 
 class SbPlayerWriteSampleTest
     : public ::testing::TestWithParam<SbPlayerTestConfig> {
  protected:
+  void SetUp() override { SkipTestIfNotSupported(GetParam()); }
+
   FakeGraphicsContextProvider fake_graphics_context_provider_;
 };
 
@@ -48,11 +49,6 @@ TEST_P(SbPlayerWriteSampleTest, SeekAndDestroy) {
 }
 
 TEST_P(SbPlayerWriteSampleTest, NoInput) {
-  // TODO(b/380032222): Skip test case(s) not applicable to Android.
-  if (GetRuntimePlatform() == PlatformType::kPlatformTypeAndroid) {
-    GTEST_SKIP() << "Not applicable on Android";
-  }
-
   SbPlayerTestFixture player_fixture(GetParam(),
                                      &fake_graphics_context_provider_);
   if (HasFatalFailure()) {
@@ -173,15 +169,10 @@ TEST_P(SbPlayerWriteSampleTest, LimitedAudioInput) {
 
 TEST_P(SbPlayerWriteSampleTest, PartialAudio) {
   if (!IsPartialAudioSupported()) {
-    // TODO: Use GTEST_SKIP when we have a newer version of gtest.
-    SB_LOG(INFO)
-        << "The platform doesn't support partial audio. Skip the tests.";
-    return;
+    GTEST_SKIP() << "The platform doesn't support partial audio.";
   }
   if (IsAudioPassthroughUsed(GetParam())) {
-    SB_LOG(INFO) << "The audio passthrough doesn't support partial audio. Skip "
-                    "the tests.";
-    return;
+    GTEST_SKIP() << "The audio passthrough doesn't support partial audio.";
   }
 
   SbPlayerTestFixture player_fixture(GetParam(),
@@ -190,9 +181,7 @@ TEST_P(SbPlayerWriteSampleTest, PartialAudio) {
     return;
   }
   if (!player_fixture.HasAudio()) {
-    // TODO: Use GTEST_SKIP when we have a newer version of gtest.
-    SB_LOG(INFO) << "Skip PartialAudio test for audioless content.";
-    return;
+    GTEST_SKIP() << "Skip PartialAudio test for audioless content.";
   }
 
   const int64_t kDurationToPlay = 1'000'000;  // 1 second
@@ -226,12 +215,12 @@ TEST_P(SbPlayerWriteSampleTest, PartialAudio) {
   ASSERT_NO_FATAL_FAILURE(player_fixture.Write(samples));
   ASSERT_NO_FATAL_FAILURE(player_fixture.WaitForPlayerPresenting());
 
-  int64_t start_system_time = CurrentMonotonicTime();
+  int64_t start_system_time = starboard::CurrentMonotonicTime();
   int64_t start_media_time = player_fixture.GetCurrentMediaTime();
 
   ASSERT_NO_FATAL_FAILURE(player_fixture.WaitForPlayerEndOfStream());
 
-  int64_t end_system_time = CurrentMonotonicTime();
+  int64_t end_system_time = starboard::CurrentMonotonicTime();
   int64_t end_media_time = player_fixture.GetCurrentMediaTime();
 
   const int64_t kDurationDifferenceAllowance = 500'000;  // 500ms;
@@ -254,15 +243,10 @@ TEST_P(SbPlayerWriteSampleTest, PartialAudio) {
 
 TEST_P(SbPlayerWriteSampleTest, DiscardAllAudio) {
   if (!IsPartialAudioSupported()) {
-    // TODO: Use GTEST_SKIP when we have a newer version of gtest.
-    SB_LOG(INFO)
-        << "The platform doesn't support partial audio. Skip the tests.";
-    return;
+    GTEST_SKIP() << "The platform doesn't support partial audio.";
   }
   if (IsAudioPassthroughUsed(GetParam())) {
-    SB_LOG(INFO) << "The audio passthrough doesn't support partial audio. Skip "
-                    "the tests.";
-    return;
+    GTEST_SKIP() << "The audio passthrough doesn't support partial audio.";
   }
 
   SbPlayerTestFixture player_fixture(GetParam(),
@@ -271,9 +255,7 @@ TEST_P(SbPlayerWriteSampleTest, DiscardAllAudio) {
     return;
   }
   if (!player_fixture.HasAudio()) {
-    // TODO: Use GTEST_SKIP when we have a newer version of gtest.
-    SB_LOG(INFO) << "Skip PartialAudio test for audioless content.";
-    return;
+    GTEST_SKIP() << "Skip PartialAudio test for audioless content.";
   }
 
   const int64_t kDurationToPlay = 1'000'000;  // 1 second
@@ -288,41 +270,40 @@ TEST_P(SbPlayerWriteSampleTest, DiscardAllAudio) {
   }
 
   int written_buffer_index = 0;
-  int64_t current_time_offset = 0;
   int num_of_buffers_per_write =
       player_fixture.ConvertDurationToAudioBufferCount(kDurationPerWrite);
-  int count = 0;
-  while (current_time_offset < kDurationToPlay) {
+  for (int count = 0; count < kDurationToPlay / kDurationPerWrite; ++count) {
     const int64_t kDurationToDiscard =
-        count % 2 == 0 ? 1'000'000LL : kSbInt64Max;
-    count++;
+        count % 2 == 0 ? 1'000'000LL : std::numeric_limits<int64_t>::max();
+
+    int64_t current_timestamp =
+        player_fixture.GetAudioSampleTimestamp(written_buffer_index);
     // Discard from front.
     for (int i = 0; i < kNumberOfBuffersToDiscard; i++) {
-      samples.AddAudioSamples(written_buffer_index, 1, current_time_offset,
+      samples.AddAudioSamples(written_buffer_index, 1, current_timestamp,
                               kDurationToDiscard, 0);
+    }
+
+    // Discard from back.
+    for (int i = 0; i < kNumberOfBuffersToDiscard; i++) {
+      samples.AddAudioSamples(written_buffer_index, 1, current_timestamp, 0,
+                              kDurationToDiscard);
     }
 
     samples.AddAudioSamples(written_buffer_index, num_of_buffers_per_write);
     written_buffer_index += num_of_buffers_per_write;
-    current_time_offset += kDurationPerWrite;
-
-    // Discard from back.
-    for (int i = 0; i < kNumberOfBuffersToDiscard; i++) {
-      samples.AddAudioSamples(written_buffer_index, 1, current_time_offset, 0,
-                              kDurationToDiscard);
-    }
   }
   samples.AddAudioEOS();
 
   ASSERT_NO_FATAL_FAILURE(player_fixture.Write(samples));
   ASSERT_NO_FATAL_FAILURE(player_fixture.WaitForPlayerPresenting());
 
-  int64_t start_system_time = CurrentMonotonicTime();
+  int64_t start_system_time = starboard::CurrentMonotonicTime();
   int64_t start_media_time = player_fixture.GetCurrentMediaTime();
 
   ASSERT_NO_FATAL_FAILURE(player_fixture.WaitForPlayerEndOfStream());
 
-  int64_t end_system_time = CurrentMonotonicTime();
+  int64_t end_system_time = starboard::CurrentMonotonicTime();
   int64_t end_media_time = player_fixture.GetCurrentMediaTime();
 
   const int64_t kDurationDifferenceAllowance = 500'000;  // 500ms
@@ -346,7 +327,7 @@ TEST_P(SbPlayerWriteSampleTest, DiscardAllAudio) {
                 << ".";
 }
 
-class SecondaryPlayerTestThread : public posix::AbstractTestThread {
+class SecondaryPlayerTestThread : public AbstractTestThread {
  public:
   SecondaryPlayerTestThread(
       const SbPlayerTestConfig& config,
@@ -385,11 +366,6 @@ class SecondaryPlayerTestThread : public posix::AbstractTestThread {
 };
 
 TEST_P(SbPlayerWriteSampleTest, SecondaryPlayerTest) {
-  // TODO(b/380347735): Skip test case(s) not applicable to Android.
-  if (GetRuntimePlatform() == PlatformType::kPlatformTypeAndroid) {
-    GTEST_SKIP() << "Not applicable on Android";
-  }
-
   // The secondary player should at least support h264 at 480p, 30fps and with
   // a drm system.
   const char* kMaxVideoCapabilities = "width=640; height=480; framerate=30;";
@@ -417,27 +393,10 @@ TEST_P(SbPlayerWriteSampleTest, SecondaryPlayerTest) {
   secondary_player_thread.Join();
 }
 
-std::vector<SbPlayerTestConfig> GetSupportedTestConfigs() {
-  static std::vector<SbPlayerTestConfig> supported_configs;
-  if (supported_configs.size() > 0) {
-    return supported_configs;
-  }
-
-  const std::vector<const char*>& key_systems = GetKeySystems();
-  for (auto key_system : key_systems) {
-    std::vector<SbPlayerTestConfig> configs =
-        GetSupportedSbPlayerTestConfigs(key_system);
-    supported_configs.insert(supported_configs.end(), configs.begin(),
-                             configs.end());
-  }
-  return supported_configs;
-}
-
-INSTANTIATE_TEST_CASE_P(SbPlayerWriteSampleTests,
-                        SbPlayerWriteSampleTest,
-                        ValuesIn(GetSupportedTestConfigs()),
-                        GetSbPlayerTestConfigName);
+INSTANTIATE_TEST_SUITE_P(SbPlayerWriteSampleTests,
+                         SbPlayerWriteSampleTest,
+                         ValuesIn(GetAllPlayerTestConfigs()),
+                         GetSbPlayerTestConfigName);
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

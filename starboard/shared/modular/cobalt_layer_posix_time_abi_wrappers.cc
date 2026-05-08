@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#if SB_API_VERSION >= 16
-
 #include <sys/time.h>
 #include <time.h>
 
@@ -25,23 +23,15 @@ int clock_gettime(clockid_t clk_id, struct timespec* ts) {
   return __abi_wrap_clock_gettime(clk_id, ts);
 }
 
-int __abi_wrap_gettimeofday(struct timeval* tp, void* tzp);
+int __abi_wrap_clock_nanosleep(clockid_t clk_id,
+                               int flags,
+                               const struct timespec* ts,
+                               struct timespec* remain);
 
-int gettimeofday(struct timeval* tp, void* tzp) {
-  return __abi_wrap_gettimeofday(tp, tzp);
-}
-
-time_t __abi_wrap_time(time_t* tloc);
-
-time_t time(time_t* tloc) {
-  return __abi_wrap_time(tloc);
-}
-
-struct tm* __abi_wrap_gmtime_r(const time_t* clock, struct tm* result);
-
-struct tm* gmtime_r(const time_t* clock, struct tm* result) {
-  return __abi_wrap_gmtime_r(clock, result);
+int clock_nanosleep(clockid_t clk_id,
+                    int flags,
+                    const struct timespec* ts,
+                    struct timespec* remain) {
+  return __abi_wrap_clock_nanosleep(clk_id, flags, ts, remain);
 }
 }
-
-#endif  // SB_API_VERSION >= 16

@@ -12,17 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Default implementation of SbMediaGetAudioConfiguration().
-
+// clang-format off
 #include "starboard/media.h"
+// clang-format on
 
 #include "starboard/audio_sink.h"
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 
 bool SbMediaGetAudioConfiguration(
     int output_index,
     SbMediaAudioConfiguration* out_configuration) {
-  SB_DCHECK(output_index >= 0);
+  SB_DCHECK_GE(output_index, 0);
   SB_DCHECK(out_configuration);
 
   if (output_index != 0) {
@@ -31,12 +32,7 @@ bool SbMediaGetAudioConfiguration(
 
   *out_configuration = {};
 
-#if SB_API_VERSION >= 15
   out_configuration->connector = kSbMediaAudioConnectorUnknown;
-#else   // SB_API_VERSION >= 15
-  out_configuration->index = 0;
-  out_configuration->connector = kSbMediaAudioConnectorNone;
-#endif  // SB_API_VERSION >= 15
   out_configuration->latency = 0;
   out_configuration->coding_type = kSbMediaAudioCodingTypePcm;
   out_configuration->number_of_channels = SbAudioSinkGetMaxChannels();

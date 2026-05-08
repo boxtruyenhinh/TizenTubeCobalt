@@ -124,7 +124,6 @@ gcc_toolchain("target") {
 gcc_toolchain("native_target") {
   ...
   is_starboard = false
-  is_native_target_build = true
 }
 ```
 

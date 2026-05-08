@@ -35,18 +35,17 @@ Exits with 1 if run in --submit-check mode and any leaks are either introduced
 or removed compared with the manifest, otherwise exits with 0.
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import argparse
 import collections
+import logging
 import os
 import re
 import subprocess
 import sys
 
-from starboard.tools import paths
+sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir))
+
+import paths  # pylint: disable=wrong-import-position
 
 # pylint: disable=line-too-long
 _API_LEAK_DETECTOR_TITLE = """    ___    ____  ____   __               __      ____       __            __
@@ -62,9 +61,10 @@ _API_LEAK_DETECTOR_TITLE = """    ___    ____  ____   __               __      _
 _DEFAULT_PLATFORM = 'evergreen-x64'
 _DEFAULT_CONFIG = 'gold'
 _DEFAULT_TARGET = 'cobalt'
-_DEFAULT_SB_VERSION = 16
+_DEFAULT_SB_VERSION = 17
 
 _RE_LIB = re.compile(r'lib.*\.a$')
+_RE_OBJ = re.compile(r'.*\.o$')
 _RE_FILE = re.compile(r'\/\/.*\.[hcp]+$')
 _RE_SYMBOL_AND_ANY_VERSION_INFO = re.compile(r'(([^@]+)@@?(.+))|([^@]+)')
 _RE_ALLOWED_C99_SYMBOL = re.compile(r'^\*\s(.*)$')
@@ -74,7 +74,7 @@ _RE_ALLOWED_C99_SYMBOL = re.compile(r'^\*\s(.*)$')
 _LIBRARIES_TO_IGNORE_PATH = os.path.join(
     os.path.dirname(__file__), 'libraries_to_ignore')
 _ALLOWED_C99_SYMBOLS_PATH = os.path.join(paths.STARBOARD_ROOT, 'doc', 'c99.md')
-_DEFAULT_RELATIVE_MANIFEST_PATH = os.path.join('evergreen', 'manifest')
+_DEFAULT_RELATIVE_MANIFEST_FOLDER = 'evergreen'
 
 # Messages placed at the header of auto-generated files.
 _MANIFEST_HEADER = ('# Manifest of Leaking Files\n\n' +
@@ -86,55 +86,92 @@ _UNKNOWN_LIBRARIES = 'unknown_library(ies)'
 _UNKNOWN_SOURCE_FILES = 'unknown_source_file(s)'
 
 # Allowed POSIX symbols in Starboard 16
-_ALLOWED_SB16_POSIX_SYMBOLS = [
+_ALLOWED_SB_GE_16_POSIX_SYMBOLS = [
     '__errno_location',
     'accept',
+    'access',
+    'aligned_alloc',
+    'asctime_r',
     'bind',
     'calloc',
-    'connect',
+    'chmod',
     'clock_gettime',
+    'clock_nanosleep',
     'close',
+    'closedir',
+    'connect',
+    'dup',
+    'dup2',
+    'epoll_create',
+    'epoll_create1',
+    'epoll_ctl',
+    'epoll_wait',
+    'eventfd',
+    'fchmod',
+    'fchown',
+    'fcntl',
+    'fdopendir',
     'free',
-    'freeifaddrs',
     'freeaddrinfo',
+    'freeifaddrs',
+    'fdatasync',
     'fstat',
+    'fstatat',
     'fsync',
     'ftruncate',
-    'gettimeofday',
-    'getifaddrs',
+    'gai_strerror',
     'getaddrinfo',
+    'getauxval',
+    'getcwd',
+    'geteuid',
+    'getifaddrs',
+    'getpeername',
+    'getpid',
+    'getrandom',
+    'getrlimit',
+    'getsockname',
+    'getsockopt',
+    'getuid',
     'gmtime_r',
-    'inet_ntop',
+    'if_indextoname',
+    'isatty',
+    'kill',
+    'link',
     'listen',
     'lseek',
+    'madvise',
     'malloc',
-    'posix_memalign',
-    'recv',
-    'recvfrom',
-    'realloc',
-    'rmdir',
-    'setsockopt',
-    'send',
-    'sendto',
-    'strcasecmp',
-    'strncasecmp',
-    'socket',
-    'time',
-    'unlink',
+    'malloc_usable_size',
+    'mincore',
+    'mkdir',
+    'mkdtemp',
+    'mkostemp',
+    'mkstemp',
     'mmap',
-    'munmap',
     'mprotect',
     'msync',
-    'mkdir',
-    'read',
-    'sched_yield',
-    'stat',
-    'open',
-    'pthread_attr_init',
+    'munmap',
+    'openat',
+    'opendir',
+    'pathconf',
+    'pause',
+    'pipe',
+    'pipe2',
+    'poll',
+    'posix_memalign',
+    'prctl',
+    'pread',
     'pthread_attr_destroy',
     'pthread_attr_getdetachstate',
+    'pthread_attr_getschedpolicy',
+    'pthread_attr_getscope',
+    'pthread_attr_getstack',
     'pthread_attr_getstacksize',
+    'pthread_attr_init',
     'pthread_attr_setdetachstate',
+    'pthread_attr_setschedpolicy',
+    'pthread_attr_setscope',
+    'pthread_attr_setstack',
     'pthread_attr_setstacksize',
     'pthread_cond_broadcast',
     'pthread_cond_destroy',
@@ -149,25 +186,96 @@ _ALLOWED_SB16_POSIX_SYMBOLS = [
     'pthread_create',
     'pthread_detach',
     'pthread_equal',
+    'pthread_getattr_np',
+    'pthread_getname_np',
+    'pthread_getschedparam',
+    'pthread_getspecific',
     'pthread_join',
+    'pthread_key_create',
+    'pthread_key_delete',
+    'pthread_kill',
     'pthread_mutex_destroy',
     'pthread_mutex_init',
     'pthread_mutex_lock',
-    'pthread_mutex_unlock',
     'pthread_mutex_trylock',
+    'pthread_mutex_unlock',
+    'pthread_mutexattr_destroy',
+    'pthread_mutexattr_getpshared',
+    'pthread_mutexattr_gettype',
+    'pthread_mutexattr_init',
+    'pthread_mutexattr_setpshared',
+    'pthread_mutexattr_settype',
     'pthread_once',
+    'pthread_rwlock_destroy',
+    'pthread_rwlock_init',
+    'pthread_rwlock_rdlock',
+    'pthread_rwlock_tryrdlock',
+    'pthread_rwlock_trywrlock',
+    'pthread_rwlock_unlock',
+    'pthread_rwlock_wrlock',
     'pthread_self',
-    'pthread_getspecific',
-    'pthread_key_create',
-    'pthread_key_delete',
-    'pthread_setspecific',
     'pthread_setname_np',
-    'pthread_getname_np',
-    'usleep',
-    'write',
-    'opendir',
-    'closedir',
+    'pthread_setschedparam',
+    'pthread_setspecific',
+    'pthread_sigmask',
+    'pwrite',
+    'raise',
+    'rand',
+    'rand_r',
+    'read',
+    'readdir',
     'readdir_r',
+    'readlink',
+    'readv',
+    'realpath',
+    'realloc',
+    'recv',
+    'recvfrom',
+    'recvmmsg',
+    'recvmsg',
+    'rename',
+    'sched_getaffinity',
+    'sched_get_priority_max',
+    'sched_get_priority_min',
+    'sched_yield',
+    'select',
+    'sem_destroy',
+    'sem_init',
+    'sem_post',
+    'sem_timedwait',
+    'sem_wait',
+    'send',
+    'sendmsg',
+    'sendto',
+    'setpriority',
+    'setsockopt',
+    'shutdown',
+    'sigaction',
+    'signal',
+    'snprintf',
+    'socket',
+    'socketpair',
+    'sprintf',
+    'srand',
+    'statvfs',
+    'statx',
+    'strftime_l',
+    'symlink',
+    'sysconf',
+    'uname',
+    'unlinkat',
+    'usleep',
+    'utimensat',
+    'vfwprintf',
+    'vsnprintf',
+    'vsscanf',
+    'vswprintf',
+    'write',
+    'writev',
+
+    # TODO: b/476129004 - __clock_gettime64 is weakly defined for 32-bit arm
+    # platforms.
+    '__clock_gettime64',
 ]
 
 
@@ -184,17 +292,32 @@ def FindLibraries(config_path):
   libs_to_ignore = LoadLibrariesToIgnore()
 
   libs = []
-  for root, dirs, filenames in os.walk(config_path):
-    # Only look in toplevel obj directory.
-    if root == config_path:
-      dirs[:] = [d for d in dirs if d == 'obj']
+  print(f'Searching {config_path} for static libraries', file=sys.stderr)
+  for root, _, filenames in os.walk(config_path):
     for filename in filenames:
+      abs_path = os.path.join(root, filename)
       if _RE_LIB.match(filename) and filename not in libs_to_ignore:
-        libs.append(os.path.join(root, filename))
+        libs.append(abs_path)
   return libs
 
 
-def FindLeakingSourceFiles(leaking_symbols, nm_output, config_dir):
+def ObjectFilesToIgnore(config_path):
+  """Returns all object files contained in ignored static libraries."""
+  print('Loading libraries to ignore...', file=sys.stderr)
+  libs_to_ignore = LoadLibrariesToIgnore()
+
+  objs = set()
+  print(f'Searching {config_path} for static libraries', file=sys.stderr)
+  for root, _, filenames in os.walk(config_path):
+    for filename in filenames:
+      abs_path = os.path.join(root, filename)
+      if _RE_LIB.match(filename) and filename in libs_to_ignore:
+        ar_output = RunCommand(['ar', '-t', abs_path])
+        objs.update(ar_output.splitlines())
+  return objs
+
+
+def FindLeakingSourceFiles(leaking_symbols, nm_output, config_path):
   r"""Collects and formats all filenames that have leaks in the nm output.
 
   This function works by iterating through the provided output, keeping track
@@ -203,20 +326,10 @@ def FindLeakingSourceFiles(leaking_symbols, nm_output, config_dir):
   of files that contain the specified leak. Once the entire output has been
   iterated across, the dictionary of leaks to sets of files is returned.
 
-  The absolute path of every file, such as:
-
-    /usr/local/google/home/chadduffin/cobalt/src/out/ \
-        evergreen-x64-sbversion-12_gold/obj/third_party/boringssl/src/crypto/ \
-            crypto.thread.c.o
-
-  will be stripped so that it becomes:
-
-    //third_party/boringssl/src/crypto/thread.c
-
   Args:
     leaking_symbols: A list of all of the symbols that are valid leaks.
     nm_output: The output from 'nm -u' being ran against a static library.
-    config_dir: Config build directory
+    config_path: Absolute path of the config build directory
 
   Returns:
     A dictionary that maps symbols to a set of filenames that are leaking the
@@ -225,20 +338,16 @@ def FindLeakingSourceFiles(leaking_symbols, nm_output, config_dir):
   files = {}
   filename = None
   for line in ProcessNmOutput(nm_output, True):
-    if config_dir in line:
+    if config_path in line:
 
       # See the description above to understand what the string manipulation
       # below is accomplishing.
       try:
-        filename = '//' + line.split(f'/{config_dir}/obj/')[1]
+        filename = '//' + os.path.relpath(line, paths.REPOSITORY_ROOT)
       except IndexError as e:
         print(line)
         raise e
-      if filename.endswith('.asm.o:'):
-        filename = re.sub(r':$', '', filename)
-        continue
-      filename = re.sub(r'\.o:$', '', filename)
-      filename = re.sub(r'/\w+\.', '/', filename)
+      filename = filename.removesuffix(':')
       continue
     elif filename and line and line in leaking_symbols:
       files_set = files.get(line, set())
@@ -257,51 +366,106 @@ def InversedKeys(nested_dict):
   return inverse
 
 
-def FindLeakLocations(leaked_symbols, config_path):
+def FindLeakLocations(leaked_symbols, config_path, only_grep, use_ripgrep):
   """Returns the static libraries and source files leaked APIs are used in.
 
   Args:
     leaked_symbols: The set of leaked symbols found in the Cobalt layer.
     config_path: The path to the build config directory.
+    only_grep: If true, skip searching static libraries and just look for
+               symbols in object files.
+    use_ripgrep: If true, use ripgrep instead of grep.
 
   Returns:
     A dict from leaked symbol to dict from static library to the set of source
     files using the leak.
   """
-  config_dir = os.path.basename(config_path)
   leaking_files = {}
   libs_to_symbols = {}
+  obj_files_in_libs = set()
 
-  print('Collecting static libraries...', file=sys.stderr)
-  libs = FindLibraries(config_path)
+  if only_grep:
+    # We still need to ignore files associated with ignored libraries.
+    obj_files_in_libs = ObjectFilesToIgnore(config_path)
+    print(
+        f'Found {len(obj_files_in_libs)} object files in ignored libraries.',
+        file=sys.stderr)
+  else:
+    print('Collecting static libraries...', file=sys.stderr)
+    libs = FindLibraries(config_path)
+    print(f'Found {len(libs)} static libraries.', file=sys.stderr)
 
-  print('Searching the static libraries for leaks...', file=sys.stderr)
-  for lib in libs:
-    print(lib)
-    libname = os.path.basename(lib)
-    nm_output = RunCommand(['nm', '-u', lib])
-    libs_to_symbols[libname] = set()
-    for symbol in ProcessNmOutput(nm_output):
-      if symbol not in leaked_symbols:
+    print('Searching the static libraries for leaks...', file=sys.stderr)
+    print(
+        'This may take some time. Use --only-grep to skip this step.',
+        file=sys.stderr)
+    for i, lib in enumerate(libs):
+      # Progress
+      if i > 0:
+        # Clear previous line
+        print('\x1b[1A', file=sys.stderr, end='')
+        print('\x1b[2K', file=sys.stderr, end='')
+      print(f'[{i + 1}/{len(libs)}] {os.path.basename(lib)}', file=sys.stderr)
+
+      # Get a list of .o files in the .a file so we can ignore them later.
+      ar_output = RunCommand(['ar', '-t', lib])
+      obj_files_in_libs.update(ar_output.splitlines())
+
+      # Check for undefined symbols in the lib
+      libname = os.path.basename(lib)
+      nm_output = RunCommand(['nm', '-u', '-C', lib])
+      libs_to_symbols[libname] = set()
+      for symbol in ProcessNmOutput(nm_output):
+        if symbol not in leaked_symbols:
+          continue
+        libs_to_symbols[libname].add(symbol)
+      if not libs_to_symbols[libname]:
+        del libs_to_symbols[libname]
         continue
-      libs_to_symbols[libname].add(symbol)
-    if not libs_to_symbols[libname]:
-      del libs_to_symbols[libname]
-      continue
-    leaking_files[libname] = FindLeakingSourceFiles(libs_to_symbols[libname],
-                                                    nm_output, config_dir)
-    if not leaking_files[libname]:
-      del leaking_files[libname]
+      leaking_files[libname] = FindLeakingSourceFiles(libs_to_symbols[libname],
+                                                      nm_output, config_path)
+      if not leaking_files[libname]:
+        del leaking_files[libname]
 
-  # It's possible for something that is not a Cobalt static library to
-  # contribute leaked symbols. For example, some static libraries come
-  # preinstalled on Linux.
-  leaked_with_libraries = {s for v in libs_to_symbols.values() for s in v}
-  leaked_without_libraries = leaked_symbols.difference(leaked_with_libraries)
-  if leaked_without_libraries:
-    leaking_files[_UNKNOWN_LIBRARIES] = {
-        symbol: {_UNKNOWN_SOURCE_FILES} for symbol in leaked_without_libraries
-    }
+  # Not all symbols are packaged into lib*.a files, so we also need to grep for
+  # them in .o files.
+  leaking_files[_UNKNOWN_LIBRARIES] = {}
+  if not use_ripgrep:
+    print(
+        'Tip: Install ripgrep (rg) and use the --ripgrep arg for 10x faster'
+        ' processing.',
+        file=sys.stderr)
+  for i, symbol in enumerate(leaked_symbols):
+    # Progress
+    if i > 0:
+      # Clear previous line
+      print('\x1b[1A', file=sys.stderr, end='')
+      print('\x1b[2K', file=sys.stderr, end='')
+    print(
+        f'[{i + 1}/{len(leaked_symbols)}] Searching for {symbol}...',
+        file=sys.stderr)
+    if use_ripgrep:
+      grep_output = RunCommand(
+          ['rg', '-uuu', '-l', '-a', '-g', '!{*.ninja}', symbol, config_path])
+    else:
+      grep_output = RunCommand(
+          ['grep', '-r', '-l', '-a', '--exclude=*.ninja', symbol, config_path])
+
+    # Filter out object files in the static libraries we already processed.
+    obj_files_to_check = set(grep_output.splitlines()) - obj_files_in_libs
+
+    # Run nm on the object files we found to double check that grep didn't hit a
+    # false positive, e.g. the symbol name is actually in a string or there is a
+    # similarly named symbol. Unfortunately this doesn't work for Rust libs, so
+    # we just assume those are matches.
+    leaking_files[_UNKNOWN_LIBRARIES][symbol] = set()
+    for obj_file in obj_files_to_check:
+      if os.path.splitext(obj_file)[1] == '.rlib' or symbol in ProcessNmOutput(
+          RunCommand(['nm', '-u', '-C', obj_file])):
+        leaking_files[_UNKNOWN_LIBRARIES][symbol].add(
+            '//' + os.path.relpath(obj_file, paths.REPOSITORY_ROOT))
+    if len(leaking_files[_UNKNOWN_LIBRARIES][symbol]) == 0:
+      del leaking_files[_UNKNOWN_LIBRARIES][symbol]
 
   return InversedKeys(leaking_files)
 
@@ -383,13 +547,23 @@ def ParseArgs():
       default=_DEFAULT_TARGET)
   parser.add_argument(
       '--relative-manifest-path',
-      help='Path to the manifest to use, relative to api_leak_detector dir.',
-      default=_DEFAULT_RELATIVE_MANIFEST_PATH)
+      help='Path to the manifest to use, relative to api_leak_detector dir.')
   parser.add_argument(
       '--sb_api_version',
       help='The Starboard version',
       type=int,
       default=_DEFAULT_SB_VERSION)
+  parser.add_argument(
+      '--only-grep',
+      help='Skip nm parsing of static libraries and only grep for symbols in '
+      'object files. Output will not be grouped by library.',
+      action='store_true')
+  parser.add_argument(
+      '--ripgrep',
+      help='Use ripgrep (rg) instead of grep.',
+      action='store_true')
+  parser.add_argument(
+      '--skip-build', help='Skip building the target.', action='store_true')
   return parser.parse_args()
 
 
@@ -425,11 +599,11 @@ def ProcessNmOutput(nm_output, collect_files=False):
   Yields:
     Unresolved symbols that match _RE_SYMBOL_AND_ANY_VERSION_INFO.
   """
-  for line in nm_output.decode('utf-8').splitlines():
+  for line in nm_output.splitlines():
     line = line.lstrip()
-    contents = line.split(' ')
-    if len(contents) != 2:
-      if len(contents) == 1 and collect_files:
+    contents = line.split(' ', 1)
+    if len(contents) == 1:
+      if collect_files:
         yield contents[0]
       continue
     results = _RE_SYMBOL_AND_ANY_VERSION_INFO.match(contents[1]).groups()
@@ -441,15 +615,40 @@ def ProcessNmOutput(nm_output, collect_files=False):
       print(f'Invalid line in nm output: {line}', file=sys.stderr)
 
 
-def RunCommand(args):
-  """Executes a command with the given arguments and returns the output."""
-  return subprocess.check_output(args)
+def RunCommand(args, cwd=None):
+  """Runs a command, returning its stdout and printing stderr on failure."""
+  arg_string = ' '.join(args)
+  logging.info('Running: %s', arg_string)
+  try:
+    result = subprocess.run(
+        args,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        cwd=cwd)
+    return result.stdout
+  except subprocess.CalledProcessError as e:
+    print(f'ERROR: Failed to run `${arg_string}`', file=sys.stderr)
+    print(f'Exit Code: {e.returncode}', file=sys.stderr)
+    if e.stdout:
+      print('--- stdout ---', file=sys.stderr)
+      print(e.stdout, file=sys.stderr)
+    if e.stderr:
+      print('--- stderr ---', file=sys.stderr)
+      print(e.stderr, file=sys.stderr)
+    raise
 
 
 def main():
   args = ParseArgs()
   config_dir = f'{args.platform}_{args.config}'
   config_path = os.path.join(paths.BUILD_OUTPUT_ROOT, config_dir)
+  obj_path = os.path.join(config_path, 'obj')
+  if not args.relative_manifest_path:
+    prefix = '' if args.config in ['qa', 'gold'] else 'dev_'
+    args.relative_manifest_path = os.path.join(
+        _DEFAULT_RELATIVE_MANIFEST_FOLDER, f'{prefix}manifest')
   manifest_path = os.path.join(
       os.path.dirname(__file__), args.relative_manifest_path)
 
@@ -459,19 +658,19 @@ def main():
   print('Loading allowed C99 symbols...', file=sys.stderr)
   allowed_c99_symbols = LoadAllowedC99Symbols()
 
-  print(f'Building {config_dir} if necessary...', file=sys.stderr)
-  RunCommand(['ninja', '-j256', '-C', config_path, args.target])
+  if not args.skip_build:
+    print(f'Building {config_dir} if necessary...', file=sys.stderr)
+    RunCommand(['autoninja', '-C', config_path, args.target],
+               cwd=paths.REPOSITORY_ROOT)
+  else:
+    print('Skipping build step.', file=sys.stderr)
 
-  # First try using the GYP shared library path 'lib/libcobalt.so'.
-  # TODO(b/211885836): stop considering the GYP shared library path once all
-  # relevant GYP builders are removed from CI.
-  binary_path = os.path.join(config_path, 'lib', f'lib{args.target}.so')
-  # Then fall back on the GN shared library path 'libcobalt.so'.
+  # Use the library at lib.unstripped if available, as if that's around it
+  # means the top-level one has been stripped of symbols.
+  file_name = f'lib{args.target}.so'
+  binary_path = os.path.join(config_path, 'lib.unstripped', file_name)
   if not os.path.exists(binary_path):
-    binary_path = os.path.join(config_path, f'lib{args.target}.so')
-  # Then fall back on the executable path 'cobalt', used by both GYP and GN.
-  if not os.path.exists(binary_path):
-    binary_path = os.path.join(config_path, format(args.target))
+    binary_path = os.path.join(config_path, file_name)
   print(f'Analyzing: {binary_path}', file=sys.stderr)
 
   # Get all of the unresolved symbols of the binary.
@@ -488,8 +687,8 @@ def main():
     return symbol.startswith('Sb') or symbol.startswith('kSb')
 
   def IsAllowedPosixSymbol(symbol, sb_api_version: int):
-    if sb_api_version == 16:
-      return symbol in _ALLOWED_SB16_POSIX_SYMBOLS
+    if sb_api_version in [16, 17, 18]:
+      return symbol in _ALLOWED_SB_GE_16_POSIX_SYMBOLS
     else:
       return False
 
@@ -519,8 +718,11 @@ def main():
   if args.submit_check:
     introduced, removed = DiffWithManifest(leaked_symbols, manifest_path)
     if introduced:
-      PrettyPrint(
-          {'Leaks introduced:': FindLeakLocations(introduced, config_path)})
+      PrettyPrint({
+          'Leaks introduced:':
+              FindLeakLocations(introduced, obj_path, args.only_grep,
+                                args.ripgrep)
+      })
       print(
           '\nPlease see advice for addressing new leaks at go/cobalt-api-leaks.'
       )
@@ -529,7 +731,8 @@ def main():
 
     if removed:
       PrettyPrint({'Leaks removed:': removed})
-      print('\nPlease delete removed leaks from the manifest file.')
+      print('\nPlease delete removed leaks from the manifest file: '
+            f'{args.relative_manifest_path}.')
     else:
       print('No leaks were removed.', file=sys.stderr)
 
@@ -539,7 +742,9 @@ def main():
 
   if args.inspect:
     if leaked_symbols:
-      PrettyPrint(FindLeakLocations(leaked_symbols, config_path))
+      PrettyPrint(
+          FindLeakLocations(leaked_symbols, obj_path, args.only_grep,
+                            args.ripgrep))
     else:
       print('No leaks found!', file=sys.stderr)
     return 0

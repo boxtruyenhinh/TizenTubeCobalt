@@ -1,4 +1,4 @@
-// Copyright 2024 The Cobalt Authors
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,24 +8,45 @@
 
 namespace base {
 
-void RaiseProcessToHighPriority() {
-  // Impossible on iOS. Do nothing.
-}
-
-bool GetAppOutput(const CommandLine& cl, std::string* output) {
+void CheckPThreadStackMinIsSafe() {
   NOTIMPLEMENTED();
-  return false;
-}
-
-bool GetAppOutputAndError(const CommandLine& cl, std::string* output) {
-  NOTIMPLEMENTED();
-  return false;
 }
 
 Process LaunchProcess(const CommandLine& cmdline,
                       const LaunchOptions& options) {
+  NOTREACHED() << "LaunchProcess called, but Cobalt does not support "
+               << "multi-processing. This call will fail.";
+}
+
+Process LaunchProcess(const std::vector<std::string>& argv,
+                      const LaunchOptions& options) {
+  NOTREACHED() << "LaunchProcess called, but Cobalt does not support "
+               << "multi-processing. This call will fail.";
+}
+
+void RaiseProcessToHighPriority() {
   NOTIMPLEMENTED();
-  return Process();
+}
+
+bool GetAppOutput(const CommandLine& cl, std::string* output) {
+  NOTREACHED() << "GetAppOutput called, but Cobalt does not support "
+               << "multi-processing. This call will fail.";
+}
+
+bool GetAppOutputAndError(const CommandLine& cl, std::string* output) {
+  NOTREACHED() << "GetAppOutputAndError called, but Cobalt does not support "
+               << "multi-processing. This call will fail.";
+}
+
+bool GetAppOutputWithExitCode(const CommandLine& cl,
+                              std::string* output,
+                              int* exit_code) {
+  NOTREACHED() << "GetAppOutputWithExitCode called, but Cobalt does not "
+               << "support multi-processing. This call will fail.";
+}
+
+pid_t ForkWithFlags(int flags, pid_t* ptid, pid_t* ctid) {
+  return 0;
 }
 
 }  // namespace base

@@ -12,22 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/shared/starboard/player/filter/audio_channel_layout_mixer.h"
+// clang-format on
 
+#include <limits>
 #include <vector>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 #include "starboard/shared/starboard/media/media_util.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 namespace {
-
-using media::GetBytesPerSample;
 
 // 1 -> 2
 const float kMonoToStereoMatrix[] = {
@@ -83,7 +81,8 @@ const float kQuadToFivePointOneMatrix[] = {
 
 // 2 -> 1
 const float kStereoToMonoMatrix[] = {
-    0.5f, 0.5f,  // output = 0.5 * (input.L + input.R)
+    0.5f,
+    0.5f,  // output = 0.5 * (input.L + input.R)
 };
 
 // 4 -> 1
@@ -173,8 +172,8 @@ const SampleType* GetInterleavedSamplesOfFrame(
   if (input->storage_type() == kSbMediaAudioFrameStorageTypeInterleaved) {
     return input_buffer + frame_index * input->channels();
   }
-  SB_DCHECK(input->storage_type() == kSbMediaAudioFrameStorageTypePlanar);
-  for (size_t channel_index = 0; channel_index < input->channels();
+  SB_DCHECK_EQ(input->storage_type(), kSbMediaAudioFrameStorageTypePlanar);
+  for (int channel_index = 0; channel_index < input->channels();
        channel_index++) {
     aux_buffer[channel_index] =
         input_buffer[channel_index * input->frames() + frame_index];
@@ -188,15 +187,15 @@ void StoreInterleavedSamplesOfFrame(const SampleType* samples,
                                     int frame_index) {
   SampleType* dest_buffer =
       reinterpret_cast<SampleType*>((*destination)->data());
-  for (size_t channel_index = 0; channel_index < (*destination)->channels();
+  for (int channel_index = 0; channel_index < (*destination)->channels();
        channel_index++) {
     if ((*destination)->storage_type() ==
         kSbMediaAudioFrameStorageTypeInterleaved) {
       dest_buffer[frame_index * (*destination)->channels() + channel_index] =
           samples[channel_index];
     } else {
-      SB_DCHECK((*destination)->storage_type() ==
-                kSbMediaAudioFrameStorageTypePlanar);
+      SB_DCHECK_EQ((*destination)->storage_type(),
+                   kSbMediaAudioFrameStorageTypePlanar);
       dest_buffer[channel_index * (*destination)->frames() + frame_index] =
           samples[channel_index];
     }
@@ -213,11 +212,11 @@ float ClipSample<float>(float sample) {
 
 template <>
 int16_t ClipSample<int16_t>(float sample) {
-  if (sample > kSbInt16Max) {
-    return kSbInt16Max;
+  if (sample > std::numeric_limits<int16_t>::max()) {
+    return std::numeric_limits<int16_t>::max();
   }
-  if (sample < kSbInt16Min) {
-    return kSbInt16Min;
+  if (sample < std::numeric_limits<int16_t>::min()) {
+    return std::numeric_limits<int16_t>::min();
   }
   return sample;
 }
@@ -230,10 +229,10 @@ void MixFrameWithMatrix(const SampleType* input_frame,
                         const float* matrix,
                         SampleType* output_frame,
                         int number_of_output_channels) {
-  for (size_t output_index = 0; output_index < number_of_output_channels;
+  for (int output_index = 0; output_index < number_of_output_channels;
        output_index++) {
     float output_sample = 0;
-    for (size_t input_index = 0; input_index < number_of_input_channels;
+    for (int input_index = 0; input_index < number_of_input_channels;
          input_index++) {
       output_sample +=
           input_frame[input_index] *
@@ -275,8 +274,8 @@ AudioChannelLayoutMixerImpl::AudioChannelLayoutMixerImpl(
 
 scoped_refptr<DecodedAudio> AudioChannelLayoutMixerImpl::Mix(
     const scoped_refptr<DecodedAudio>& input) {
-  SB_DCHECK(input->sample_type() == sample_type_);
-  SB_DCHECK(input->storage_type() == storage_type_);
+  SB_DCHECK_EQ(input->sample_type(), sample_type_);
+  SB_DCHECK_EQ(input->storage_type(), storage_type_);
 
   if (input->channels() == output_channels_) {
     return input;
@@ -330,7 +329,7 @@ scoped_refptr<DecodedAudio> AudioChannelLayoutMixerImpl::Mix(
   if (sample_type_ == kSbMediaAudioSampleTypeInt16Deprecated) {
     return Mix<int16_t>(input, matrix);
   }
-  SB_DCHECK(sample_type_ == kSbMediaAudioSampleTypeFloat32);
+  SB_DCHECK_EQ(sample_type_, kSbMediaAudioSampleTypeFloat32);
   return Mix<float>(input, matrix);
 }
 
@@ -344,7 +343,7 @@ scoped_refptr<DecodedAudio> AudioChannelLayoutMixerImpl::Mix(
       frames * output_channels_ * GetBytesPerSample(sample_type_)));
   SampleType aux_buffer[8];
   SampleType output_buffer[8];
-  for (int frame_index = 0; frame_index < frames; frame_index++) {
+  for (size_t frame_index = 0; frame_index < frames; frame_index++) {
     const SampleType* interleavedSamplesOfFrame =
         GetInterleavedSamplesOfFrame(input, frame_index, aux_buffer);
     MixFrameWithMatrix(interleavedSamplesOfFrame, input->channels(), matrix,
@@ -357,8 +356,8 @@ scoped_refptr<DecodedAudio> AudioChannelLayoutMixerImpl::Mix(
 scoped_refptr<DecodedAudio>
 AudioChannelLayoutMixerImpl::MixMonoToStereoOptimized(
     const scoped_refptr<DecodedAudio>& input) {
-  SB_DCHECK(output_channels_ == 2);
-  SB_DCHECK(input->channels() == 1);
+  SB_DCHECK_EQ(output_channels_, 2);
+  SB_DCHECK_EQ(input->channels(), 1);
 
   scoped_refptr<DecodedAudio> output(
       new DecodedAudio(output_channels_, sample_type_, storage_type_,
@@ -377,7 +376,7 @@ AudioChannelLayoutMixerImpl::MixMonoToStereoOptimized(
       frames_left--;
     }
   } else {
-    SB_DCHECK(storage_type_ == kSbMediaAudioFrameStorageTypePlanar);
+    SB_DCHECK_EQ(storage_type_, kSbMediaAudioFrameStorageTypePlanar);
     memcpy(output->data(), input->data(), input->size_in_bytes());
     memcpy(output->data() + input->size_in_bytes(), input->data(),
            input->size_in_bytes());
@@ -397,8 +396,4 @@ std::unique_ptr<AudioChannelLayoutMixer> AudioChannelLayoutMixer::Create(
                                       output_channels));
 }
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

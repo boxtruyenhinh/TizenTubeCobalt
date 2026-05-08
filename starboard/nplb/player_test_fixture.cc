@@ -17,16 +17,16 @@
 #include <algorithm>
 #include <vector>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/string.h"
 #include "starboard/common/time.h"
 #include "starboard/nplb/drm_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 
-using shared::starboard::player::video_dmp::VideoDmpReader;
-using testing::FakeGraphicsContextProvider;
+using ::starboard::FakeGraphicsContextProvider;
+using ::starboard::VideoDmpReader;
 
 using GroupedSamples = SbPlayerTestFixture::GroupedSamples;
 using AudioSamplesDescriptor = GroupedSamples::AudioSamplesDescriptor;
@@ -39,11 +39,13 @@ class SbPlayerTestFixture::GroupedSamplesIterator {
       : grouped_samples_(grouped_samples) {}
 
   bool HasMoreAudio() const {
-    return audio_samples_index_ < grouped_samples_.audio_samples_.size();
+    return static_cast<size_t>(audio_samples_index_) <
+           grouped_samples_.audio_samples_.size();
   }
 
   bool HasMoreVideo() const {
-    return video_samples_index_ < grouped_samples_.video_samples_.size();
+    return static_cast<size_t>(video_samples_index_) <
+           grouped_samples_.video_samples_.size();
   }
 
   AudioSamplesDescriptor GetCurrentAudioSamplesToWrite() const {
@@ -69,8 +71,8 @@ class SbPlayerTestFixture::GroupedSamplesIterator {
     if (grouped_samples_.audio_samples_[audio_samples_index_]
             .is_end_of_stream) {
       // For EOS, |samples_count| must be 1.
-      SB_DCHECK(samples_count == 1);
-      SB_DCHECK(current_written_audio_samples_ == 0);
+      SB_DCHECK_EQ(samples_count, 1);
+      SB_DCHECK_EQ(current_written_audio_samples_, 0);
       audio_samples_index_++;
       return;
     }
@@ -92,8 +94,8 @@ class SbPlayerTestFixture::GroupedSamplesIterator {
     if (grouped_samples_.video_samples_[video_samples_index_]
             .is_end_of_stream) {
       // For EOS, |samples_count| must be 1.
-      SB_DCHECK(samples_count == 1);
-      SB_DCHECK(current_written_video_samples_ == 0);
+      SB_DCHECK_EQ(samples_count, 1);
+      SB_DCHECK_EQ(current_written_video_samples_, 0);
       video_samples_index_++;
       return;
     }
@@ -130,8 +132,8 @@ GroupedSamples& GroupedSamples::AddAudioSamples(
     int64_t timestamp_offset,
     int64_t discarded_duration_from_front,
     int64_t discarded_duration_from_back) {
-  SB_DCHECK(start_index >= 0);
-  SB_DCHECK(number_of_samples >= 0);
+  SB_DCHECK_GE(start_index, 0);
+  SB_DCHECK_GE(number_of_samples, 0);
   SB_DCHECK(audio_samples_.empty() || !audio_samples_.back().is_end_of_stream);
   // Currently, the implementation only supports writing one sample at a time
   // if |discarded_duration_from_front| or |discarded_duration_from_back| is not
@@ -162,8 +164,8 @@ GroupedSamples& GroupedSamples::AddAudioEOS() {
 
 GroupedSamples& GroupedSamples::AddVideoSamples(int start_index,
                                                 int number_of_samples) {
-  SB_DCHECK(start_index >= 0);
-  SB_DCHECK(number_of_samples >= 0);
+  SB_DCHECK_GE(start_index, 0);
+  SB_DCHECK_GE(number_of_samples, 0);
   SB_DCHECK(video_samples_.empty() || !video_samples_.back().is_end_of_stream);
 
   VideoSamplesDescriptor descriptor;
@@ -230,13 +232,13 @@ SbPlayerTestFixture::SbPlayerTestFixture(
 }
 
 SbPlayerTestFixture::~SbPlayerTestFixture() {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
 
   TearDown();
 }
 
 void SbPlayerTestFixture::Seek(const int64_t time) {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
   SB_DCHECK(SbPlayerIsValid(player_));
 
   ASSERT_FALSE(error_occurred_);
@@ -250,15 +252,11 @@ void SbPlayerTestFixture::Seek(const int64_t time) {
   audio_end_of_stream_written_ = false;
   video_end_of_stream_written_ = false;
 
-#if SB_API_VERSION >= 15
   SbPlayerSeek(player_, time, ++ticket_);
-#else   // SB_API_VERSION >= 15
-  SbPlayerSeek2(player_, time, ++ticket_);
-#endif  // SB_API_VERSION >= 15
 }
 
 void SbPlayerTestFixture::Write(const GroupedSamples& grouped_samples) {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
   SB_DCHECK(SbPlayerIsValid(player_));
   SB_DCHECK(!audio_end_of_stream_written_);
   SB_DCHECK(!video_end_of_stream_written_);
@@ -276,8 +274,8 @@ void SbPlayerTestFixture::Write(const GroupedSamples& grouped_samples) {
 
   const int64_t kDefaultWriteTimeout = 5'000'000LL;  // 5 seconds
 
-  int64_t start = CurrentMonotonicTime();
-  while (CurrentMonotonicTime() - start < kDefaultWriteTimeout) {
+  int64_t start = starboard::CurrentMonotonicTime();
+  while (starboard::CurrentMonotonicTime() - start < kDefaultWriteTimeout) {
     if (CanWriteMoreAudioData() && iterator.HasMoreAudio()) {
       auto descriptor = iterator.GetCurrentAudioSamplesToWrite();
       if (descriptor.is_end_of_stream) {
@@ -285,8 +283,9 @@ void SbPlayerTestFixture::Write(const GroupedSamples& grouped_samples) {
         ASSERT_NO_FATAL_FAILURE(WriteEndOfStream(kSbMediaTypeAudio));
         iterator.AdvanceAudio(1);
       } else {
-        SB_DCHECK(descriptor.samples_count > 0);
-        SB_DCHECK(descriptor.start_index + descriptor.samples_count <
+        SB_DCHECK_GT(descriptor.samples_count, 0);
+        SB_DCHECK(static_cast<size_t>(descriptor.start_index +
+                                      descriptor.samples_count) <
                   audio_dmp_reader_->number_of_audio_buffers())
             << "Audio dmp file is not long enough to finish the test.";
 
@@ -307,8 +306,9 @@ void SbPlayerTestFixture::Write(const GroupedSamples& grouped_samples) {
         ASSERT_NO_FATAL_FAILURE(WriteEndOfStream(kSbMediaTypeVideo));
         iterator.AdvanceVideo(1);
       } else {
-        SB_DCHECK(descriptor.samples_count > 0);
-        SB_DCHECK(descriptor.start_index + descriptor.samples_count <
+        SB_DCHECK_GT(descriptor.samples_count, 0);
+        SB_DCHECK(static_cast<size_t>(descriptor.start_index +
+                                      descriptor.samples_count) <
                   video_dmp_reader_->number_of_video_buffers())
             << "Video dmp file is not long enough to finish the test.";
 
@@ -331,7 +331,7 @@ void SbPlayerTestFixture::Write(const GroupedSamples& grouped_samples) {
 }
 
 void SbPlayerTestFixture::WaitForPlayerPresenting() {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
   SB_DCHECK(SbPlayerIsValid(player_));
 
   ASSERT_FALSE(error_occurred_);
@@ -339,7 +339,7 @@ void SbPlayerTestFixture::WaitForPlayerPresenting() {
 }
 
 void SbPlayerTestFixture::WaitForPlayerEndOfStream() {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
   SB_DCHECK(SbPlayerIsValid(player_));
   SB_DCHECK(!audio_dmp_reader_ || audio_end_of_stream_written_);
   SB_DCHECK(!video_dmp_reader_ || video_end_of_stream_written_);
@@ -349,25 +349,21 @@ void SbPlayerTestFixture::WaitForPlayerEndOfStream() {
 }
 
 int64_t SbPlayerTestFixture::GetCurrentMediaTime() const {
-#if SB_API_VERSION >= 15
   SbPlayerInfo info = {};
   SbPlayerGetInfo(player_, &info);
-#else   // SB_API_VERSION >= 15
-  SbPlayerInfo2 info = {};
-  SbPlayerGetInfo2(player_, &info);
-#endif  // SB_API_VERSION >= 15
   return info.current_media_timestamp;
 }
 
 void SbPlayerTestFixture::SetAudioWriteDuration(int64_t duration) {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
-  SB_DCHECK(duration > 0);
+  SB_CHECK(thread_checker_.CalledOnValidThread());
+  SB_DCHECK_GT(duration, 0);
   audio_write_duration_ = duration;
 }
 
 int64_t SbPlayerTestFixture::GetAudioSampleTimestamp(int index) const {
   SB_DCHECK(HasAudio());
-  SB_DCHECK(index < audio_dmp_reader_->number_of_audio_buffers());
+  SB_DCHECK(static_cast<size_t>(index) <
+            audio_dmp_reader_->number_of_audio_buffers());
   return audio_dmp_reader_->GetPlayerSampleInfo(kSbMediaTypeAudio, index)
       .timestamp;
 }
@@ -432,13 +428,14 @@ void SbPlayerTestFixture::OnPlayerState(SbPlayer player,
 void SbPlayerTestFixture::OnError(SbPlayer player,
                                   SbPlayerError error,
                                   const char* message) {
-  SB_LOG(ERROR) << FormatString("Got SbPlayerError %d with message '%s'", error,
-                                message != NULL ? message : "");
+  SB_LOG(ERROR) << starboard::FormatString(
+      "Got SbPlayerError %d with message '%s'", error,
+      message != NULL ? message : "");
   error_occurred_ = true;
 }
 
 void SbPlayerTestFixture::Initialize() {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
 
   // Initialize drm system.
   if (!key_system_.empty()) {
@@ -452,7 +449,7 @@ void SbPlayerTestFixture::Initialize() {
   // Initialize player.
   auto audio_codec = kSbMediaAudioCodecNone;
   auto video_codec = kSbMediaVideoCodecNone;
-  const shared::starboard::media::AudioStreamInfo* audio_stream_info = NULL;
+  const starboard::AudioStreamInfo* audio_stream_info = nullptr;
 
   if (audio_dmp_reader_) {
     audio_codec = audio_dmp_reader_->audio_codec();
@@ -477,7 +474,7 @@ void SbPlayerTestFixture::Initialize() {
 }
 
 void SbPlayerTestFixture::TearDown() {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
 
   // We should always destroy |player_| and |drm_system_|, no matter if there's
   // any unexpected player error.
@@ -524,15 +521,15 @@ void SbPlayerTestFixture::WriteAudioSamples(
     int64_t timestamp_offset,
     int64_t discarded_duration_from_front,
     int64_t discarded_duration_from_back) {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
   SB_DCHECK(SbPlayerIsValid(player_));
   SB_DCHECK(audio_dmp_reader_);
-  SB_DCHECK(start_index >= 0);
-  SB_DCHECK(samples_to_write > 0);
-  SB_DCHECK(samples_to_write <= SbPlayerGetMaximumNumberOfSamplesPerWrite(
-                                    player_, kSbMediaTypeAudio));
-  SB_DCHECK(start_index + samples_to_write + 1 <
-            audio_dmp_reader_->number_of_audio_buffers());
+  SB_DCHECK_GE(start_index, 0);
+  SB_DCHECK_GT(samples_to_write, 0);
+  SB_DCHECK_LE(samples_to_write, SbPlayerGetMaximumNumberOfSamplesPerWrite(
+                                     player_, kSbMediaTypeAudio));
+  SB_DCHECK_LT(static_cast<size_t>(start_index + samples_to_write + 1),
+               audio_dmp_reader_->number_of_audio_buffers());
   SB_DCHECK(discarded_duration_from_front == 0 || samples_to_write == 1);
   SB_DCHECK(discarded_duration_from_back == 0 || samples_to_write == 1);
 
@@ -553,15 +550,15 @@ void SbPlayerTestFixture::WriteAudioSamples(
 
 void SbPlayerTestFixture::WriteVideoSamples(int start_index,
                                             int samples_to_write) {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
-  SB_DCHECK(start_index >= 0);
-  SB_DCHECK(samples_to_write > 0);
+  SB_CHECK(thread_checker_.CalledOnValidThread());
+  SB_DCHECK_GE(start_index, 0);
+  SB_DCHECK_GT(samples_to_write, 0);
   SB_DCHECK(SbPlayerIsValid(player_));
-  SB_DCHECK(samples_to_write <= SbPlayerGetMaximumNumberOfSamplesPerWrite(
-                                    player_, kSbMediaTypeVideo));
+  SB_DCHECK_LE(samples_to_write, SbPlayerGetMaximumNumberOfSamplesPerWrite(
+                                     player_, kSbMediaTypeVideo));
   SB_DCHECK(video_dmp_reader_);
-  SB_DCHECK(start_index + samples_to_write <
-            video_dmp_reader_->number_of_video_buffers());
+  SB_DCHECK_LT(static_cast<size_t>(start_index + samples_to_write),
+               video_dmp_reader_->number_of_video_buffers());
 
   CallSbPlayerWriteSamples(player_, kSbMediaTypeVideo, video_dmp_reader_.get(),
                            start_index, samples_to_write);
@@ -569,7 +566,7 @@ void SbPlayerTestFixture::WriteVideoSamples(int start_index,
 }
 
 void SbPlayerTestFixture::WriteEndOfStream(SbMediaType media_type) {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
   SB_DCHECK(SbPlayerIsValid(player_));
 
   if (media_type == kSbMediaTypeAudio) {
@@ -579,7 +576,7 @@ void SbPlayerTestFixture::WriteEndOfStream(SbMediaType media_type) {
     can_accept_more_audio_data_ = false;
     audio_end_of_stream_written_ = true;
   } else {
-    SB_DCHECK(media_type == kSbMediaTypeVideo);
+    SB_DCHECK_EQ(media_type, kSbMediaTypeVideo);
     SB_DCHECK(video_dmp_reader_);
     SB_DCHECK(!video_end_of_stream_written_);
     SbPlayerWriteEndOfStream(player_, kSbMediaTypeVideo);
@@ -589,7 +586,7 @@ void SbPlayerTestFixture::WriteEndOfStream(SbMediaType media_type) {
 }
 
 void SbPlayerTestFixture::WaitAndProcessNextEvent(int64_t timeout) {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
 
   auto event = callback_event_queue_.GetTimed(timeout);
 
@@ -632,12 +629,12 @@ void SbPlayerTestFixture::WaitAndProcessNextEvent(int64_t timeout) {
 }
 
 void SbPlayerTestFixture::WaitForDecoderStateNeedsData(const int64_t timeout) {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
 
   bool old_can_accept_more_audio_data = can_accept_more_audio_data_;
   bool old_can_accept_more_video_data = can_accept_more_video_data_;
 
-  int64_t start = CurrentMonotonicTime();
+  int64_t start = starboard::CurrentMonotonicTime();
   do {
     ASSERT_FALSE(error_occurred_);
     GetDecodeTargetWhenSupported();
@@ -646,17 +643,17 @@ void SbPlayerTestFixture::WaitForDecoderStateNeedsData(const int64_t timeout) {
         old_can_accept_more_video_data != can_accept_more_video_data_) {
       return;
     }
-  } while (CurrentMonotonicTime() - start < timeout);
+  } while (starboard::CurrentMonotonicTime() - start < timeout);
 }
 
 void SbPlayerTestFixture::WaitForPlayerState(const SbPlayerState desired_state,
                                              const int64_t timeout) {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
 
   if (HasReceivedPlayerState(desired_state)) {
     return;
   }
-  int64_t start = CurrentMonotonicTime();
+  int64_t start = starboard::CurrentMonotonicTime();
   do {
     ASSERT_FALSE(error_occurred_);
     ASSERT_NO_FATAL_FAILURE(GetDecodeTargetWhenSupported());
@@ -664,7 +661,7 @@ void SbPlayerTestFixture::WaitForPlayerState(const SbPlayerState desired_state,
     if (HasReceivedPlayerState(desired_state)) {
       return;
     }
-  } while (CurrentMonotonicTime() - start < timeout);
+  } while (starboard::CurrentMonotonicTime() - start < timeout);
 
   FAIL() << "WaitForPlayerState() did not receive expected state.";
 }
@@ -728,4 +725,3 @@ void SbPlayerTestFixture::AssertPlayerStateIsValid(SbPlayerState state) const {
 }
 
 }  // namespace nplb
-}  // namespace starboard

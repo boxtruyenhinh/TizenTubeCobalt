@@ -5,11 +5,24 @@
  * found in the LICENSE file.
  */
 
-#include "modules/skottie/src/effects/Effects.h"
-
-#include "modules/skottie/src/SkottieJson.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
+#include "modules/skottie/src/SkottiePriv.h"
 #include "modules/skottie/src/SkottieValue.h"
+#include "modules/skottie/src/animator/Animator.h"
+#include "modules/skottie/src/effects/Effects.h"
+#include "modules/sksg/include/SkSGRenderNode.h"
 #include "modules/sksg/include/SkSGTransform.h"
+
+#include <array>
+#include <cstddef>
+#include <utility>
+
+namespace skjson {
+class ArrayValue;
+}
 
 namespace skottie::internal {
 
@@ -55,10 +68,10 @@ private:
                                { fUR.x, fUR.y},
                                { fLR.x, fLR.y},
                                { fLL.x, fLL.y}};
-        static_assert(SK_ARRAY_COUNT(src) == SK_ARRAY_COUNT(dst));
+        static_assert(std::size(src) == std::size(dst));
 
         SkMatrix m;
-        if (m.setPolyToPoly(src, dst, SK_ARRAY_COUNT(src))) {
+        if (m.setPolyToPoly(src, dst, std::size(src))) {
             fMatrixNode->setMatrix(m);
         }
     }

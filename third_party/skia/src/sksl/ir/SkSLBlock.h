@@ -8,8 +8,15 @@
 #ifndef SKSL_BLOCK
 #define SKSL_BLOCK
 
-#include "include/private/SkSLStatement.h"
+#include "src/sksl/SkSLDefines.h"
+#include "src/sksl/SkSLPosition.h"
+#include "src/sksl/ir/SkSLIRNode.h"
+#include "src/sksl/ir/SkSLStatement.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
+
+#include <memory>
+#include <string>
+#include <utility>
 
 namespace SkSL {
 
@@ -18,25 +25,48 @@ namespace SkSL {
  */
 class Block final : public Statement {
 public:
-    inline static constexpr Kind kStatementKind = Kind::kBlock;
+    inline static constexpr Kind kIRNodeKind = Kind::kBlock;
 
-    Block(int line, StatementArray statements,
-          const std::shared_ptr<SymbolTable> symbols = nullptr, bool isScope = true)
-    : INHERITED(line, kStatementKind)
-    , fChildren(std::move(statements))
-    , fSymbolTable(std::move(symbols))
-    , fIsScope(isScope) {}
+    // "kBracedScope" represents an actual language-level block. Other kinds of block are used to
+    // pass around multiple statements as if they were a single unit, with no semantic impact.
+    enum class Kind {
+        kUnbracedBlock,      // Represents a group of statements without curly braces.
+        kBracedScope,        // Represents a language-level Block, with curly braces.
+        kCompoundStatement,  // A block which conceptually represents a single statement, such as
+                             // `int a, b;`. (SkSL represents this internally as two statements:
+                             // `int a; int b;`) Allowed to optimize away to its interior Statement.
+                             // Treated as a single statement by the debugger.
+    };
 
-    // Make always makes a real Block object. This is important because many callers rely on Blocks
-    // specifically; e.g. a function body must be a scoped Block, nothing else will do.
-    static std::unique_ptr<Block> Make(int line,
-                                       StatementArray statements,
-                                       std::shared_ptr<SymbolTable> symbols = nullptr,
-                                       bool isScope = true);
+    Block(Position pos,
+          StatementArray statements,
+          Kind kind = Kind::kBracedScope,
+          std::unique_ptr<SymbolTable> symbols = nullptr)
+            : INHERITED(pos, kIRNodeKind)
+            , fSymbolTable(std::move(symbols))
+            , fChildren(std::move(statements))
+            , fBlockKind(kind) {}
 
-    // An unscoped Block is just a collection of Statements. For a single-statement Block,
-    // MakeUnscoped will return the Statement as-is. For an empty Block, MakeUnscoped returns Nop.
-    static std::unique_ptr<Statement> MakeUnscoped(int line, StatementArray statements);
+    // Make is allowed to simplify compound statements. For a single-statement unscoped Block,
+    // Make can return the Statement as-is. For an empty unscoped Block, Make can return Nop.
+    static std::unique_ptr<Statement> Make(Position pos,
+                                           StatementArray statements,
+                                           Kind kind = Kind::kBracedScope,
+                                           std::unique_ptr<SymbolTable> symbols = nullptr);
+
+    // MakeCompoundStatement wraps two Statements into a single compound-statement Block.
+    // If either statement is empty, no Block will be created; the non-empty Statement is returned.
+    // If the first Statement is _already_ a compound-statement Block, the second statement will be
+    // appended to that block.
+    static std::unique_ptr<Statement> MakeCompoundStatement(std::unique_ptr<Statement> existing,
+                                                            std::unique_ptr<Statement> additional);
+
+    // MakeBlock always makes a real Block object. This is important because many callers rely on
+    // Blocks specifically; e.g. a function body must be a scoped Block, nothing else will do.
+    static std::unique_ptr<Block> MakeBlock(Position pos,
+                                            StatementArray statements,
+                                            Kind kind = Kind::kBracedScope,
+                                            std::unique_ptr<SymbolTable> symbols = nullptr);
 
     const StatementArray& children() const {
         return fChildren;
@@ -47,15 +77,19 @@ public:
     }
 
     bool isScope() const {
-        return fIsScope;
+        return fBlockKind == Kind::kBracedScope;
     }
 
-    void setIsScope(bool isScope) {
-        fIsScope = isScope;
+    Kind blockKind() const {
+        return fBlockKind;
     }
 
-    std::shared_ptr<SymbolTable> symbolTable() const {
-        return fSymbolTable;
+    void setBlockKind(Kind kind) {
+        fBlockKind = kind;
+    }
+
+    SymbolTable* symbolTable() const {
+        return fSymbolTable.get();
     }
 
     bool isEmpty() const override {
@@ -67,17 +101,12 @@ public:
         return true;
     }
 
-    std::unique_ptr<Statement> clone() const override;
-
     std::string description() const override;
 
 private:
+    std::unique_ptr<SymbolTable> fSymbolTable;
     StatementArray fChildren;
-    std::shared_ptr<SymbolTable> fSymbolTable;
-    // If isScope is false, this is just a group of statements rather than an actual language-level
-    // block. This allows us to pass around multiple statements as if they were a single unit, with
-    // no semantic impact.
-    bool fIsScope;
+    Kind fBlockKind;
 
     using INHERITED = Statement;
 };

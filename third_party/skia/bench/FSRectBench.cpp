@@ -8,7 +8,7 @@
 #include "bench/Benchmark.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 
 /**
  * Draws full screen opaque rectangles. It is designed to test any optimizations in the GPU backend
@@ -47,11 +47,10 @@ protected:
     }
 
 private:
-    enum {
-        W = 640,
-        H = 480,
-        N = 300,
-    };
+    static constexpr int W = 640;
+    static constexpr int H = 480;
+    static constexpr int N = 300;
+
     SkRect  fRects[N];
     SkColor fColors[N];
     bool fInit;

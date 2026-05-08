@@ -83,10 +83,23 @@ angle::Result VertexArray11::syncState(const gl::Context *context,
     gl::AttributesMask attributesToUpdate;
 
     // Make sure we trigger re-translation for static index or vertex data.
-    for (size_t dirtyBit : dirtyBits)
+    for (auto iter = dirtyBits.begin(), endIter = dirtyBits.end(); iter != endIter; ++iter)
     {
+        size_t dirtyBit = *iter;
         switch (dirtyBit)
         {
+            case gl::VertexArray::DIRTY_BIT_LOST_OBSERVATION:
+            {
+                // If vertex array was not observing while unbound, we need to check buffer's
+                // internal storage and take action if buffer has changed while not observing.
+                // For now we just simply assume buffer storage has changed and always dirty all
+                // binding points.
+                iter.setLaterBits(
+                    gl::VertexArray::DirtyBits(mState.getBufferBindingMask().to_ulong()
+                                               << gl::VertexArray::DIRTY_BIT_BINDING_0));
+                break;
+            }
+
             case gl::VertexArray::DIRTY_BIT_ELEMENT_ARRAY_BUFFER:
             case gl::VertexArray::DIRTY_BIT_ELEMENT_ARRAY_BUFFER_DATA:
             {
@@ -127,21 +140,23 @@ angle::Result VertexArray11::syncStateForDraw(const gl::Context *context,
                                               gl::DrawElementsType indexTypeOrInvalid,
                                               const void *indices,
                                               GLsizei instances,
-                                              GLint baseVertex)
+                                              GLint baseVertex,
+                                              GLuint baseInstance,
+                                              bool promoteDynamic)
 {
     Renderer11 *renderer         = GetImplAs<Context11>(context)->getRenderer();
     StateManager11 *stateManager = renderer->getStateManager();
 
-    const gl::State &glState   = context->getState();
-    const gl::Program *program = glState.getProgram();
-    ASSERT(program);
-    mAppliedNumViewsToDivisor = (program->usesMultiview() ? program->getNumViews() : 1);
+    const gl::State &glState                = context->getState();
+    const gl::ProgramExecutable *executable = glState.getProgramExecutable();
+    ASSERT(executable);
+
+    mAppliedNumViewsToDivisor = executable->usesMultiview() ? executable->getNumViews() : 1;
 
     if (mAttribsToTranslate.any())
     {
-        const gl::AttributesMask &activeLocations =
-            glState.getProgram()->getActiveAttribLocationsMask();
-        gl::AttributesMask activeDirtyAttribs = (mAttribsToTranslate & activeLocations);
+        const gl::AttributesMask &activeLocations = executable->getActiveAttribLocationsMask();
+        gl::AttributesMask activeDirtyAttribs     = (mAttribsToTranslate & activeLocations);
         if (activeDirtyAttribs.any())
         {
             ANGLE_TRY(updateDirtyAttribs(context, activeDirtyAttribs));
@@ -151,15 +166,15 @@ angle::Result VertexArray11::syncStateForDraw(const gl::Context *context,
 
     if (mDynamicAttribsMask.any())
     {
-        const gl::AttributesMask &activeLocations =
-            glState.getProgram()->getActiveAttribLocationsMask();
-        gl::AttributesMask activeDynamicAttribs = (mDynamicAttribsMask & activeLocations);
+        const gl::AttributesMask &activeLocations = executable->getActiveAttribLocationsMask();
+        gl::AttributesMask activeDynamicAttribs   = (mDynamicAttribsMask & activeLocations);
 
         if (activeDynamicAttribs.any())
         {
             ANGLE_TRY(updateDynamicAttribs(context, stateManager->getVertexDataManager(),
                                            firstVertex, vertexOrIndexCount, indexTypeOrInvalid,
-                                           indices, instances, baseVertex, activeDynamicAttribs));
+                                           indices, instances, baseVertex, baseInstance,
+                                           promoteDynamic, activeDynamicAttribs));
             stateManager->invalidateInputLayout();
         }
     }
@@ -235,7 +250,8 @@ void VertexArray11::updateVertexAttribStorage(const gl::Context *context,
 
 bool VertexArray11::hasActiveDynamicAttrib(const gl::Context *context)
 {
-    const auto &activeLocations = context->getState().getProgram()->getActiveAttribLocationsMask();
+    const auto &activeLocations =
+        context->getState().getProgramExecutable()->getActiveAttribLocationsMask();
     gl::AttributesMask activeDynamicAttribs = (mDynamicAttribsMask & activeLocations);
     return activeDynamicAttribs.any();
 }
@@ -249,8 +265,6 @@ angle::Result VertexArray11::updateDirtyAttribs(const gl::Context *context,
 
     for (size_t dirtyAttribIndex : activeDirtyAttribs)
     {
-        mAttribsToTranslate.reset(dirtyAttribIndex);
-
         auto *translatedAttrib   = &mTranslatedAttribs[dirtyAttribIndex];
         const auto &currentValue = glState.getVertexAttribCurrentValue(dirtyAttribIndex);
 
@@ -278,6 +292,9 @@ angle::Result VertexArray11::updateDirtyAttribs(const gl::Context *context,
                 UNREACHABLE();
                 break;
         }
+
+        // Make sure we reset the dirty bit after the switch because STATIC can early exit.
+        mAttribsToTranslate.reset(dirtyAttribIndex);
     }
 
     return angle::Result::Continue;
@@ -291,6 +308,8 @@ angle::Result VertexArray11::updateDynamicAttribs(const gl::Context *context,
                                                   const void *indices,
                                                   GLsizei instances,
                                                   GLint baseVertex,
+                                                  GLuint baseInstance,
+                                                  bool promoteDynamic,
                                                   const gl::AttributesMask &activeDynamicAttribs)
 {
     const auto &glState  = context->getState();
@@ -314,11 +333,15 @@ angle::Result VertexArray11::updateDynamicAttribs(const gl::Context *context,
         dynamicAttrib->divisor = dynamicAttrib->binding->getDivisor() * mAppliedNumViewsToDivisor;
     }
 
-    ANGLE_TRY(vertexDataManager->storeDynamicAttribs(
-        context, &mTranslatedAttribs, activeDynamicAttribs, startVertex, vertexCount, instances));
+    ANGLE_TRY(vertexDataManager->storeDynamicAttribs(context, &mTranslatedAttribs,
+                                                     activeDynamicAttribs, startVertex, vertexCount,
+                                                     instances, baseInstance));
 
-    VertexDataManager::PromoteDynamicAttribs(context, mTranslatedAttribs, activeDynamicAttribs,
-                                             vertexCount);
+    if (promoteDynamic)
+    {
+        VertexDataManager::PromoteDynamicAttribs(context, mTranslatedAttribs, activeDynamicAttribs,
+                                                 vertexCount);
+    }
 
     return angle::Result::Continue;
 }

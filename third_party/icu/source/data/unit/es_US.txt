@@ -4,16 +4,21 @@
 es_US{
     %%Parent{"es_419"}
     units{
+        compound{
+            10p-2{"centí{0}"}
+            10p-27{"ronto {0}"}
+            10p-30{"quecto {0}"}
+        }
         concentr{
-            milligram-per-deciliter{
+            milligram-ofglucose-per-deciliter{
                 dnam{"miligramos por decilitro"}
             }
-        }
-        coordinate{
-            east{"{0} este"}
-            north{"{0} norte"}
-            south{"{0} sur"}
-            west{"{0} oeste"}
+            percent{
+                dnam{"por ciento"}
+            }
+            permille{
+                dnam{"por mil"}
+            }
         }
         electric{
             ampere{
@@ -33,11 +38,6 @@ es_US{
             }
         }
         energy{
-            foodcalorie{
-                dnam{"Calorías"}
-                one{"{0} Caloría"}
-                other{"{0} Calorías"}
-            }
             joule{
                 dnam{"julios"}
                 one{"{0} julio"}
@@ -56,17 +56,15 @@ es_US{
         }
         graphics{
             em{
-                dnam{"espacio eme"}
+                dnam{"em tipográfica"}
+                gender{"feminine"}
+                one{"{0} em"}
+                other{"{0} em"}
             }
             megapixel{
                 dnam{"megapixeles"}
                 one{"{0} megapixel"}
                 other{"{0} megapixeles"}
-            }
-            pixel{
-                dnam{"pixeles"}
-                one{"{0} pixel"}
-                other{"{0} pixeles"}
             }
             pixel-per-centimeter{
                 dnam{"pixeles por centímetro"}
@@ -80,11 +78,6 @@ es_US{
             }
         }
         length{
-            furlong{
-                dnam{"furlones"}
-                one{"{0} furlong"}
-                other{"{0} frulones"}
-            }
             nautical-mile{
                 dnam{"millas naúticas"}
                 one{"{0} milla naútica"}
@@ -95,6 +88,13 @@ es_US{
             horsepower{
                 one{"{0} caballo de fuerza"}
                 other{"{0} caballos de fuerza"}
+            }
+        }
+        speed{
+            beaufort{
+                dnam{"Escala Beaufort"}
+                one{"Escala Beaufort {0}"}
+                other{"Escala Beaufort {0}"}
             }
         }
         temperature{
@@ -131,14 +131,19 @@ es_US{
                 one{"onza fluida imperial"}
                 other{"{0} onzas fluidas imperiales"}
             }
-            jigger{
-                dnam{"jigger"}
-                one{"{0} jigger"}
-                other{"{0} jiggers"}
-            }
         }
     }
     unitsNarrow{
+        angle{
+            arc-minute{
+                one{"{0} arcmin"}
+                other{"{0}′"}
+            }
+            arc-second{
+                one{"{0} arcsec"}
+                other{"{0}″"}
+            }
+        }
         duration{
             day{
                 dnam{"día"}
@@ -154,12 +159,64 @@ es_US{
                 dnam{"a"}
                 one{"{0}a"}
                 other{"{0}a"}
+                per{"{0}/a"}
+            }
+        }
+        energy{
+            therm-us{
+                one{"{0}th US"}
+                other{"{0}th US"}
+            }
+        }
+        length{
+            astronomical-unit{
+                one{"{0}ua"}
+                other{"{0}ua"}
+            }
+            fathom{
+                dnam{"braza"}
+            }
+            furlong{
+                dnam{"furlong"}
+            }
+            kilometer{
+                one{"{0} km"}
+                other{"{0}km"}
+            }
+            mile-scandinavian{
+                dnam{"mil"}
+                one{"{0}mil"}
+                other{"{0}mil"}
+            }
+            millimeter{
+                one{"{0} mm"}
+                other{"{0}mm"}
+            }
+            nautical-mile{
+                dnam{"mn"}
+                one{"{0}mn"}
+                other{"{0}mn"}
+            }
+        }
+        speed{
+            beaufort{
+                dnam{"B"}
             }
         }
         temperature{
             fahrenheit{
                 one{"{0}°"}
                 other{"{0}°"}
+            }
+        }
+        volume{
+            bushel{
+                one{"{0}bsh"}
+                other{"{0}bsh"}
+            }
+            pint-metric{
+                one{"{0}ptm"}
+                other{"{0}ptm"}
             }
         }
     }
@@ -187,9 +244,6 @@ es_US{
                 other{"{0} días"}
                 per{"{0}/d"}
             }
-            minute{
-                dnam{"mins"}
-            }
             month{
                 one{"{0} m"}
                 other{"{0} mm."}
@@ -201,38 +255,24 @@ es_US{
             }
         }
         energy{
-            foodcalorie{
-                dnam{"Cal"}
-                one{"{0} Cal"}
-                other{"{0} Cal"}
-            }
             therm-us{
                 dnam{"th US"}
                 one{"{0} th US"}
                 other{"{0} th US"}
             }
         }
-        graphics{
-            dot{
-                dnam{"pts"}
-                one{"{0} pts"}
-                other{"{0} p"}
-            }
-        }
         length{
-            fathom{
-                dnam{"brz."}
-                one{"{0} brz."}
-                other{"{0} brz."}
-            }
             furlong{
-                dnam{"furlones"}
-                one{"{0} fur."}
-                other{"{0} fur."}
+                dnam{"furlongs"}
             }
             light-year{
                 one{"{0} a. l."}
                 other{"{0} a. l."}
+            }
+            mile-scandinavian{
+                dnam{"mil"}
+                one{"{0} mil"}
+                other{"{0} mil"}
             }
             nautical-mile{
                 dnam{"mn"}
@@ -244,8 +284,12 @@ es_US{
             }
         }
         speed{
+            beaufort{
+                dnam{"Beaufort"}
+                one{"Beaufort {0}"}
+                other{"Beaufort {0}"}
+            }
             knot{
-                dnam{"nudo"}
                 one{"{0} nudo"}
                 other{"{0} nudos"}
             }
@@ -265,13 +309,8 @@ es_US{
             }
             cup{
                 dnam{"tza."}
-                one{"{0} tza."}
+                one{"{0} tzas."}
                 other{"{0} tzas."}
-            }
-            cup-metric{
-                dnam{"Tm"}
-                one{"{0} Tm"}
-                other{"{0} Tm"}
             }
             dessert-spoon{
                 dnam{"cdapostre"}
@@ -287,11 +326,6 @@ es_US{
                 dnam{"fl dracma"}
                 one{"{0} fl dracma"}
                 other{"{0} fl dracmas"}
-            }
-            jigger{
-                dnam{"jigger"}
-                one{"{0} jigger"}
-                other{"{0} jiggers"}
             }
             pint-metric{
                 dnam{"ptm"}

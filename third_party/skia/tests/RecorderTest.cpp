@@ -5,14 +5,22 @@
  * found in the LICENSE file.
  */
 
-#include "tests/Test.h"
-
-#include "include/core/SkPictureRecorder.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkSurface.h"
+#include "include/private/base/SkMalloc.h"
 #include "src/core/SkRecord.h"
-#include "src/core/SkRecorder.h"
+#include "src/core/SkRecordCanvas.h"
 #include "src/core/SkRecords.h"
+#include "tests/Test.h"
 
 #define COUNT(T) + 1
 static const int kRecordTypes = SK_RECORD_TYPES(COUNT);
@@ -41,7 +49,7 @@ private:
 
 DEF_TEST(Recorder, r) {
     SkRecord record;
-    SkRecorder recorder(&record, 1920, 1080);
+    SkRecordCanvas recorder(&record, 1920, 1080);
 
     recorder.drawRect(SkRect::MakeWH(10, 10), SkPaint());
 
@@ -63,7 +71,7 @@ DEF_TEST(Recorder_RefLeaking, r) {
     REPORTER_ASSERT(r, paint.getShader()->unique());
     {
         SkRecord record;
-        SkRecorder recorder(&record, 1920, 1080);
+        SkRecordCanvas recorder(&record, 1920, 1080);
         recorder.saveLayer(&bounds, &paint);
         REPORTER_ASSERT(r, !paint.getShader()->unique());
     }
@@ -74,14 +82,14 @@ DEF_TEST(Recorder_drawImage_takeReference, reporter) {
 
     sk_sp<SkImage> image;
     {
-        auto surface(SkSurface::MakeRasterN32Premul(100, 100));
+        auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(100, 100)));
         surface->getCanvas()->clear(SK_ColorGREEN);
         image = surface->makeImageSnapshot();
     }
 
     {
         SkRecord record;
-        SkRecorder recorder(&record, 100, 100);
+        SkRecordCanvas recorder(&record, 100, 100);
 
         // DrawImage is supposed to take a reference
         recorder.drawImage(image.get(), 0, 0, SkSamplingOptions());
@@ -90,13 +98,13 @@ DEF_TEST(Recorder_drawImage_takeReference, reporter) {
         Tally tally;
         tally.apply(record);
 
-        REPORTER_ASSERT(reporter, 1 == tally.count<SkRecords::DrawImage>());
+        REPORTER_ASSERT(reporter, 1 == tally.count<SkRecords::DrawImageRect>());
     }
     REPORTER_ASSERT(reporter, image->unique());
 
     {
         SkRecord record;
-        SkRecorder recorder(&record, 100, 100);
+        SkRecordCanvas recorder(&record, 100, 100);
 
         // DrawImageRect is supposed to take a reference
         recorder.drawImageRect(image.get(), SkRect::MakeWH(100, 100), SkRect::MakeWH(100, 100),
@@ -116,7 +124,7 @@ DEF_TEST(Recorder_boundsOverflow, reporter) {
     SkRect bigBounds = {SK_ScalarMin, SK_ScalarMin, SK_ScalarMax, SK_ScalarMax};
 
     SkRecord record;
-    SkRecorder recorder(&record, bigBounds);
+    SkRecordCanvas recorder(&record, bigBounds);
     REPORTER_ASSERT(reporter, recorder.imageInfo().width() > 0 &&
                               recorder.imageInfo().height() > 0);
 }

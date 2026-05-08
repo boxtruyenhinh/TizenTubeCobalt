@@ -11,12 +11,9 @@ ii{
         it{"ꑴꄊꆺꉙ"}
         ja{"ꏝꀪꉙ"}
         pt{"ꁍꄨꑸꉙ"}
-        pt_BR{"ꀠꑟꁍꄨꑸꉙ"}
         ru{"ꊉꇩꉙ"}
         und{"ꅉꀋꌠꅇꂷ"}
         zh{"ꍏꇩꉙ"}
-        zh_Hans{"ꈝꐯꍏꇩꉙ"}
-        zh_Hant{"ꀎꋏꍏꇩꉙ"}
     }
     Scripts{
         Arab{"ꀊꇁꀨꁱꂷ"}
@@ -31,7 +28,6 @@ ii{
     Types{
         calendar{
             gregorian{"ꄉꉻꃅꑍ"}
-            islamic{"ꑳꌦꇂꑍꉖ"}
         }
     }
     codePatterns{

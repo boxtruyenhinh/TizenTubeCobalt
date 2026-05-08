@@ -19,14 +19,16 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <numeric>
 #include <queue>
 #include <string>
 
-#include "starboard/common/mutex.h"
+#include "starboard/common/check_op.h"
 #include "starboard/common/time.h"
 #include "starboard/configuration_constants.h"
 #include "starboard/shared/starboard/media/media_support_internal.h"
+#include "starboard/shared/starboard/media/media_util.h"
 #include "starboard/shared/starboard/player/filter/audio_decoder_internal.h"
 #include "starboard/shared/starboard/player/filter/player_components.h"
 #include "starboard/shared/starboard/player/filter/stub_player_components_factory.h"
@@ -38,11 +40,6 @@
 
 // TODO: Implement AudioDecoderMock and refactor the test accordingly.
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
-namespace testing {
 namespace {
 
 using std::deque;
@@ -51,19 +48,8 @@ using std::vector;
 using ::testing::Bool;
 using ::testing::Combine;
 using ::testing::ValuesIn;
-using video_dmp::VideoDmpReader;
 
 const int64_t kWaitForNextEventTimeOut = 5'000'000;  // 5 seconds
-
-scoped_refptr<InputBuffer> GetAudioInputBuffer(VideoDmpReader* dmp_reader,
-                                               size_t index) {
-  SB_DCHECK(dmp_reader);
-
-  auto player_sample_info =
-      dmp_reader->GetPlayerSampleInfo(kSbMediaTypeAudio, index);
-  return new InputBuffer(StubDeallocateSampleFunc, NULL, NULL,
-                         player_sample_info);
-}
 
 class AdaptiveAudioDecoderTest
     : public ::testing::TestWithParam<std::tuple<vector<const char*>, bool>> {
@@ -99,7 +85,7 @@ class AdaptiveAudioDecoderTest
     }
 
     std::unique_ptr<AudioRendererSink> audio_renderer_sink;
-    ASSERT_TRUE(CreateAudioComponents(using_stub_decoder_,
+    ASSERT_TRUE(CreateAudioComponents(using_stub_decoder_, &job_queue_,
                                       dmp_readers_[0]->audio_stream_info(),
                                       &audio_decoder_, &audio_renderer_sink));
     ASSERT_TRUE(audio_decoder_);
@@ -148,7 +134,7 @@ class AdaptiveAudioDecoderTest
     while (CurrentMonotonicTime() - start < kWaitForNextEventTimeOut) {
       job_queue_.RunUntilIdle();
       {
-        ScopedLock scoped_lock(event_queue_mutex_);
+        std::lock_guard lock(event_queue_mutex_);
         if (!event_queue_.empty()) {
           *event = event_queue_.front();
           event_queue_.pop_front();
@@ -203,16 +189,16 @@ class AdaptiveAudioDecoderTest
 
  private:
   void OnOutput() {
-    ScopedLock scoped_lock(event_queue_mutex_);
+    std::lock_guard lock(event_queue_mutex_);
     event_queue_.push_back(kOutput);
   }
   void OnError() {
-    ScopedLock scoped_lock(event_queue_mutex_);
+    std::lock_guard lock(event_queue_mutex_);
     event_queue_.push_back(kError);
   }
 
   void OnConsumed() {
-    ScopedLock scoped_lock(event_queue_mutex_);
+    std::lock_guard lock(event_queue_mutex_);
     event_queue_.push_back(kConsumed);
   }
 
@@ -281,7 +267,7 @@ class AdaptiveAudioDecoderTest
   JobQueue job_queue_;
   std::unique_ptr<AudioDecoder> audio_decoder_;
 
-  Mutex event_queue_mutex_;
+  std::mutex event_queue_mutex_;
   std::deque<Event> event_queue_;
   bool can_accept_more_input_ = true;
 };
@@ -322,7 +308,7 @@ TEST_P(AdaptiveAudioDecoderTest, SingleInput) {
     int64_t input_timestamp = input_buffer->timestamp();
     buffer_index += kBuffersToWrite;
     // Use next buffer here, need to make sure dmp file has enough buffers.
-    SB_DCHECK(dmp_reader->number_of_audio_buffers() > buffer_index);
+    SB_DCHECK_GT(dmp_reader->number_of_audio_buffers(), buffer_index);
     auto next_input_buffer =
         GetAudioInputBuffer(dmp_reader.get(), buffer_index);
     int64_t next_timestamp = next_input_buffer->timestamp();
@@ -356,7 +342,7 @@ TEST_P(AdaptiveAudioDecoderTest, MultipleInput) {
     int64_t input_timestamp = input_buffer->timestamp();
     buffer_index += kBuffersToWrite;
     // Use next buffer here, need to make sure dmp file has enough buffers.
-    SB_DCHECK(dmp_reader->number_of_audio_buffers() > buffer_index);
+    SB_DCHECK_GT(dmp_reader->number_of_audio_buffers(), buffer_index);
     auto next_input_buffer =
         GetAudioInputBuffer(dmp_reader.get(), buffer_index);
     int64_t next_timestamp = next_input_buffer->timestamp();
@@ -416,9 +402,5 @@ INSTANTIATE_TEST_CASE_P(AdaptiveAudioDecoderTests,
                         GetAdaptiveAudioDecoderTestConfigName);
 
 }  // namespace
-}  // namespace testing
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
+
 }  // namespace starboard

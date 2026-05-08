@@ -10,8 +10,16 @@
 
 #include "include/codec/SkCodec.h"
 #include "include/core/SkColor.h"
-#include "include/core/SkImageInfo.h"
+#include "include/core/SkTypes.h"
 #include "src/codec/SkSampler.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+
+struct SkEncodedInfo;
+struct SkIRect;
+struct SkImageInfo;
 
 class SkSwizzler : public SkSampler {
 public:
@@ -19,7 +27,12 @@ public:
      *  Create a new SkSwizzler.
      *  @param encodedInfo Description of the format of the encoded data.
      *  @param ctable Unowned pointer to an array of up to 256 colors for an
-     *                index source.
+     *                index source.  Entries in the table should be already
+     *                1) in the `dstInfo`-requested alpha type (i.e.
+     *                   premultiplied if requested)
+     *                2) in the `dstInfo`-requested RGBA vs BGRA order
+     *                (this requirement can be met by building the entires using
+     *                `SkCodecPriv::ChoosePackColorProc`).
      *  @param dstInfo Describes the destination.
      *  @param options Contains partial scanline information and whether the dst is zero-
      *                 initialized.
@@ -46,8 +59,10 @@ public:
      *                 initialized.
      *  @return A new SkSwizzler or nullptr on failure.
      */
-    static std::unique_ptr<SkSwizzler> MakeSimple(int srcBPP, const SkImageInfo& dstInfo,
-                                                  const SkCodec::Options&);
+    static std::unique_ptr<SkSwizzler> MakeSimple(int srcBPP,
+                                                  const SkImageInfo& dstInfo,
+                                                  const SkCodec::Options&,
+                                                  const SkIRect* frame = nullptr);
 
     /**
      *  Swizzle a line. Generally this will be called height times, once
@@ -219,4 +234,5 @@ private:
     int onSetSampleX(int) override;
 
 };
+
 #endif // SkSwizzler_DEFINED

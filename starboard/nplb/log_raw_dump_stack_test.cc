@@ -16,11 +16,9 @@
 // it compiles and runs without crashing.
 
 #include "starboard/common/log.h"
+#include "starboard/shared/testing/no_inline.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#include "starboard/shared/testing/no_inline.h"
-
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -54,4 +52,3 @@ TEST(SbLogRawDumpStackTest, SunnyDaySkip) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

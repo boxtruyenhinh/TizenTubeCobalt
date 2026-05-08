@@ -7,6 +7,7 @@
 
 #version 450 core
 
+#extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_samplerless_texture_functions : require
 
 #define MAKE_SRC_RESOURCE(prefix, type) prefix ## type
@@ -24,99 +25,46 @@
 #error "Not all source formats are accounted for"
 #endif
 
-#if SrcIsArray
-#define SRC_RESOURCE_NAME texture2DArray
-#else
+#if SrcIs2D
 #define SRC_RESOURCE_NAME texture2D
+#elif SrcIs2DArray
+#define SRC_RESOURCE_NAME texture2DArray
+#elif SrcIs3D
+#define SRC_RESOURCE_NAME texture3D
+#elif SrcIsYUV
+#define SRC_RESOURCE_NAME sampler2D
+#elif SrcIs2DMS
+#define SRC_RESOURCE_NAME texture2DMS
+#else
+#error "Not all source types are accounted for"
 #endif
 
-#if DestIsFloat
-#define DestType vec4
-#elif DestIsSint
-#define DestType ivec4
-#elif DestIsUint
-#define DestType uvec4
+#if DstIsFloat
+#define DstType vec4
+#elif DstIsSint
+#define DstType ivec4
+#elif DstIsUint
+#define DstType uvec4
 #else
 #error "Not all destination formats are accounted for"
 #endif
 
 layout(set = 0, binding = 0) uniform SRC_RESOURCE(SRC_RESOURCE_NAME) src;
-layout(location = 0) out DestType dest;
+layout(location = 0) out DstType dst;
 
-layout(push_constant) uniform PushConstants {
-    // Translation from source to destination coordinates.
-    ivec2 srcOffset;
-    ivec2 destOffset;
-    int srcMip;
-    int srcLayer;
-    // Whether y needs to be flipped
-    bool flipY;
-    // Premultiplied alpha conversions
-    bool premultiplyAlpha;
-    bool unmultiplyAlpha;
-    // Whether destination is emulated luminance/alpha.
-    bool destHasLuminance;
-    bool destIsAlpha;
-    // Bits 0~3 tell whether R,G,B or A exist in destination, but as a result of format emulation.
-    // Bit 0 is ignored, because R is always present.  For B and G, the result is set to 0 and for
-    // A, the result is set to 1.
-    int destDefaultChannelsMask;
-} params;
+#include "ImageCopy.inc"
 
 void main()
 {
-    ivec2 destSubImageCoords = ivec2(gl_FragCoord.xy) - params.destOffset;
+    ivec2 srcSubImageCoords = transformImageCoords(ivec2(gl_FragCoord.xy));
 
-    ivec2 srcSubImageCoords = destSubImageCoords;
-
-    // If flipping Y, srcOffset would contain the opposite y coordinate, so we can
-    // simply reverse the direction in which y grows.
-    if (params.flipY)
-        srcSubImageCoords.y = -srcSubImageCoords.y;
-
-#if SrcIsArray
+#if SrcIs2D
+    SrcType srcValue = texelFetch(src, params.srcOffset + srcSubImageCoords, params.srcMip);
+#elif SrcIs2DArray || SrcIs3D
     SrcType srcValue = texelFetch(src, ivec3(params.srcOffset + srcSubImageCoords, params.srcLayer), params.srcMip);
 #else
-    SrcType srcValue = texelFetch(src, params.srcOffset + srcSubImageCoords, params.srcMip);
+#error "Not all source types are accounted for"
 #endif
 
-    if (params.premultiplyAlpha)
-    {
-        srcValue.rgb *= srcValue.a;
-    }
-    else if (params.unmultiplyAlpha && srcValue.a > 0)
-    {
-        srcValue.rgb /= srcValue.a;
-    }
-
-    // Convert value to destination type.
-    DestType destValue = DestType(srcValue);
-
-    // If dest is luminance/alpha, it's implemented with R or RG.  Do the appropriate swizzle.
-    if (params.destHasLuminance)
-    {
-        destValue.rg = destValue.ra;
-    }
-    else if (params.destIsAlpha)
-    {
-        destValue.r = destValue.a;
-    }
-    else
-    {
-        int defaultChannelsMask = params.destDefaultChannelsMask;
-        if ((defaultChannelsMask & 2) != 0)
-        {
-            destValue.g = 0;
-        }
-        if ((defaultChannelsMask & 4) != 0)
-        {
-            destValue.b = 0;
-        }
-        if ((defaultChannelsMask & 8) != 0)
-        {
-            destValue.a = 1;
-        }
-    }
-
-    dest = destValue;
+    dst = transformSrcValue(srcValue);
 }

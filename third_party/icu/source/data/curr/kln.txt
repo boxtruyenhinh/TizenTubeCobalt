@@ -171,9 +171,13 @@ kln{
             "SHP",
             "Pouditab helena ne tilil",
         }
+        SLE{
+            "SLE",
+            "Leonit",
+        }
         SLL{
             "SLL",
-            "Leonit",
+            "Leonit (1964—2022)",
         }
         SOS{
             "SOS",
@@ -212,7 +216,7 @@ kln{
             "Rabisiekab CFA BEAC",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "Rabisiekab CFA BCEAO",
         }
         ZAR{

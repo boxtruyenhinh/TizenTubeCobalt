@@ -49,11 +49,7 @@ inline PlatformProcessId GetProcessId() {
 #else
 using PlatformProcessId = pid_t;
 inline PlatformProcessId GetProcessId() {
-#if defined(COBALT_PENDING_CLEAN_UP)
-  return 0;
-#else
   return getpid();
-#endif
 }
 #endif
 

@@ -1,63 +1,63 @@
-load("//bazel:macros.bzl", "generated_cc_atom")
+load("//bazel:skia_rules.bzl", "skia_objc_library", "supports_platforms")
 
-generated_cc_atom(
-    name = "SkCGBase_hdr",
-    hdrs = ["SkCGBase.h"],
-    visibility = ["//:__subpackages__"],
-    deps = ["//include/core:SkTypes_hdr"],
+package(
+    default_applicable_licenses = ["//:license"],
 )
 
-generated_cc_atom(
-    name = "SkCGGeometry_hdr",
-    hdrs = ["SkCGGeometry.h"],
-    visibility = ["//:__subpackages__"],
-    deps = ["//include/core:SkTypes_hdr"],
-)
+licenses(["notice"])
 
-generated_cc_atom(
-    name = "SkCTFont_hdr",
-    hdrs = ["SkCTFont.h"],
-    visibility = ["//:__subpackages__"],
-    deps = ["//include/core:SkTypes_hdr"],
-)
-
-generated_cc_atom(
-    name = "SkCTFont_src",
-    srcs = ["SkCTFont.cpp"],
-    visibility = ["//:__subpackages__"],
+skia_objc_library(
+    name = "mac_utils_priv",
+    srcs = [
+        "SkCTFont.cpp",
+        "SkCTFontCreateExactCopy.cpp",
+        "//src/ports:typeface_mac_hdrs",
+    ],
+    hdrs = [
+        "SkCGBase.h",
+        "SkCGGeometry.h",
+        "SkCTFont.h",
+        "SkCTFontCreateExactCopy.h",
+        "SkUniqueCFRef.h",
+        "//include/utils/mac:public_hdrs",
+    ],
+    ios_frameworks = [
+        "CoreFoundation",
+        "CoreGraphics",
+        "CoreText",
+    ],
+    mac_frameworks = [
+        "ApplicationServices",
+    ],
+    visibility = [
+        "//modules/skshaper:__pkg__",
+        "//src/ports:__pkg__",
+    ],
     deps = [
-        ":SkCTFont_hdr",
-        ":SkUniqueCFRef_hdr",
-        "//include/core:SkData_hdr",
-        "//include/core:SkRefCnt_hdr",
-        "//include/core:SkTypes_hdr",
-        "//include/private:SkOnce_hdr",
-        "//src/sfnt:SkOTTable_OS_2_hdr",
-        "//src/sfnt:SkSFNTHeader_hdr",
+        ":mac_utils",
+        "//:core",
+        "//src/base",
     ],
 )
 
-generated_cc_atom(
-    name = "SkCreateCGImageRef_src",
-    srcs = ["SkCreateCGImageRef.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkUniqueCFRef_hdr",
-        "//include/core:SkBitmap_hdr",
-        "//include/core:SkTypes_hdr",
-        "//include/private:SkColorData_hdr",
-        "//include/private:SkMacros_hdr",
-        "//include/private:SkTo_hdr",
-        "//include/utils/mac:SkCGUtils_hdr",
+skia_objc_library(
+    name = "mac_utils",
+    srcs = [
+        "SkCreateCGImageRef.cpp",
+        "SkUniqueCFRef.h",
     ],
-)
-
-generated_cc_atom(
-    name = "SkUniqueCFRef_hdr",
-    hdrs = ["SkUniqueCFRef.h"],
+    hdrs = [
+        "//include/utils/mac:public_hdrs",
+    ],
+    sdk_frameworks = ["CoreFoundation"],
+    target_compatible_with = supports_platforms(
+        "@platforms//os:macos",
+        "@platforms//os:ios",
+    ),
     visibility = ["//:__subpackages__"],
     deps = [
-        "//include/core:SkTypes_hdr",
-        "//include/private:SkTemplates_hdr",
+        "//:core",
+        "//src/base",
+        "//src/encode:icc_encode",
     ],
 )

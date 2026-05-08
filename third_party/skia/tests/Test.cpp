@@ -7,11 +7,13 @@
 
 #include "tests/Test.h"
 
-#include <stdlib.h>
-
 #include "include/core/SkString.h"
-#include "include/core/SkTime.h"
+#include "src/base/SkTime.h"
 #include "tools/flags/CommandLineFlags.h"
+#include "tools/timer/TimeUtils.h"
+
+#include <cstdlib>
+#include <cstring>
 
 static DEFINE_string2(tmpDir, t, nullptr, "Temp directory to use.");
 
@@ -21,12 +23,13 @@ bool skiatest::Reporter::allowExtendedTest() const { return false; }
 
 bool skiatest::Reporter::verbose() const { return false; }
 
+template skiatest::TestRegistry* skiatest::TestRegistry::gHead;
 
 void skiatest::Reporter::reportFailedWithContext(const skiatest::Failure& f) {
     SkString fullMessage = f.message;
     if (!fContextStack.empty()) {
         fullMessage.append(" [");
-        for (int i = 0; i < fContextStack.count(); ++i) {
+        for (int i = 0; i < fContextStack.size(); ++i) {
             if (i > 0) {
                 fullMessage.append(", ");
             }
@@ -78,8 +81,8 @@ double skiatest::Timer::elapsedNs() const {
 
 double skiatest::Timer::elapsedMs() const { return this->elapsedNs() * 1e-6; }
 
-SkMSec skiatest::Timer::elapsedMsInt() const {
+TimeUtils::MSec skiatest::Timer::elapsedMsInt() const {
     const double elapsedMs = this->elapsedMs();
-    SkASSERT(SK_MSecMax >= elapsedMs);
-    return static_cast<SkMSec>(elapsedMs);
+    SkASSERT(TimeUtils::MSecMax >= elapsedMs);
+    return static_cast<TimeUtils::MSec>(elapsedMs);
 }

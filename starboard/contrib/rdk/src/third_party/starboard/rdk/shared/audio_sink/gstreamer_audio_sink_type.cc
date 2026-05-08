@@ -45,8 +45,8 @@
 #include <sys/time.h>
 #include <chrono>
 #include <thread>
+#include <mutex>
 
-#include "starboard/common/mutex.h"
 #include "starboard/configuration.h"
 #include "starboard/file.h"
 #include "starboard/media.h"
@@ -67,7 +67,13 @@ GST_DEBUG_CATEGORY(cobalt_gst_audio_sink_debug);
 
 constexpr int kFramesPerRequest = 1024;
 
-using ::starboard::shared::starboard::media::GetBytesPerSample;
+// Maximum number of audio session that can be opened simultaneously.
+// For RDK this is taken from
+// `kernel-source/common_drivers/drivers/media/avsync/msync.c
+// #define MAX_SESSION_NUM 4
+constexpr int MAX_ALLOWED_SESSION = 4;
+
+using ::starboard::GetBytesPerSample;
 
 class GStreamerAudioSink : public SbAudioSinkPrivate {
  public:
@@ -124,7 +130,7 @@ class GStreamerAudioSink : public SbAudioSinkPrivate {
   int frame_buffers_size_in_frames_{0};
   std::thread audio_loop_thread_;
   void* context_{nullptr};
-  ::starboard::Mutex mutex_;
+  std::mutex mutex_;
   GstElement* pipeline_{nullptr};
   GstElement* appsrc_{nullptr};
   GstElement* queue_{nullptr};
@@ -251,9 +257,9 @@ GStreamerAudioSink::~GStreamerAudioSink() {
   g_source_attach(timeout_src, main_loop_context_);
   g_source_unref(timeout_src);
 
-  mutex_.Acquire();
+  std::unique_lock lock(mutex_);
   destroying_ = true;
-  mutex_.Release();
+  lock.unlock();
 
   // this will wake up apprsc if it is waiting for data
   gst_app_src_set_max_bytes(GST_APP_SRC(appsrc_), 1);
@@ -301,8 +307,10 @@ gboolean GStreamerAudioSink::BusMessageCallback(GstBus* bus,
     case GST_MESSAGE_EOS:
       if (GST_MESSAGE_SRC(message) == GST_OBJECT(sink->pipeline_)) {
         GST_INFO_OBJECT(sink->pipeline_, "EOS");
-        if (sink->destroying_)
+        std::lock_guard lock(sink->mutex_);
+        if (sink->destroying_) {
           g_main_loop_quit(sink->mainloop_);
+        }
       }
       break;
 
@@ -367,7 +375,7 @@ void GStreamerAudioSink::AppSrcNeedData(GstAppSrc* src,
   while (/*!is_eos_reached &&*/ !sink->enough_data_) {
     bool destroying = false;
     {
-      ::starboard::ScopedLock lock(sink->mutex_);
+      std::lock_guard lock(sink->mutex_);
       destroying = sink->destroying_;
     }
 
@@ -498,10 +506,15 @@ SbAudioSink GStreamerAudioSinkType::Create(
     SbAudioSinkPrivate::ConsumeFramesFunc consume_frames_func,
     SbAudioSinkPrivate::ErrorFunc error_func,
     void* context) {
-  return new GStreamerAudioSink(
+  if (instance_count == MAX_ALLOWED_SESSION)
+    return kSbAudioSinkInvalid;
+
+  auto sink = new GStreamerAudioSink(
       this, channels, sampling_frequency_hz, audio_sample_type,
       audio_frame_storage_type, frame_buffers, frame_buffers_size_in_frames,
       update_source_status_func, consume_frames_func, error_func, context);
+  instance_count++;
+  return sink;
 }
 
 }  // namespace audio_sink
@@ -511,18 +524,19 @@ SbAudioSink GStreamerAudioSinkType::Create(
 }  // namespace third_party
 
 using third_party::starboard::rdk::shared::audio_sink::GStreamerAudioSinkType;
+using ::starboard::SbAudioSinkImpl;
 
 // static
-void SbAudioSinkPrivate::PlatformInitialize() {
+void SbAudioSinkImpl::PlatformInitialize() {
   auto* sink_type = GStreamerAudioSinkType::CreateInstance();
-  SetPrimaryType(sink_type);
+  SbAudioSinkImpl::SetPrimaryType(sink_type);
   EnableFallbackToStub();
 }
 
 // static
-void SbAudioSinkPrivate::PlatformTearDown() {
-  auto* sink_type = GetPrimaryType();
-  SetPrimaryType(NULL);
+void SbAudioSinkImpl::PlatformTearDown() {
+  auto* sink_type = SbAudioSinkImpl::GetPrimaryType();
+  SbAudioSinkImpl::SetPrimaryType(NULL);
   GStreamerAudioSinkType::DestroyInstance(
       static_cast<GStreamerAudioSinkType*>(sink_type));
 }

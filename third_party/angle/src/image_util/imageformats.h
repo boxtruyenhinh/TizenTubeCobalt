@@ -70,6 +70,16 @@ struct A8L8
     static void average(A8L8 *dst, const A8L8 *src1, const A8L8 *src2);
 };
 
+struct L4A4
+{
+    uint8_t L : 4;
+    uint8_t A : 4;
+
+    static void readColor(gl::ColorF *dst, const L4A4 *src);
+    static void writeColor(L4A4 *dst, const gl::ColorF *src);
+    static void average(L4A4 *dst, const L4A4 *src1, const L4A4 *src2);
+};
+
 struct R8G8
 {
     uint8_t R;
@@ -195,6 +205,20 @@ struct B8G8R8X8
     static void writeColor(B8G8R8X8 *dst, const gl::ColorF *src);
     static void writeColor(B8G8R8X8 *dst, const gl::ColorUI *src);
     static void average(B8G8R8X8 *dst, const B8G8R8X8 *src1, const B8G8R8X8 *src2);
+};
+
+struct R8G8B8X8
+{
+    uint8_t R;
+    uint8_t G;
+    uint8_t B;
+    uint8_t X;
+
+    static void readColor(gl::ColorF *dst, const R8G8B8X8 *src);
+    static void readColor(gl::ColorUI *dst, const R8G8B8X8 *src);
+    static void writeColor(R8G8B8X8 *dst, const gl::ColorF *src);
+    static void writeColor(R8G8B8X8 *dst, const gl::ColorUI *src);
+    static void average(R8G8B8X8 *dst, const R8G8B8X8 *src1, const R8G8B8X8 *src2);
 };
 
 struct A1R5G5B5
@@ -699,6 +723,42 @@ struct R10G10B10X2
 };
 static_assert(sizeof(R10G10B10X2) == 4, "R10G10B10X2 struct not 32-bits.");
 
+struct B10G10R10A2
+{
+    uint32_t B : 10;
+    uint32_t G : 10;
+    uint32_t R : 10;
+    uint32_t A : 2;
+
+    static void readColor(gl::ColorF *dst, const B10G10R10A2 *src);
+    static void readColor(gl::ColorUI *dst, const B10G10R10A2 *src);
+    static void writeColor(B10G10R10A2 *dst, const gl::ColorF *src);
+    static void writeColor(B10G10R10A2 *dst, const gl::ColorUI *src);
+    static void average(B10G10R10A2 *dst, const B10G10R10A2 *src1, const B10G10R10A2 *src2);
+};
+static_assert(sizeof(B10G10R10A2) == 4, "B10G10R10A2 struct not 32-bits.");
+
+struct R10X6G10X6B10X6A10X6
+{
+    uint16_t R : 10;
+    uint16_t RX : 6;
+    uint16_t G : 10;
+    uint16_t GX : 6;
+    uint16_t B : 10;
+    uint16_t BX : 6;
+    uint16_t A : 10;
+    uint16_t AX : 6;
+
+    static void readColor(gl::ColorF *dst, const R10X6G10X6B10X6A10X6 *src);
+    static void readColor(gl::ColorUI *dst, const R10X6G10X6B10X6A10X6 *src);
+    static void writeColor(R10X6G10X6B10X6A10X6 *dst, const gl::ColorF *src);
+    static void writeColor(R10X6G10X6B10X6A10X6 *dst, const gl::ColorUI *src);
+    static void average(R10X6G10X6B10X6A10X6 *dst,
+                        const R10X6G10X6B10X6A10X6 *src1,
+                        const R10X6G10X6B10X6A10X6 *src2);
+};
+static_assert(sizeof(R10X6G10X6B10X6A10X6) == 8, "R10X6G10X6B10X6A10X6 struct not 64-bits.");
+
 struct R9G9B9E5
 {
     uint32_t R : 9;
@@ -726,8 +786,8 @@ static_assert(sizeof(R11G11B10F) == 4, "R11G11B10F struct not 32-bits.");
 
 struct D24S8
 {
-    uint32_t D : 24;
     uint32_t S : 8;
+    uint32_t D : 24;
 
     static void ReadDepthStencil(DepthStencil *dst, const D24S8 *src);
     static void WriteDepthStencil(D24S8 *dst, const DepthStencil *src);
@@ -751,7 +811,8 @@ struct D16
 
 struct D24X8
 {
-    uint32_t D;
+    uint32_t D : 24;
+    uint32_t X : 8;
 
     static void ReadDepthStencil(DepthStencil *dst, const D24X8 *src);
     static void WriteDepthStencil(D24X8 *dst, const DepthStencil *src);

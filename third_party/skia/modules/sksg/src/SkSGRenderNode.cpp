@@ -7,9 +7,17 @@
 
 #include "modules/sksg/include/SkSGRenderNode.h"
 
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkImageFilter.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/effects/SkImageFilters.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkTo.h"
 #include "modules/sksg/src/SkSGNodePriv.h"
 
 namespace sksg {
@@ -54,7 +62,7 @@ static SkAlpha ScaleAlpha(SkAlpha alpha, float opacity) {
    return SkToU8(sk_float_round2int(alpha * opacity));
 }
 
-static sk_sp<SkShader> LocalShader(const sk_sp<SkShader> shader,
+static sk_sp<SkShader> LocalShader(const sk_sp<SkShader>& shader,
                                    const SkMatrix& base,
                                    const SkMatrix& ctm) {
     // Mask filters / shaders are declared to operate under a specific transform, but due to the
@@ -88,7 +96,7 @@ bool RenderNode::RenderContext::requiresIsolation() const {
     return ScaleAlpha(SK_AlphaOPAQUE, fOpacity) != SK_AlphaOPAQUE
         || fColorFilter
         || fMaskShader
-        || fBlendMode != SkBlendMode::kSrcOver;
+        || fBlender;
 }
 
 void RenderNode::RenderContext::modulatePaint(const SkMatrix& ctm, SkPaint* paint,
@@ -98,8 +106,8 @@ void RenderNode::RenderContext::modulatePaint(const SkMatrix& ctm, SkPaint* pain
     if (fShader) {
         paint->setShader(LocalShader(fShader, fShaderCTM, ctm));
     }
-    if (fBlendMode != SkBlendMode::kSrcOver) {
-        paint->setBlendMode(fBlendMode);
+    if (fBlender) {
+        paint->setBlender(fBlender);
     }
 
     // Only apply the shader mask for regular paints.  Isolation layers require
@@ -177,8 +185,8 @@ RenderNode::ScopedRenderContext::modulateMaskShader(sk_sp<SkShader> ms, const Sk
 }
 
 RenderNode::ScopedRenderContext&&
-RenderNode::ScopedRenderContext::modulateBlendMode(SkBlendMode mode) {
-    fCtx.fBlendMode = mode;
+RenderNode::ScopedRenderContext::modulateBlender(sk_sp<SkBlender> blender) {
+    fCtx.fBlender = std::move(blender);
     return std::move(*this);
 }
 
@@ -198,8 +206,8 @@ RenderNode::ScopedRenderContext::setIsolation(const SkRect& bounds, const SkMatr
         // Reset only the props applied via isolation layers.
         fCtx.fColorFilter = nullptr;
         fCtx.fMaskShader  = nullptr;
+        fCtx.fBlender     = nullptr;
         fCtx.fOpacity     = 1;
-        fCtx.fBlendMode   = SkBlendMode::kSrcOver;
     }
 
     return std::move(*this);
@@ -211,7 +219,12 @@ RenderNode::ScopedRenderContext::setFilterIsolation(const SkRect& bounds, const 
     if (filter) {
         SkPaint layer_paint;
         fCtx.modulatePaint(ctm, &layer_paint);
-
+        // shaders and image filters are not composable, so we convert the shader to an
+        // image filter and blend them together
+        if (layer_paint.getShader()) {
+            filter = SkImageFilters::Blend(SkBlendMode::kSrcIn, std::move(filter),
+            SkImageFilters::Shader(layer_paint.refShader()));
+        }
         SkASSERT(!layer_paint.getImageFilter());
         layer_paint.setImageFilter(std::move(filter));
         fCanvas->saveLayer(bounds, &layer_paint);

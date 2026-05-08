@@ -21,9 +21,6 @@
 #ifndef _PLATFORM_H
 #define _PLATFORM_H
 
-#if defined(STARBOARD)
-#include "starboard/configuration.h"
-#endif
 #include "unicode/uconfig.h"
 #include "unicode/uvernum.h"
 
@@ -150,15 +147,9 @@
 #define U_PF_OS390 9000
 /** "IBM i" is the current name of what used to be i5/OS and earlier OS/400. @internal */
 #define U_PF_OS400 9400
-/* Starboard is an API abstraction used for the Cobalt browser to help ports. */
-// 9864 was chosen to not conflict with other values in platform.h.  The number
-// itself was almost arbitrarily chosen, and it avoids windows and linux ranges.
-#define U_STARBOARD 9864
 
 #ifdef U_PLATFORM
     /* Use the predefined value. */
-#elif defined(STARBOARD)
-#   define U_PLATFORM U_STARBOARD
 #elif defined(__MINGW32__)
 #   define U_PLATFORM U_PF_MINGW
 #elif defined(__CYGWIN__)
@@ -177,7 +168,7 @@
 #   define U_PLATFORM U_PF_LINUX
 #elif defined(__APPLE__) && defined(__MACH__)
 #   include <TargetConditionals.h>
-#   if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE  /* variant of TARGET_OS_MAC */
+#   if (defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE) && (defined(TARGET_OS_MACCATALYST) && !TARGET_OS_MACCATALYST)   /* variant of TARGET_OS_MAC */
 #       define U_PLATFORM U_PF_IPHONE
 #   else
 #       define U_PLATFORM U_PF_DARWIN
@@ -238,8 +229,6 @@
  */
 #ifdef U_PLATFORM_USES_ONLY_WIN32_API
     /* Use the predefined value. */
-#elif defined(__LB_XB1__)
-#   define U_PLATFORM_USES_ONLY_WIN32_API 1
 #elif (U_PF_WINDOWS <= U_PLATFORM && U_PLATFORM <= U_PF_MINGW) || defined(CYGWINMSVC)
 #   define U_PLATFORM_USES_ONLY_WIN32_API 1
 #else
@@ -281,8 +270,6 @@
  */
 #ifdef U_PLATFORM_IMPLEMENTS_POSIX
     /* Use the predefined value. */
-#elif U_PLATFORM == U_STARBOARD
-#   define U_PLATFORM_IMPLEMENTS_POSIX 0
 #elif U_PLATFORM_USES_ONLY_WIN32_API
 #   define U_PLATFORM_IMPLEMENTS_POSIX 0
 #else
@@ -385,14 +372,6 @@
  * Determines the endianness of the platform.
  * @internal
  */
-#if defined(STARBOARD)
-#  if SB_IS(BIG_ENDIAN)
-#    define U_IS_BIG_ENDIAN 1
-#  else
-#    define U_IS_BIG_ENDIAN 0
-#  endif
-#endif
-
 #ifdef U_IS_BIG_ENDIAN
     /* Use the predefined value. */
 #elif defined(BYTE_ORDER) && defined(BIG_ENDIAN)
@@ -424,8 +403,6 @@
  */
 #ifdef U_HAVE_PLACEMENT_NEW
     /* Use the predefined value. */
-#elif U_PLATFORM == U_STARBOARD
-#   define U_HAVE_PLACEMENT_NEW 0
 #elif defined(__BORLANDC__)
 #   define U_HAVE_PLACEMENT_NEW 0
 #else
@@ -483,6 +460,13 @@
 #   define UPRV_HAS_WARNING(x) 0
 #endif
 
+
+#if defined(__clang__)
+#define UPRV_NO_SANITIZE_UNDEFINED __attribute__((no_sanitize("undefined")))
+#else
+#define UPRV_NO_SANITIZE_UNDEFINED
+#endif
+
 /**
  * \def U_MALLOC_ATTR
  * Attribute to mark functions as malloc-like
@@ -530,26 +514,6 @@
 #else
     // C++98 or C++03
 #   define U_CPLUSPLUS_VERSION 1
-#endif
-
-#if (U_PLATFORM == U_PF_AIX || U_PLATFORM == U_PF_OS390) && defined(__cplusplus) &&(U_CPLUSPLUS_VERSION < 11)
-// add in std::nullptr_t
-namespace std {
-  typedef decltype(nullptr) nullptr_t;
-};
-#endif
-
-/**
- * \def U_NOEXCEPT
- * "noexcept" if supported, otherwise empty.
- * Some code, especially STL containers, uses move semantics of objects only
- * if the move constructor and the move operator are declared as not throwing exceptions.
- * @internal
- */
-#ifdef U_NOEXCEPT
-    /* Use the predefined value. */
-#else
-#   define U_NOEXCEPT noexcept
 #endif
 
 /**
@@ -691,8 +655,6 @@ namespace std {
  */
 #ifdef U_HAVE_WCHAR_H
     /* Use the predefined value. */
-#elif U_PLATFORM == U_STARBOARD
-#    define U_HAVE_WCHAR_H      0
 #elif U_PLATFORM == U_PF_ANDROID && __ANDROID_API__ < 9
     /*
      * Android before Gingerbread (Android 2.3, API level 9) did not support wchar_t.
@@ -712,14 +674,6 @@ namespace std {
  */
 #ifdef U_SIZEOF_WCHAR_T
     /* Use the predefined value. */
-#elif (U_PLATFORM == U_STARBOARD)
-#  if SB_IS(WCHAR_T_UTF16)
-#    define U_SIZEOF_WCHAR_T    2
-#  elif SB_IS(WCHAR_T_UTF32)
-#    define U_SIZEOF_WCHAR_T    4
-#  else
-#    error "Starboard: Unknown size of wchar_t."
-#  endif
 #elif (U_PLATFORM == U_PF_ANDROID && __ANDROID_API__ < 9)
     /*
      * Classic Mac OS and Mac OS X before 10.3 (Panther) did not support wchar_t or wstring.
@@ -790,7 +744,7 @@ namespace std {
  * \def U_HAVE_CHAR16_T
  * Defines whether the char16_t type is available for UTF-16
  * and u"abc" UTF-16 string literals are supported.
- * This is a new standard type and standard string literal syntax in C++0x
+ * This is a new standard type and standard string literal syntax in C++11
  * but has been available in some compilers before.
  * @internal
  */
@@ -799,12 +753,6 @@ namespace std {
 #else
     /*
      * Notes:
-     * Visual Studio 2010 (_MSC_VER==1600) defines char16_t as a typedef
-     * and does not support u"abc" string literals.
-     * Visual Studio 2015 (_MSC_VER>=1900) and above adds support for
-     * both char16_t and u"abc" string literals.
-     * gcc 4.4 defines the __CHAR16_TYPE__ macro to a usable type but
-     * does not support u"abc" string literals.
      * C++11 and C11 require support for UTF-16 literals
      * TODO: Fix for plain C. Doesn't work on Mac.
      */
@@ -824,8 +772,6 @@ namespace std {
  */
 #ifdef U_DECLARE_UTF16
     /* Use the predefined value. */
-#elif defined(__LB_XB1__)
-#define U_DECLARE_UTF16(string) L ## string
 #elif U_HAVE_CHAR16_T \
     || (defined(__xlC__) && defined(__IBM_UTF_LITERAL) && U_SIZEOF_WCHAR_T != 2) \
     || (defined(__HP_aCC) && __HP_aCC >= 035000) \
@@ -845,20 +791,12 @@ namespace std {
 /** @{ Symbol import-export control                                          */
 /*===========================================================================*/
 
-#ifndef U_STATIC_IMPLEMENTATION
-#ifdef STARBOARD
-#error "We should use static build for now."
-#endif
-#endif
-
 #ifdef U_EXPORT
     /* Use the predefined value. */
 #elif defined(U_STATIC_IMPLEMENTATION)
 #   define U_EXPORT
-#elif defined(STARBOARD)
-#   define U_EXPORT SB_EXPORT_PLATFORM
-#elif defined(_MSC_VER) || (UPRV_HAS_DECLSPEC_ATTRIBUTE(dllexport) && \
-                            UPRV_HAS_DECLSPEC_ATTRIBUTE(dllimport))
+#elif defined(_MSC_VER) || (UPRV_HAS_DECLSPEC_ATTRIBUTE(__dllexport__) && \
+                            UPRV_HAS_DECLSPEC_ATTRIBUTE(__dllimport__))
 #   define U_EXPORT __declspec(dllexport)
 #elif defined(__GNUC__)
 #   define U_EXPORT __attribute__((visibility("default")))
@@ -882,14 +820,27 @@ namespace std {
 
 #ifdef U_IMPORT
     /* Use the predefined value. */
-#elif U_PLATFORM == U_STARBOARD
-#   define U_IMPORT SB_IMPORT_PLATFORM
-#elif defined(_MSC_VER) || (UPRV_HAS_DECLSPEC_ATTRIBUTE(dllexport) && \
-                            UPRV_HAS_DECLSPEC_ATTRIBUTE(dllimport))
+#elif defined(_MSC_VER) || (UPRV_HAS_DECLSPEC_ATTRIBUTE(__dllexport__) && \
+                            UPRV_HAS_DECLSPEC_ATTRIBUTE(__dllimport__))
     /* Windows needs to export/import data. */
 #   define U_IMPORT __declspec(dllimport)
 #else
 #   define U_IMPORT 
+#endif
+
+/**
+ * \def U_HIDDEN
+ * This is used to mark internal structs declared within external classes,
+ * to prevent the internal structs from having the same visibility as the
+ * class within which they are declared. 
+ * @internal
+ */
+#ifdef U_HIDDEN
+    /* Use the predefined value. */
+#elif defined(__GNUC__)
+#   define U_HIDDEN __attribute__((visibility("hidden")))
+#else
+#   define U_HIDDEN 
 #endif
 
 /**
@@ -925,6 +876,6 @@ namespace std {
 #else
 #    define U_CALLCONV_FPTR
 #endif
-/* @} */
+/** @} */
 
 #endif  // _PLATFORM_H

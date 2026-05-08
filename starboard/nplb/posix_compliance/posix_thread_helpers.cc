@@ -16,15 +16,12 @@
 
 #include <unistd.h>
 
-#include "starboard/common/condition_variable.h"
-#include "starboard/common/mutex.h"
+#include <cstddef>
+
 #include "starboard/thread.h"
-#include "starboard/types.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
-namespace posix {
 
 void DoNotYield() {
   // Nope.
@@ -89,6 +86,4 @@ void WaiterContext::WaitForReturnSignal() {
   EXPECT_EQ(pthread_mutex_unlock(&mutex), 0);
 }
 
-}  // namespace posix
 }  // namespace nplb
-}  // namespace starboard

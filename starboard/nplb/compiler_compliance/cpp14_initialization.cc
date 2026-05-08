@@ -13,10 +13,7 @@
 // limitations under the License.
 
 #include <vector>
-#include "starboard/configuration.h"
-#include "starboard/types.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -39,4 +36,3 @@ static constexpr CheckInitializerTag kEmptyTag;
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

@@ -5,19 +5,44 @@
  * found in the LICENSE file.
  */
 
-#include "modules/skottie/src/effects/Effects.h"
-
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkShader.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkTileMode.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTo.h"
 #include "modules/skottie/src/Adapter.h"
+#include "modules/skottie/src/SkottiePriv.h"
 #include "modules/skottie/src/SkottieValue.h"
+#include "modules/skottie/src/effects/Effects.h"
+#include "modules/sksg/include/SkSGNode.h"
 #include "modules/sksg/include/SkSGRenderNode.h"
-#include "src/utils/SkJSON.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <utility>
+#include <vector>
+
+namespace skjson {
+class ArrayValue;
+}
+namespace sksg {
+class InvalidationController;
+}
 
 namespace skottie {
 namespace internal {
@@ -93,8 +118,7 @@ protected:
             const auto phase_vec = fHorizontalPhase
                     ? SkVector::Make(tile.width(), 0)
                     : SkVector::Make(0, tile.height());
-            const auto phase_shift = SkVector::Make(phase_vec.fX / layerShaderMatrix.getScaleX(),
-                                                    phase_vec.fY / layerShaderMatrix.getScaleY())
+            const auto phase_shift = SkVector::Make(phase_vec.fX, phase_vec.fY)
                                      * std::fmod(fPhase * (1/360.0f), 1);
             const auto phase_shader_matrix = SkMatrix::Translate(phase_shift.x(), phase_shift.y());
 
@@ -108,7 +132,7 @@ protected:
                                      tile.y() + 2 * (tile.height() - phase_vec.fY) }};
 
             auto mask_shader = SkGradientShader::MakeLinear(pts, colors, pos,
-                                                            SK_ARRAY_COUNT(colors),
+                                                            std::size(colors),
                                                             SkTileMode::kRepeat);
 
             // First drawing pass: in-place masked layer content.

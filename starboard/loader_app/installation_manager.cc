@@ -19,28 +19,26 @@
 #include <unistd.h>
 
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "starboard/common/file.h"
 #include "starboard/common/log.h"
-#include "starboard/common/mutex.h"
 #include "starboard/common/string.h"
 #include "starboard/configuration_constants.h"
-#include "starboard/directory.h"
 #include "starboard/extension/loader_app_metrics.h"
+#include "starboard/file.h"
 #include "starboard/loader_app/installation_store.pb.h"
 #if !SB_IS(EVERGREEN_COMPATIBLE_LITE)
 #include "starboard/loader_app/pending_restart.h"  // nogncheck
 #endif  // !SB_IS(EVERGREEN_COMPATIBLE_LITE)
+#include "starboard/common/check_op.h"
 #include "starboard/common/once.h"
 #include "starboard/loader_app/record_loader_app_status.h"
-#include "starboard/string.h"
 
-namespace starboard {
 namespace loader_app {
-namespace installation_manager {
 
 class InstallationManager {
  public:
@@ -106,7 +104,7 @@ InstallationManager::InstallationManager(int max_num_installations,
       max_num_installations_(max_num_installations),
       lowest_priority_(max_num_installations_ - 1),
       highest_priority_(0) {
-  SB_CHECK(max_num_installations_ >= 2);
+  SB_CHECK_GE(max_num_installations_, 2);
   SB_CHECK(!app_key.empty());
   SB_LOG(INFO) << "InstallationManager: app_key=" << app_key_;
 }
@@ -654,7 +652,7 @@ void InstallationManager::ValidatePriorities() {
   for (int i = 0; i < max_num_installations_; i++) {
     SB_DCHECK(priorities.find(i) != priorities.end());
   }
-  SB_DCHECK(priorities.size() == max_num_installations_);
+  SB_DCHECK_EQ(priorities.size(), static_cast<size_t>(max_num_installations_));
 }
 
 bool InstallationManager::LoadInstallationStore() {
@@ -734,119 +732,114 @@ bool InstallationManager::CleanInstallationDirs() {
     if (!GetInstallationPathInternal(i, path.data(), kSbFileMaxPath)) {
       return false;
     }
-    if (!SbFileDeleteRecursive(path.data(), true)) {
+    if (!starboard::SbFileDeleteRecursive(path.data(), true)) {
       return false;
     }
   }
   return true;
 }
 
-}  // namespace installation_manager
 }  // namespace loader_app
-}  // namespace starboard
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-std::unique_ptr<
-    starboard::loader_app::installation_manager::InstallationManager>
-    g_installation_manager_;
+std::unique_ptr<loader_app::InstallationManager> g_installation_manager_;
 
 // Global Installation Manager Mutex.
-SB_ONCE_INITIALIZE_FUNCTION(starboard::Mutex, GetImMutex);
+SB_ONCE_INITIALIZE_FUNCTION(std::mutex, GetImMutex)
 
 int ImInitialize(int max_num_installations, const char* app_key) {
-  starboard::ScopedLock lock(*GetImMutex());
-  if (g_installation_manager_.get() == NULL) {
-    g_installation_manager_.reset(
-        new starboard::loader_app::installation_manager::InstallationManager(
-            max_num_installations, app_key));
+  std::lock_guard lock(*GetImMutex());
+  if (g_installation_manager_ == nullptr) {
+    g_installation_manager_ = std::make_unique<loader_app::InstallationManager>(
+        max_num_installations, app_key);
   }
   return g_installation_manager_->Initialize();
 }
 
 int ImGetAppKey(char* app_key, int app_key_length) {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   return g_installation_manager_->GetAppKey(app_key, app_key_length);
 }
 
 int ImGetMaxNumberInstallations() {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   return g_installation_manager_->GetMaxNumberInstallations();
 }
 
 void ImUninitialize() {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   g_installation_manager_.reset(NULL);
 }
 
 int ImReset() {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   return g_installation_manager_->Reset();
 }
 
 int ImGetInstallationStatus(int installation_index) {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   return g_installation_manager_->GetInstallationStatus(installation_index);
 }
 
 int ImGetInstallationNumTriesLeft(int installation_index) {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   return g_installation_manager_->GetInstallationNumTriesLeft(
       installation_index);
 }
 
 int ImDecrementInstallationNumTries(int installation_index) {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   return g_installation_manager_->DecrementInstallationNumTries(
       installation_index);
 }
 
 int ImGetCurrentInstallationIndex() {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   return g_installation_manager_->GetCurrentInstallationIndex();
 }
 
 int ImResetInstallation(int installation_index) {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   return g_installation_manager_->ResetInstallation(installation_index);
 }
 
 int ImSelectNewInstallationIndex() {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   return g_installation_manager_->SelectNewInstallationIndex();
 }
 
 int ImGetInstallationPath(int installation_index, char* path, int path_length) {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   return g_installation_manager_->GetInstallationPath(installation_index, path,
                                                       path_length);
 }
 
 int ImMarkInstallationSuccessful(int installation_index) {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   return g_installation_manager_->MarkInstallationSuccessful(
       installation_index);
 }
 
 int ImRollForwardIfNeeded() {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   return g_installation_manager_->RollForwardIfNeeded();
 }
 
 int ImRollForward(int installation_index) {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   return g_installation_manager_->RollForward(installation_index);
 }
 
 int ImRevertToSuccessfulInstallation(SlotSelectionStatus status) {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   return g_installation_manager_->RevertToSuccessfulInstallation(status);
 }
 
 int ImRequestRollForwardToInstallation(int installation_index) {
-  starboard::ScopedLock lock(*GetImMutex());
+  std::lock_guard lock(*GetImMutex());
   return g_installation_manager_->RequestRollForwardToInstallation(
       installation_index);
 }

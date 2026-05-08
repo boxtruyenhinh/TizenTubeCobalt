@@ -12,21 +12,69 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "build/build_config.h"
 #include "starboard/client_porting/wrap_main/wrap_main.h"
+#include "starboard/configuration.h"
 #include "starboard/event.h"
 #include "starboard/system.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+#if BUILDFLAG(IS_IOS_TVOS)
+#include "base/command_line.h"     // nogncheck
+#include "base/functional/bind.h"  // nogncheck
+#include "base/test/test_support_ios.h"
+#include "starboard/tvos/shared/starboard_test_environment.h"
+#endif  // BUILDFLAG(IS_IOS_TVOS)
+
+#if BUILDFLAG(IS_ANDROID)
+#include "starboard/android/shared/starboard_test_environment.h"
+#endif  // BUILDFLAG(IS_ANDROID)
+
 namespace {
+
+int RunTests(int argc, char** argv) {
+#if BUILDFLAG(IS_ANDROID)
+  ::testing::AddGlobalTestEnvironment(
+      new starboard::StarboardTestEnvironment());
+#elif BUILDFLAG(IS_IOS_TVOS)
+  ::testing::AddGlobalTestEnvironment(
+      new starboard::StarboardTestEnvironment(argc, argv));
+#endif  // BUILDFLAG(IS_ANDROID)
+
+  return RUN_ALL_TESTS();
+}
+
 int InitAndRunAllTests(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+#if BUILDFLAG(IS_IOS_TVOS)
+  // tvOS tests need to invoke UIApplicationMain() to set up the main loop and
+  // the rest of the expected infrastructure. Invoke InitAndRunAllTests() via
+  // the code in //base/test that takes care of all the initial iOS/tvOS setup.
+  //
+  // This code is based on //base/test/launcher/unit_test_launcher_ios.cc.
+  CHECK(base::CommandLine::InitializedForCurrentProcess() ||
+        base::CommandLine::Init(argc, argv));
+  base::InitIOSRunHook(base::BindOnce(&RunTests, argc, argv));
+  return base::RunTestsFromIOSApp();
+#else   // BUILDFLAG(IS_IOS_TVOS)
+  return RunTests(argc, argv);
+#endif  // BUILDFLAG(IS_IOS_TVOS)
 }
 }  // namespace
 
-// When we are building Evergreen we need to export SbEventHandle so that the
-// ELF loader can find and invoke it.
-#if SB_IS(MODULAR)
-SB_EXPORT
-#endif  // SB_IS(MODULAR)
-STARBOARD_WRAP_SIMPLE_MAIN(InitAndRunAllTests);
+#if BUILDFLAG(IS_STARBOARD)
+// For the Starboard OS define SbEventHandle as the entry point
+SB_EXPORT STARBOARD_WRAP_SIMPLE_MAIN(InitAndRunAllTests)
+
+#if !SB_IS(EVERGREEN)
+// Define main() for non-Evergreen Starboard OS.
+int main(int argc, char** argv) {
+  return SbRunStarboardMain(argc, argv, SbEventHandle);
+}
+#endif  // !SB_IS(EVERGREEN)
+#else   // BUILDFLAG(IS_STARBOARD)
+// If the OS is not Starboard use the regular main e.g. ATV.
+int main(int argc, char** argv) {
+  return InitAndRunAllTests(argc, argv);
+}
+#endif  // BUILDFLAG(IS_STARBOARD)

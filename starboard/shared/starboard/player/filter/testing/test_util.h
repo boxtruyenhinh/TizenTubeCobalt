@@ -31,11 +31,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
-namespace testing {
+
+class JobQueue;
 
 typedef std::tuple<const char*, SbPlayerOutputMode> VideoTestParam;
 
@@ -59,31 +56,26 @@ std::vector<VideoTestParam> GetSupportedVideoTests();
 
 bool CreateAudioComponents(
     bool using_stub_decoder,
-    const media::AudioStreamInfo& audio_stream_info,
+    JobQueue* job_queue,
+    const AudioStreamInfo& audio_stream_info,
     std::unique_ptr<AudioDecoder>* audio_decoder,
     std::unique_ptr<AudioRendererSink>* audio_renderer_sink);
 
 ::testing::AssertionResult AlmostEqualTime(int64_t time1, int64_t time2);
 
-media::VideoStreamInfo CreateVideoStreamInfo(SbMediaVideoCodec codec);
+VideoStreamInfo CreateVideoStreamInfo(SbMediaVideoCodec codec);
 
 bool IsPartialAudioSupported();
 
-scoped_refptr<InputBuffer> GetAudioInputBuffer(
-    video_dmp::VideoDmpReader* dmp_reader,
-    size_t index);
+scoped_refptr<InputBuffer> GetAudioInputBuffer(VideoDmpReader* dmp_reader,
+                                               size_t index);
 
 scoped_refptr<InputBuffer> GetAudioInputBuffer(
-    video_dmp::VideoDmpReader* dmp_reader,
+    VideoDmpReader* dmp_reader,
     size_t index,
     int64_t discarded_duration_from_front,
     int64_t discarded_duration_from_back);
 
-}  // namespace testing
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_TESTING_TEST_UTIL_H_

@@ -87,7 +87,7 @@ GLsizeiptr TransformFeedbackState::getPrimitivesDrawn() const
 TransformFeedback::TransformFeedback(rx::GLImplFactory *implFactory,
                                      TransformFeedbackID id,
                                      const Caps &caps)
-    : RefCountObject(id),
+    : RefCountObject(implFactory->generateSerial(), id),
       mState(caps.maxTransformFeedbackSeparateAttributes),
       mImplementation(implFactory->createTransformFeedback(mState))
 {
@@ -108,6 +108,11 @@ void TransformFeedback::onDestroy(const Context *context)
     {
         mState.mIndexedBuffers[i].set(context, nullptr, 0, 0);
     }
+
+    if (mImplementation)
+    {
+        mImplementation->onDestroy(context);
+    }
 }
 
 TransformFeedback::~TransformFeedback()
@@ -115,9 +120,15 @@ TransformFeedback::~TransformFeedback()
     SafeDelete(mImplementation);
 }
 
-void TransformFeedback::setLabel(const Context *context, const std::string &label)
+angle::Result TransformFeedback::setLabel(const Context *context, const std::string &label)
 {
     mState.mLabel = label;
+
+    if (mImplementation)
+    {
+        return mImplementation->onLabelUpdate(context);
+    }
+    return angle::Result::Continue;
 }
 
 const std::string &TransformFeedback::getLabel() const
@@ -129,6 +140,9 @@ angle::Result TransformFeedback::begin(const Context *context,
                                        PrimitiveMode primitiveMode,
                                        Program *program)
 {
+    // TODO: http://anglebug.com/42264023: This method should take in as parameter a
+    // ProgramExecutable instead of a Program.
+
     ANGLE_TRY(mImplementation->begin(context, primitiveMode));
     mState.mActive        = true;
     mState.mPrimitiveMode = primitiveMode;
@@ -136,10 +150,14 @@ angle::Result TransformFeedback::begin(const Context *context,
     mState.mVerticesDrawn = 0;
     bindProgram(context, program);
 
-    if (program)
+    // In one of the angle_unittests - "TransformFeedbackTest.SideEffectsOfStartAndStop"
+    // there is a code path where <context> is a nullptr, account for that possiblity.
+    const ProgramExecutable *programExecutable =
+        context ? context->getState().getLinkedProgramExecutable(context) : nullptr;
+    if (programExecutable)
     {
         // Compute the number of vertices we can draw before overflowing the bound buffers.
-        auto strides = program->getTransformFeedbackStrides();
+        auto strides = programExecutable->getTransformFeedbackStrides();
         ASSERT(strides.size() <= mState.mIndexedBuffers.size() && !strides.empty());
         GLsizeiptr minCapacity = std::numeric_limits<GLsizeiptr>::max();
         for (size_t index = 0; index < strides.size(); index++)
@@ -216,7 +234,7 @@ void TransformFeedback::onVerticesDrawn(const Context *context, GLsizei count, G
     {
         if (buffer.get() != nullptr)
         {
-            buffer->onDataChanged();
+            buffer->onDataChanged(context);
         }
     }
 }
@@ -294,11 +312,11 @@ size_t TransformFeedback::getIndexedBufferCount() const
     return mState.mIndexedBuffers.size();
 }
 
-bool TransformFeedback::buffersBoundForOtherUse() const
+bool TransformFeedback::buffersBoundForOtherUseInWebGL() const
 {
     for (auto &buffer : mState.mIndexedBuffers)
     {
-        if (buffer.get() && buffer->isBoundForTransformFeedbackAndOtherUse())
+        if (buffer.get() && buffer->hasWebGLXFBBindingConflict(true))
         {
             return true;
         }
@@ -306,9 +324,16 @@ bool TransformFeedback::buffersBoundForOtherUse() const
     return false;
 }
 
-rx::TransformFeedbackImpl *TransformFeedback::getImplementation() const
+bool TransformFeedback::isBufferBound(BufferID bufferID) const
 {
-    return mImplementation;
+    for (const auto &buffer : mState.mIndexedBuffers)
+    {
+        if (buffer.id() == bufferID)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 void TransformFeedback::onBindingChanged(const Context *context, bool bound)
@@ -320,5 +345,10 @@ void TransformFeedback::onBindingChanged(const Context *context, bool bound)
             buffer->onTFBindingChanged(context, bound, true);
         }
     }
+}
+
+const std::vector<OffsetBindingPointer<Buffer>> &TransformFeedback::getIndexedBuffers() const
+{
+    return mState.mIndexedBuffers;
 }
 }  // namespace gl

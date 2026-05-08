@@ -12,14 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "starboard/loader_app/app_key_internal.h"
-
 #include <string>
 
-#include "starboard/string.h"
+#include "starboard/loader_app/app_key_internal.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace loader_app {
 
 typedef struct URLWithExtractedAndEncoded {
@@ -687,4 +684,3 @@ TEST(AppKeyTest, SunnyDayExtractAppKeySanitizesResult) {
 }
 
 }  // namespace loader_app
-}  // namespace starboard

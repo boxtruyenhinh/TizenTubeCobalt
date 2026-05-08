@@ -18,10 +18,9 @@
 
 #include "starboard/common/log.h"
 #include "starboard/common/string.h"
+#include "starboard/configuration_constants.h"
 #include "starboard/elf_loader/evergreen_info.h"
 #include "starboard/elf_loader/log.h"
-#include "starboard/memory.h"
-#include "starboard/string.h"
 
 #define MAYBE_MAP_FLAG(x, from, to) (((x) & (from)) ? (to) : 0)
 
@@ -30,7 +29,6 @@
    MAYBE_MAP_FLAG((x), PF_R, PROT_READ) | \
    MAYBE_MAP_FLAG((x), PF_W, PROT_WRITE))
 
-namespace starboard {
 namespace elf_loader {
 
 ProgramTable::ProgramTable(
@@ -43,15 +41,8 @@ ProgramTable::ProgramTable(
       load_size_(0),
       base_memory_address_(0),
       memory_mapped_file_extension_(memory_mapped_file_extension) {
-#if SB_API_VERSION >= 16
   SB_CHECK(kSbCanMapExecutableMemory)
       << "This module requires executable memory support!";
-#else
-#if !SB_CAN(MAP_EXECUTABLE_MEMORY)
-  SB_CHECK(false) << "This module requires "
-                     "executable memory map support!";
-#endif
-#endif
 }
 
 bool ProgramTable::LoadProgramHeader(const Ehdr* elf_header, File* elf_file) {
@@ -121,6 +112,8 @@ bool ProgramTable::LoadProgramHeader(const Ehdr* elf_header, File* elf_file) {
     }
   }
 
+  // TODO: b/413107644 - Add more compile-time checks to elf_loader casts and
+  // pointer conversions.
   phdr_table_ = reinterpret_cast<Phdr*>(reinterpret_cast<char*>(phdr_mmap_) +
                                         page_offset);
   SB_DLOG(INFO) << "phdr_table_=" << phdr_table_;
@@ -133,8 +126,9 @@ static bool ElfClassBuildIDNoteIdentifier(const void* section,
   const void* section_end = reinterpret_cast<const char*>(section) + length;
   const Nhdr* note_header = reinterpret_cast<const Nhdr*>(section);
   while (reinterpret_cast<const void*>(note_header) < section_end) {
-    if (note_header->n_type == NT_GNU_BUILD_ID)
+    if (note_header->n_type == NT_GNU_BUILD_ID) {
       break;
+    }
     note_header = reinterpret_cast<const Nhdr*>(
         reinterpret_cast<const char*>(note_header) + sizeof(Nhdr) +
         NOTE_PADDING(note_header->n_namesz) +
@@ -189,9 +183,10 @@ bool ProgramTable::LoadSegments(File* elf_file) {
     Addr file_page_start = PAGE_START(file_start);
     Addr file_length = file_end - file_page_start;
 
-    SB_DLOG(INFO) << "Mapping segment: " << " file_page_start="
-                  << file_page_start << " file_length=" << file_length
-                  << " seg_page_start=0x" << std::hex << seg_page_start;
+    SB_DLOG(INFO) << "Mapping segment: "
+                  << " file_page_start=" << file_page_start
+                  << " file_length=" << file_length << " seg_page_start=0x"
+                  << std::hex << seg_page_start;
 
     if (file_length != 0) {
       const int prot_flags = PFLAGS_TO_PROT(phdr->p_flags);
@@ -345,8 +340,9 @@ int ProgramTable::AdjustMemoryProtectionOfReadOnlySegments(
   const Phdr* phdr_limit = phdr + phdr_num_;
 
   for (; phdr < phdr_limit; phdr++) {
-    if (phdr->p_type != PT_LOAD || (phdr->p_flags & PF_W) != 0)
+    if (phdr->p_type != PT_LOAD || (phdr->p_flags & PF_W) != 0) {
       continue;
+    }
 
     Addr seg_page_start = PAGE_START(phdr->p_vaddr) + base_memory_address_;
     Addr seg_page_end =
@@ -420,4 +416,3 @@ ProgramTable::~ProgramTable() {
 }
 
 }  // namespace elf_loader
-}  // namespace starboard

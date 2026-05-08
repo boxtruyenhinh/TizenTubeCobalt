@@ -65,7 +65,7 @@ typedef struct CobaltPlatformServiceApi {
   // service is not currently able to accept data, and otherwise will be set to
   // false.
   void* (*Send)(PlatformServiceImpl* service,
-                void* data,
+                const void* data,
                 uint64_t length,
                 uint64_t* output_length,
                 bool* invalid_state);
@@ -81,13 +81,10 @@ typedef struct CobaltExtensionPlatformServicePrivate {
 // Well-defined value for an invalid |PlatformServiceImpl|.
 #define kPlatformServiceImplInvalid (reinterpret_cast<PlatformServiceImpl*>(0))
 
-// Omit namespace linux due to symbol name conflict.
 namespace starboard {
-namespace shared {
 
-const void* GetPlatformServiceApi();
+const void* GetPlatformServiceApiLinux();
 
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_LINUX_SHARED_PLATFORM_SERVICE_H_

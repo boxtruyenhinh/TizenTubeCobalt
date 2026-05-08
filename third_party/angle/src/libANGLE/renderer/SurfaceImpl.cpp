@@ -25,16 +25,52 @@ egl::Error SurfaceImpl::unMakeCurrent(const gl::Context *context)
     return egl::NoError();
 }
 
-egl::Error SurfaceImpl::swapWithDamage(const gl::Context *context, EGLint *rects, EGLint n_rects)
+egl::Error SurfaceImpl::prepareSwap(const gl::Context *)
+{
+    return angle::ResultToEGL(angle::Result::Continue);
+}
+
+egl::Error SurfaceImpl::swapWithDamage(const gl::Context *context,
+                                       const EGLint *rects,
+                                       EGLint n_rects,
+                                       SurfaceSwapFeedback *feedback)
 {
     UNREACHABLE();
-    return egl::EglBadSurface() << "swapWithDamage implementation missing.";
+    return egl::Error(EGL_BAD_SURFACE, "swapWithDamage implementation missing.");
+}
+
+egl::Error SurfaceImpl::postSubBuffer(const gl::Context *context,
+                                      EGLint x,
+                                      EGLint y,
+                                      EGLint width,
+                                      EGLint height)
+{
+    UNREACHABLE();
+    return egl::Error(EGL_BAD_SURFACE, "getMscRate implementation missing.");
 }
 
 egl::Error SurfaceImpl::setPresentationTime(EGLnsecsANDROID time)
 {
     UNREACHABLE();
-    return egl::EglBadSurface() << "setPresentationTime implementation missing.";
+    return egl::Error(EGL_BAD_SURFACE, "setPresentationTime implementation missing.");
+}
+
+egl::Error SurfaceImpl::querySurfacePointerANGLE(EGLint attribute, void **value)
+{
+    UNREACHABLE();
+    return egl::Error(EGL_BAD_SURFACE, "querySurfacePointerANGLE implementation missing.");
+}
+
+egl::Error SurfaceImpl::getSyncValues(EGLuint64KHR *ust, EGLuint64KHR *msc, EGLuint64KHR *sbc)
+{
+    UNREACHABLE();
+    return egl::Error(EGL_BAD_SURFACE, "getSyncValues implementation missing.");
+}
+
+egl::Error SurfaceImpl::getMscRate(EGLint *numerator, EGLint *denominator)
+{
+    UNREACHABLE();
+    return egl::Error(EGL_BAD_SURFACE, "getMscRate implementation missing.");
 }
 
 void SurfaceImpl::setFixedWidth(EGLint width)
@@ -52,7 +88,7 @@ void SurfaceImpl::setTimestampsEnabled(bool enabled)
     UNREACHABLE();
 }
 
-const angle::Format *SurfaceImpl::getD3DTextureColorFormat() const
+const angle::Format *SurfaceImpl::getClientBufferTextureColorFormat() const
 {
     UNREACHABLE();
     return nullptr;
@@ -69,13 +105,13 @@ egl::Error SurfaceImpl::getCompositorTiming(EGLint numTimestamps,
                                             EGLnsecsANDROID *values) const
 {
     UNREACHABLE();
-    return egl::EglBadDisplay();
+    return egl::Error(EGL_BAD_DISPLAY);
 }
 
 egl::Error SurfaceImpl::getNextFrameId(EGLuint64KHR *frameId) const
 {
     UNREACHABLE();
-    return egl::EglBadDisplay();
+    return egl::Error(EGL_BAD_DISPLAY);
 }
 
 egl::SupportedTimestamps SurfaceImpl::getSupportedTimestamps() const
@@ -90,13 +126,72 @@ egl::Error SurfaceImpl::getFrameTimestamps(EGLuint64KHR frameId,
                                            EGLnsecsANDROID *values) const
 {
     UNREACHABLE();
-    return egl::EglBadDisplay();
+    return egl::Error(EGL_BAD_DISPLAY);
+}
+egl::Error SurfaceImpl::getUserWidth(const egl::Display *display, EGLint *value) const
+{
+    *value = getWidth();
+    return egl::NoError();
 }
 
-egl::Error SurfaceImpl::swapWithFrameToken(const gl::Context *context,
-                                           EGLFrameTokenANGLE frameToken)
+egl::Error SurfaceImpl::getUserHeight(const egl::Display *display, EGLint *value) const
+{
+    *value = getHeight();
+    return egl::NoError();
+}
+
+EGLint SurfaceImpl::isPostSubBufferSupported() const
 {
     UNREACHABLE();
-    return egl::EglBadDisplay();
+    return EGL_FALSE;
 }
+
+egl::Error SurfaceImpl::getBufferAge(const gl::Context *context, EGLint *age)
+{
+    *age = 0;
+    return egl::NoError();
+}
+
+egl::Error SurfaceImpl::setAutoRefreshEnabled(bool enabled)
+{
+    return egl::Error(EGL_BAD_MATCH);
+}
+
+egl::Error SurfaceImpl::lockSurface(const egl::Display *display,
+                                    EGLint usageHint,
+                                    bool preservePixels,
+                                    uint8_t **bufferPtrOut,
+                                    EGLint *bufferPitchOut)
+{
+    UNREACHABLE();
+    return egl::Error(EGL_BAD_MATCH);
+}
+
+egl::Error SurfaceImpl::unlockSurface(const egl::Display *display, bool preservePixels)
+{
+    UNREACHABLE();
+    return egl::Error(EGL_BAD_MATCH);
+}
+
+EGLint SurfaceImpl::origin() const
+{
+    return EGL_LOWER_LEFT_KHR;
+}
+
+egl::Error SurfaceImpl::setRenderBuffer(EGLint renderBuffer)
+{
+    return egl::NoError();
+}
+
+EGLint SurfaceImpl::getCompressionRate(const egl::Display *display) const
+{
+    UNREACHABLE();
+    return EGL_SURFACE_COMPRESSION_FIXED_RATE_NONE_EXT;
+}
+
+bool SurfaceImpl::supportsSingleRenderBuffer() const
+{
+    return false;
+}
+
 }  // namespace rx

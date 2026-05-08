@@ -171,9 +171,13 @@ bez{
             "SHP",
             "Lupila lwa Husantahelena",
         }
+        SLE{
+            "SLE",
+            "Lupila lwa Lioni",
+        }
         SLL{
             "SLL",
-            "Lupila lwa Lioni",
+            "Lupila lwa Lioni (1964—2022)",
         }
         SOS{
             "SOS",
@@ -212,7 +216,7 @@ bez{
             "Lupila lwa CFA BEAC",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "Lupila lwa CFA BCEAO",
         }
         ZAR{

@@ -14,11 +14,16 @@
 
 #include "starboard/shared/modular/starboard_layer_posix_socket_abi_wrappers.h"
 
+#include <net/if.h>
 #include <stdlib.h>
 #include <string.h>
-#include <algorithm>
 
-#include "starboard/log.h"
+#include <algorithm>
+#include <iterator>
+#include <memory>
+
+#include "starboard/common/log.h"
+#include "starboard/common/string.h"
 
 namespace {
 
@@ -26,6 +31,14 @@ namespace {
 // |struct sockaddr_in| or |struct sockaddr_in6| on this platform.
 static_assert(sizeof(struct musl_sockaddr) >= sizeof(struct sockaddr_in));
 static_assert(sizeof(struct musl_sockaddr) >= sizeof(struct sockaddr_in6));
+
+struct platform_iov_deleter {
+  void operator()(struct iovec* ptr) const { free(ptr); }
+};
+
+struct malloc_deleter {
+  void operator()(void* ptr) const { free(ptr); }
+};
 
 // Corresponding arrays to for musl<->platform translation.
 int MUSL_AI_ORDERED[] = {
@@ -65,6 +78,89 @@ int PLATFORM_AF_ORDERED[] = {
     AF_INET,
     AF_INET6,
 };
+
+int MUSL_MSG_FLAGS_ORDERED[] = {
+    MUSL_MSG_OOB,     MUSL_MSG_PEEK,     MUSL_MSG_DONTROUTE, MUSL_MSG_CTRUNC,
+    MUSL_MSG_TRUNC,   MUSL_MSG_DONTWAIT, MUSL_MSG_EOR,       MUSL_MSG_WAITALL,
+    MUSL_MSG_CONFIRM, MUSL_MSG_NOSIGNAL, MUSL_MSG_MORE,
+};
+
+int PLATFORM_MSG_FLAGS_ORDERED[] = {
+    MSG_OOB, MSG_PEEK,    MSG_DONTROUTE, MSG_CTRUNC,   MSG_TRUNC, MSG_DONTWAIT,
+    MSG_EOR, MSG_WAITALL, MSG_CONFIRM,   MSG_NOSIGNAL, MSG_MORE,
+};
+
+static_assert(std::size(MUSL_MSG_FLAGS_ORDERED) ==
+                  std::size(PLATFORM_MSG_FLAGS_ORDERED),
+              "MUSL and platform message flag arrays must have the same size.");
+
+int musl_flags_to_platform_flags(int musl_flags) {
+  int platform_flags = 0;
+  int translated_flags = 0;
+  for (size_t i = 0; i < std::size(MUSL_MSG_FLAGS_ORDERED); ++i) {
+    if (musl_flags & MUSL_MSG_FLAGS_ORDERED[i]) {
+      platform_flags |= PLATFORM_MSG_FLAGS_ORDERED[i];
+      translated_flags |= MUSL_MSG_FLAGS_ORDERED[i];
+    }
+  }
+
+  if ((musl_flags & ~translated_flags) != 0) {
+    SB_LOG(WARNING) << "Unable to convert all musl msg_flags to platform "
+                    << "flags, using value as-is for untranslated flags.";
+    platform_flags |= (musl_flags & ~translated_flags);
+  }
+  return platform_flags;
+}
+
+int musl_shuts_to_platform_shuts(int how) {
+  switch (how) {
+    case MUSL_SHUT_RD:
+      return SHUT_RD;
+    case MUSL_SHUT_WR:
+      return SHUT_WR;
+    case MUSL_SHUT_RDWR:
+      return SHUT_RDWR;
+    default:
+      SB_LOG(WARNING) << "Unable to convert musl flag to platform flag, "
+                      << "using value as-is.";
+      return how;
+  }
+}
+
+int musl_errcodes_to_platform_errcodes(int ecode) {
+  switch (ecode) {
+    case MUSL_EAI_BADFLAGS:
+      return EAI_BADFLAGS;
+    case MUSL_EAI_NONAME:
+      return EAI_NONAME;
+    case MUSL_EAI_AGAIN:
+      return EAI_AGAIN;
+    case MUSL_EAI_FAIL:
+      return EAI_FAIL;
+    case MUSL_EAI_NODATA:
+      return EAI_NODATA;
+    case MUSL_EAI_FAMILY:
+      return EAI_FAMILY;
+    case MUSL_EAI_SOCKTYPE:
+      return EAI_SOCKTYPE;
+    case MUSL_EAI_SERVICE:
+      return EAI_SERVICE;
+    case MUSL_EAI_MEMORY:
+      return EAI_MEMORY;
+    case MUSL_EAI_SYSTEM:
+      return EAI_SYSTEM;
+    case MUSL_EAI_OVERFLOW:
+      return EAI_OVERFLOW;
+    default:
+      // If the errcode cannot be converted, we can leave the ecode as is,
+      // as gai_strerror() will just return a string stating that an unknown
+      // ecode was given. A warning log is left to let the user know
+      // a conversion was not possible.
+      SB_LOG(WARNING) << "Unable to convert musl errcode to platform errcode, "
+                         "using value as-is.";
+      return ecode;
+  }
+}
 
 int musl_hints_to_platform_hints(const struct musl_addrinfo* hints,
                                  struct addrinfo* platform_hints) {
@@ -151,6 +247,10 @@ SB_EXPORT int __abi_wrap_connect(int sockfd,
                                  socklen_t addrlen) {
   return connect(sockfd, reinterpret_cast<const struct sockaddr*>(addr),
                  addrlen);
+}
+
+SB_EXPORT const char* __abi_wrap_gai_strerror(int ecode) {
+  return gai_strerror(musl_errcodes_to_platform_errcodes(ecode));
 }
 
 SB_EXPORT int __abi_wrap_getaddrinfo(const char* node,
@@ -253,7 +353,8 @@ SB_EXPORT int __abi_wrap_getaddrinfo(const char* node,
         size_t canonname_len = strlen(ai_copy.ai_canonname);
         musl_ai->ai_canonname =
             reinterpret_cast<char*>(calloc(canonname_len + 1, sizeof(char)));
-        memcpy(musl_ai->ai_canonname, ai_copy.ai_canonname, canonname_len);
+        starboard::strlcpy(musl_ai->ai_canonname, ai_copy.ai_canonname,
+                           canonname_len + 1);
       }
       if (*res == nullptr) {
         *res = musl_ai;
@@ -287,22 +388,56 @@ SB_EXPORT void __abi_wrap_freeaddrinfo(struct musl_addrinfo* ai) {
 
 SB_EXPORT int __abi_wrap_getifaddrs(struct ifaddrs** ifap) {
   int result = getifaddrs(ifap);
-#if SB_HAS_QUIRK(SOCKADDR_WITH_LENGTH)
-  struct ifaddrs* ptr = *ifap;
-  struct ifaddrs* last_ptr = ptr;
-  while (ptr != nullptr) {
-    if (ptr->ifa_addr != nullptr) {
-      musl_sockaddr* musl_addr_ptr =
-          reinterpret_cast<musl_sockaddr*>(ptr->ifa_addr);
-      struct sockaddr* addr_ptr =
-          reinterpret_cast<struct sockaddr*>(ptr->ifa_addr);
-      uint8_t sa_family = addr_ptr->sa_family;
-      musl_addr_ptr->sa_family = sa_family;
-    }
-    ptr = ptr->ifa_next;
-  }
-#endif
   return result;
+}
+
+SB_EXPORT unsigned int __abi_wrap_if_nametoindex(const char* ifname) {
+  if (ifname == nullptr) {
+    // No errors defined by the POSIX spec.
+    return 0;
+  }
+
+  // ifname might be longer than the platform's max interface name length.
+  if (MUSL_IF_NAMESIZE > IF_NAMESIZE) {
+    char platform_buf[IF_NAMESIZE];
+    starboard::strlcpy(platform_buf, ifname, IF_NAMESIZE);
+    if (strcmp(platform_buf, ifname) != 0) {
+      SB_LOG(WARNING) << "Interface name " << ifname << " truncated to "
+                      << platform_buf;
+    }
+    return if_nametoindex(platform_buf);
+  }
+  // No need to copy since ifname is smaller than or equal to IF_NAMESIZE.
+  return if_nametoindex(ifname);
+}
+
+SB_EXPORT char* __abi_wrap_if_indextoname(unsigned int ifindex, char* ifname) {
+  if (ifname == nullptr) {
+    // It feels like this should also set errno, but the spec doesn't require
+    // it.
+    return nullptr;
+  }
+
+  // ifname buffer is larger than the platform's max interface name length,
+  // so it is fine to pass it directly to the platform's if_indextoname.
+  if (MUSL_IF_NAMESIZE >= IF_NAMESIZE) {
+    return if_indextoname(ifindex, ifname);
+  }
+
+  // ifname buffer is smaller than the platform's max interface name length. If
+  // IF_NAMESIZE > MUSL_IF_NAMESIZE, the copy will truncate the interface name.
+  // At time of writing, that is fine since current uses of this function are in
+  // logging.
+  char platform_buf[IF_NAMESIZE];
+  char* res = if_indextoname(ifindex, platform_buf);
+  if (res == nullptr) {
+    return nullptr;
+  }
+  starboard::strlcpy(ifname, res, MUSL_IF_NAMESIZE);
+  if (strcmp(ifname, res) != 0) {
+    SB_LOG(WARNING) << "Interface name " << res << " truncated to " << ifname;
+  }
+  return ifname;
 }
 
 SB_EXPORT int __abi_wrap_setsockopt(int socket,
@@ -310,9 +445,79 @@ SB_EXPORT int __abi_wrap_setsockopt(int socket,
                                     int option_name,
                                     const void* option_value,
                                     socklen_t option_len) {
-  if (socket <= 0) {
+  return setsockopt(socket, level, option_name, option_value, option_len);
+}
+
+SB_EXPORT int __abi_wrap_shutdown(int socket, int how) {
+  return shutdown(socket, musl_shuts_to_platform_shuts(how));
+}
+
+ssize_t __abi_wrap_sendmsg(int sockfd,
+                           const struct musl_msghdr* msg,
+                           int flags) {
+  if (msg->msg_iovlen < 0) {
+    errno = EINVAL;
     return -1;
   }
 
-  return setsockopt(socket, level, option_name, option_value, option_len);
+  std::unique_ptr<struct iovec, platform_iov_deleter> platform_iov_ptr(
+      static_cast<struct iovec*>(
+          malloc(sizeof(struct iovec) * msg->msg_iovlen)));
+  if (!platform_iov_ptr) {
+    errno = ENOMEM;
+    return -1;
+  }
+
+  for (int i = 0; i < msg->msg_iovlen; ++i) {
+    platform_iov_ptr.get()[i].iov_base = msg->msg_iov[i].iov_base;
+    platform_iov_ptr.get()[i].iov_len = msg->msg_iov[i].iov_len;
+  }
+
+  std::unique_ptr<void, malloc_deleter> control_buffer_ptr;
+  size_t total_cmsg_space = 0;
+
+  if (msg->msg_control && msg->msg_controllen > 0) {
+    for (struct musl_cmsghdr* cmsg = MUSL_CMSG_FIRSTHDR(msg); cmsg != nullptr;
+         cmsg = MUSL_CMSG_NXTHDR(msg, cmsg)) {
+      size_t data_len = cmsg->cmsg_len - MUSL_CMSG_HDR_LEN;
+      total_cmsg_space += CMSG_SPACE(data_len);
+    }
+
+    control_buffer_ptr.reset(malloc(total_cmsg_space));
+    if (!control_buffer_ptr) {
+      errno = ENOMEM;
+      return -1;
+    }
+
+    memset(control_buffer_ptr.get(), 0, total_cmsg_space);
+
+    struct msghdr platform_msg_for_cmsg_macros = {0};
+    platform_msg_for_cmsg_macros.msg_control = control_buffer_ptr.get();
+    platform_msg_for_cmsg_macros.msg_controllen = total_cmsg_space;
+
+    struct cmsghdr* platform_cmsg =
+        CMSG_FIRSTHDR(&platform_msg_for_cmsg_macros);
+
+    for (struct musl_cmsghdr* cmsg = MUSL_CMSG_FIRSTHDR(msg); cmsg != nullptr;
+         cmsg = MUSL_CMSG_NXTHDR(msg, cmsg)) {
+      size_t data_len = cmsg->cmsg_len - MUSL_CMSG_HDR_LEN;
+      platform_cmsg->cmsg_len = CMSG_LEN(data_len);
+      platform_cmsg->cmsg_level = cmsg->cmsg_level;
+      platform_cmsg->cmsg_type = cmsg->cmsg_type;
+      memcpy(CMSG_DATA(platform_cmsg), MUSL_CMSG_DATA(cmsg), data_len);
+      platform_cmsg = CMSG_NXTHDR(&platform_msg_for_cmsg_macros, platform_cmsg);
+    }
+  }
+
+  // Construct the platform msghdr.
+  struct msghdr platform_msg = {0};
+  platform_msg.msg_name = msg->msg_name;
+  platform_msg.msg_namelen = msg->msg_namelen;
+  platform_msg.msg_iov = platform_iov_ptr.get();
+  platform_msg.msg_iovlen = msg->msg_iovlen;
+  platform_msg.msg_control = control_buffer_ptr.get();
+  platform_msg.msg_controllen = total_cmsg_space;
+  platform_msg.msg_flags = musl_flags_to_platform_flags(msg->msg_flags);
+
+  return sendmsg(sockfd, &platform_msg, flags);
 }

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "src/ast/ast-function-literal-id-reindexer.h"
-#include "src/objects/objects-inl.h"
 
 #include "src/ast/ast.h"
 
@@ -32,6 +31,13 @@ void AstFunctionLiteralIdReindexer::VisitFunctionLiteral(FunctionLiteral* lit) {
   lit->set_function_literal_id(lit->function_literal_id() + delta_);
 }
 
+void AstFunctionLiteralIdReindexer::VisitCall(Call* expr) {
+  AstTraversalVisitor::VisitCall(expr);
+  if (expr->is_possibly_eval()) {
+    expr->adjust_eval_scope_info_index(delta_);
+  }
+}
+
 void AstFunctionLiteralIdReindexer::VisitClassLiteral(ClassLiteral* expr) {
   // Manually visit the class literal so that we can change the property walk.
   // This should be kept in-sync with AstTraversalVisitor::VisitClassLiteral.
@@ -40,8 +46,8 @@ void AstFunctionLiteralIdReindexer::VisitClassLiteral(ClassLiteral* expr) {
     Visit(expr->extends());
   }
   Visit(expr->constructor());
-  if (expr->static_fields_initializer() != nullptr) {
-    Visit(expr->static_fields_initializer());
+  if (expr->static_initializer() != nullptr) {
+    Visit(expr->static_initializer());
   }
   if (expr->instance_members_initializer_function() != nullptr) {
     Visit(expr->instance_members_initializer_function());

@@ -5,10 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkImageInfoPriv.h"
-#include "src/core/SkReadBuffer.h"
-#include "src/core/SkSafeMath.h"
-#include "src/core/SkWriteBuffer.h"
+#include "include/core/SkImageInfo.h"
+
+#include "include/core/SkColor.h"
+#include "include/core/SkColorSpace.h"
+#include "include/private/base/SkAssert.h"
+#include "src/base/SkSafeMath.h"
+#include "src/core/SkImageInfoPriv.h"
 
 int SkColorTypeBytesPerPixel(SkColorType ct) {
     switch (ct) {
@@ -23,9 +26,13 @@ int SkColorTypeBytesPerPixel(SkColorType ct) {
         case kRGB_101010x_SkColorType:        return 4;
         case kBGRA_1010102_SkColorType:       return 4;
         case kBGR_101010x_SkColorType:        return 4;
+        case kBGR_101010x_XR_SkColorType:     return 4;
+        case kBGRA_10101010_XR_SkColorType:   return 8;
+        case kRGBA_10x6_SkColorType:          return 8;
         case kGray_8_SkColorType:             return 1;
         case kRGBA_F16Norm_SkColorType:       return 8;
         case kRGBA_F16_SkColorType:           return 8;
+        case kRGB_F16F16F16x_SkColorType:     return 8;
         case kRGBA_F32_SkColorType:           return 16;
         case kR8G8_unorm_SkColorType:         return 2;
         case kA16_unorm_SkColorType:          return 2;
@@ -45,7 +52,87 @@ bool SkColorTypeIsAlwaysOpaque(SkColorType ct) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+bool SkYUVColorSpaceIsLimitedRange(SkYUVColorSpace cs) {
+    switch (cs) {
+        case kRec601_Limited_SkYUVColorSpace:
+        case kRec709_Limited_SkYUVColorSpace:
+        case kBT2020_8bit_Limited_SkYUVColorSpace:
+        case kBT2020_10bit_Limited_SkYUVColorSpace:
+        case kBT2020_12bit_Limited_SkYUVColorSpace:
+        case kBT2020_16bit_Limited_SkYUVColorSpace:
+        case kFCC_Limited_SkYUVColorSpace:
+        case kSMPTE240_Limited_SkYUVColorSpace:
+        case kYDZDX_Limited_SkYUVColorSpace:
+        case kGBR_Limited_SkYUVColorSpace:
+        case kYCgCo_8bit_Limited_SkYUVColorSpace:
+        case kYCgCo_10bit_Limited_SkYUVColorSpace:
+        case kYCgCo_12bit_Limited_SkYUVColorSpace:
+        case kYCgCo_16bit_Limited_SkYUVColorSpace:
+            return true;
+
+        case kJPEG_Full_SkYUVColorSpace:
+        case kRec709_Full_SkYUVColorSpace:
+        case kBT2020_8bit_Full_SkYUVColorSpace:
+        case kBT2020_10bit_Full_SkYUVColorSpace:
+        case kBT2020_12bit_Full_SkYUVColorSpace:
+        case kBT2020_16bit_Full_SkYUVColorSpace:
+        case kFCC_Full_SkYUVColorSpace:
+        case kSMPTE240_Full_SkYUVColorSpace:
+        case kYDZDX_Full_SkYUVColorSpace:
+        case kGBR_Full_SkYUVColorSpace:
+        case kYCgCo_8bit_Full_SkYUVColorSpace:
+        case kYCgCo_10bit_Full_SkYUVColorSpace:
+        case kYCgCo_12bit_Full_SkYUVColorSpace:
+        case kYCgCo_16bit_Full_SkYUVColorSpace:
+        case kIdentity_SkYUVColorSpace:
+            return false;
+
+        default:
+            SkUNREACHABLE;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+SkColorInfo::SkColorInfo() = default;
+SkColorInfo::~SkColorInfo() = default;
+
+SkColorInfo::SkColorInfo(SkColorType ct, SkAlphaType at, sk_sp<SkColorSpace> cs)
+            : fColorSpace(std::move(cs)), fColorType(ct), fAlphaType(at) {}
+
+SkColorInfo::SkColorInfo(const SkColorInfo&) = default;
+SkColorInfo::SkColorInfo(SkColorInfo&&) = default;
+
+SkColorInfo& SkColorInfo::operator=(const SkColorInfo&) = default;
+SkColorInfo& SkColorInfo::operator=(SkColorInfo&&) = default;
+
+SkColorSpace* SkColorInfo::colorSpace() const { return fColorSpace.get(); }
+sk_sp<SkColorSpace> SkColorInfo::refColorSpace() const { return fColorSpace; }
+
+bool SkColorInfo::operator==(const SkColorInfo& other) const {
+    return fColorType == other.fColorType && fAlphaType == other.fAlphaType &&
+           SkColorSpace::Equals(fColorSpace.get(), other.fColorSpace.get());
+}
+
+bool SkColorInfo::operator!=(const SkColorInfo& other) const { return !(*this == other); }
+
+SkColorInfo SkColorInfo::makeAlphaType(SkAlphaType newAlphaType) const {
+    return SkColorInfo(this->colorType(), newAlphaType, this->refColorSpace());
+}
+
+SkColorInfo SkColorInfo::makeColorType(SkColorType newColorType) const {
+    return SkColorInfo(newColorType, this->alphaType(), this->refColorSpace());
+}
+
+SkColorInfo SkColorInfo::makeColorSpace(sk_sp<SkColorSpace> cs) const {
+    return SkColorInfo(this->colorType(), this->alphaType(), std::move(cs));
+}
+
 int SkColorInfo::bytesPerPixel() const { return SkColorTypeBytesPerPixel(fColorType); }
+
+bool SkColorInfo::gammaCloseToSRGB() const {
+    return fColorSpace && fColorSpace->gammaCloseToSRGB();
+}
 
 int SkColorInfo::shiftPerPixel() const { return SkColorTypeShiftPerPixel(fColorType); }
 
@@ -72,8 +159,70 @@ size_t SkImageInfo::computeByteSize(size_t rowBytes) const {
     return (safe.ok() && (bytes <= kMaxSigned32BitSize)) ? bytes : SIZE_MAX;
 }
 
+SkColorSpace* SkImageInfo::colorSpace() const { return fColorInfo.colorSpace(); }
+
+sk_sp<SkColorSpace> SkImageInfo::refColorSpace() const { return fColorInfo.refColorSpace(); }
+
+SkImageInfo SkImageInfo::makeColorSpace(sk_sp<SkColorSpace> cs) const {
+    return Make(fDimensions, fColorInfo.makeColorSpace(std::move(cs)));
+}
+
+SkImageInfo SkImageInfo::Make(int width, int height, SkColorType ct, SkAlphaType at) {
+    return Make(width, height, ct, at, nullptr);
+}
+
+SkImageInfo SkImageInfo::Make(int width, int height, SkColorType ct, SkAlphaType at,
+                              sk_sp<SkColorSpace> cs) {
+    return SkImageInfo({width, height}, {ct, at, std::move(cs)});
+}
+
+SkImageInfo SkImageInfo::Make(SkISize dimensions, SkColorType ct, SkAlphaType at) {
+    return Make(dimensions, ct, at, nullptr);
+}
+
+SkImageInfo SkImageInfo::Make(SkISize dimensions, SkColorType ct, SkAlphaType at,
+                        sk_sp<SkColorSpace> cs) {
+    return SkImageInfo(dimensions, {ct, at, std::move(cs)});
+}
+
+SkImageInfo SkImageInfo::MakeN32(int width, int height, SkAlphaType at) {
+    return MakeN32(width, height, at, nullptr);
+}
+
+SkImageInfo SkImageInfo::MakeN32(int width, int height, SkAlphaType at, sk_sp<SkColorSpace> cs) {
+    return Make({width, height}, kN32_SkColorType, at, std::move(cs));
+}
+
 SkImageInfo SkImageInfo::MakeS32(int width, int height, SkAlphaType at) {
     return SkImageInfo({width, height}, {kN32_SkColorType, at, SkColorSpace::MakeSRGB()});
+}
+
+SkImageInfo SkImageInfo::MakeN32Premul(int width, int height) {
+    return MakeN32Premul(width, height, nullptr);
+}
+
+SkImageInfo SkImageInfo::MakeN32Premul(int width, int height, sk_sp<SkColorSpace> cs) {
+    return Make({width, height}, kN32_SkColorType, kPremul_SkAlphaType, std::move(cs));
+}
+
+SkImageInfo SkImageInfo::MakeN32Premul(SkISize dimensions) {
+    return MakeN32Premul(dimensions, nullptr);
+}
+
+SkImageInfo SkImageInfo::MakeN32Premul(SkISize dimensions, sk_sp<SkColorSpace> cs) {
+    return Make(dimensions, kN32_SkColorType, kPremul_SkAlphaType, std::move(cs));
+}
+
+SkImageInfo SkImageInfo::MakeA8(int width, int height) {
+    return Make({width, height}, kAlpha_8_SkColorType, kPremul_SkAlphaType, nullptr);
+}
+
+SkImageInfo SkImageInfo::MakeA8(SkISize dimensions) {
+    return Make(dimensions, kAlpha_8_SkColorType, kPremul_SkAlphaType, nullptr);
+}
+
+SkImageInfo SkImageInfo::MakeUnknown(int width, int height) {
+    return Make({width, height}, kUnknown_SkColorType, kUnknown_SkAlphaType, nullptr);
 }
 
 #ifdef SK_DEBUG
@@ -104,9 +253,11 @@ bool SkColorTypeValidateAlphaType(SkColorType colorType, SkAlphaType alphaType,
         case kBGRA_8888_SkColorType:
         case kRGBA_1010102_SkColorType:
         case kBGRA_1010102_SkColorType:
+        case kRGBA_10x6_SkColorType:
         case kRGBA_F16Norm_SkColorType:
         case kRGBA_F16_SkColorType:
         case kRGBA_F32_SkColorType:
+        case kBGRA_10101010_XR_SkColorType:
         case kR16G16B16A16_unorm_SkColorType:
             if (kUnknown_SkAlphaType == alphaType) {
                 return false;
@@ -120,6 +271,8 @@ bool SkColorTypeValidateAlphaType(SkColorType colorType, SkAlphaType alphaType,
         case kRGB_888x_SkColorType:
         case kRGB_101010x_SkColorType:
         case kBGR_101010x_SkColorType:
+        case kBGR_101010x_XR_SkColorType:
+        case kRGB_F16F16F16x_SkColorType:
         case kR8_unorm_SkColorType:
             alphaType = kOpaque_SkAlphaType;
             break;
@@ -127,79 +280,5 @@ bool SkColorTypeValidateAlphaType(SkColorType colorType, SkAlphaType alphaType,
     if (canonical) {
         *canonical = alphaType;
     }
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-#include "src/image/SkReadPixelsRec.h"
-
-bool SkReadPixelsRec::trim(int srcWidth, int srcHeight) {
-    if (nullptr == fPixels || fRowBytes < fInfo.minRowBytes()) {
-        return false;
-    }
-    if (0 >= fInfo.width() || 0 >= fInfo.height()) {
-        return false;
-    }
-
-    int x = fX;
-    int y = fY;
-    SkIRect srcR = SkIRect::MakeXYWH(x, y, fInfo.width(), fInfo.height());
-    if (!srcR.intersect({0, 0, srcWidth, srcHeight})) {
-        return false;
-    }
-
-    // if x or y are negative, then we have to adjust pixels
-    if (x > 0) {
-        x = 0;
-    }
-    if (y > 0) {
-        y = 0;
-    }
-    // here x,y are either 0 or negative
-    // we negate and add them so UBSAN (pointer-overflow) doesn't get confused.
-    fPixels = ((char*)fPixels + -y*fRowBytes + -x*fInfo.bytesPerPixel());
-    // the intersect may have shrunk info's logical size
-    fInfo = fInfo.makeDimensions(srcR.size());
-    fX = srcR.x();
-    fY = srcR.y();
-
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-#include "src/core/SkWritePixelsRec.h"
-
-bool SkWritePixelsRec::trim(int dstWidth, int dstHeight) {
-    if (nullptr == fPixels || fRowBytes < fInfo.minRowBytes()) {
-        return false;
-    }
-    if (0 >= fInfo.width() || 0 >= fInfo.height()) {
-        return false;
-    }
-
-    int x = fX;
-    int y = fY;
-    SkIRect dstR = SkIRect::MakeXYWH(x, y, fInfo.width(), fInfo.height());
-    if (!dstR.intersect({0, 0, dstWidth, dstHeight})) {
-        return false;
-    }
-
-    // if x or y are negative, then we have to adjust pixels
-    if (x > 0) {
-        x = 0;
-    }
-    if (y > 0) {
-        y = 0;
-    }
-    // here x,y are either 0 or negative
-    // we negate and add them so UBSAN (pointer-overflow) doesn't get confused.
-    fPixels = ((const char*)fPixels + -y*fRowBytes + -x*fInfo.bytesPerPixel());
-    // the intersect may have shrunk info's logical size
-    fInfo = fInfo.makeDimensions(dstR.size());
-    fX = dstR.x();
-    fY = dstR.y();
-
     return true;
 }

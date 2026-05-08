@@ -258,6 +258,9 @@ th{
         "America:Chihuahua"{
             ec{"ชีวาวา"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"ซิวดัดฮัวเรซ"}
+        }
         "America:Coral_Harbour"{
             ec{"คอรัลฮาร์เบอร์"}
         }
@@ -889,7 +892,7 @@ th{
             ec{"เยเรวาน"}
         }
         "Atlantic:Azores"{
-            ec{"อาซอเรส"}
+            ec{"อะโซร์ส"}
         }
         "Atlantic:Bermuda"{
             ec{"เบอร์มิวดา"}
@@ -1222,6 +1225,9 @@ th{
         }
         "Pacific:Johnston"{
             ec{"จอห์นสตัน"}
+        }
+        "Pacific:Kanton"{
+            ec{"แคนทอน"}
         }
         "Pacific:Kiritimati"{
             ec{"คิริทิมาตี"}
@@ -1940,10 +1946,9 @@ th{
             lg{"เวลาเยคาเตรินบูร์ก"}
             ls{"เวลามาตรฐานเยคาเตรินบูร์ก"}
         }
-        fallbackFormat{"{1} ({0})"}
-        gmtFormat{"GMT{0}"}
-        gmtZeroFormat{"GMT"}
-        hourFormat{"+HH:mm;-HH:mm"}
+        "meta:Yukon"{
+            ls{"เวลายูคอน"}
+        }
         regionFormat{"เวลา{0}"}
         regionFormatDaylight{"เวลาออมแสง{0}"}
         regionFormatStandard{"เวลามาตรฐาน{0}"}

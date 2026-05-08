@@ -8,29 +8,50 @@
 #ifndef SkottieTextAdapter_DEFINED
 #define SkottieTextAdapter_DEFINED
 
+#include "include/core/SkM44.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
+#include "modules/skottie/include/TextShaper.h"
+#include "modules/skottie/src/SkottieValue.h"
 #include "modules/skottie/src/animator/Animator.h"
-#include "modules/skottie/src/text/SkottieShaper.h"
+#include "modules/skottie/src/text/Font.h"
 #include "modules/skottie/src/text/TextAnimator.h"
 #include "modules/skottie/src/text/TextValue.h"
+#include "modules/sksg/include/SkSGPaint.h"
+#include "modules/sksg/include/SkSGRenderEffect.h"
+#include "modules/sksg/include/SkSGTransform.h"
 
+#include <cstdint>
+#include <memory>
 #include <vector>
 
 class SkFontMgr;
 
+namespace skjson {
+class ObjectValue;
+}
+namespace skottie {
+class Logger;
+}
 namespace sksg {
-class BlurImageFilter;
 class Group;
-template <typename T>
-class Matrix;
-} // namespace sksg
+class RenderNode;
+}  // namespace sksg
+
+namespace SkShapers { class Factory; }
 
 namespace skottie {
 namespace internal {
+class AnimationBuilder;
 
 class TextAdapter final : public AnimatablePropertyContainer {
 public:
-    static sk_sp<TextAdapter> Make(const skjson::ObjectValue&, const AnimationBuilder*,
-                                   sk_sp<SkFontMgr>, sk_sp<Logger>);
+    static sk_sp<TextAdapter> Make(const skjson::ObjectValue&,
+                                   const AnimationBuilder*,
+                                   sk_sp<SkFontMgr>,
+                                   sk_sp<CustomFont::GlyphCompMapper>,
+                                   sk_sp<Logger>,
+                                   sk_sp<::SkShapers::Factory>);
 
     ~TextAdapter() override;
 
@@ -43,6 +64,8 @@ protected:
     void onSync() override;
 
 private:
+    class GlyphDecoratorNode;
+
     enum class AnchorPointGrouping : uint8_t {
         kCharacter,
         kWord,
@@ -50,11 +73,16 @@ private:
         kAll,
     };
 
-    TextAdapter(sk_sp<SkFontMgr>, sk_sp<Logger>, AnchorPointGrouping);
+    TextAdapter(sk_sp<SkFontMgr>,
+                sk_sp<CustomFont::GlyphCompMapper>,
+                sk_sp<Logger>,
+                sk_sp<SkShapers::Factory>,
+                AnchorPointGrouping);
 
     struct FragmentRec {
         SkPoint                      fOrigin; // fragment position
 
+        const Shaper::ShapedGlyphs*  fGlyphs = nullptr;
         sk_sp<sksg::Matrix<SkM44>>   fMatrixNode;
         sk_sp<sksg::Color>           fFillColorNode,
                                      fStrokeColorNode;
@@ -65,16 +93,13 @@ private:
     };
 
     void reshape();
-    void addFragment(const Shaper::Fragment&);
+    void addFragment(Shaper::Fragment&, sksg::Group* container);
     void buildDomainMaps(const Shaper::Result&);
+    std::vector<sk_sp<sksg::RenderNode>> buildGlyphCompNodes(Shaper::ShapedGlyphs&) const;
 
     void pushPropsToFragment(const TextAnimator::ResolvedProps&, const FragmentRec&,
-                             const SkV2&, const TextAnimator::DomainSpan*) const;
-
-    void adjustLineProps(const TextAnimator::ModulatorBuffer&,
-                         const TextAnimator::DomainSpan&,
-                         const SkV2& line_offset,
-                         float line_tracking) const;
+                             const SkV2& frag_offset, const SkV2& grouping_alignment,
+                             const TextAnimator::DomainSpan*) const;
 
     SkV2 fragmentAnchorPoint(const FragmentRec&, const SkV2&,
                              const TextAnimator::DomainSpan*) const;
@@ -82,14 +107,16 @@ private:
 
     SkM44 fragmentMatrix(const TextAnimator::ResolvedProps&, const FragmentRec&, const SkV2&) const;
 
-    const sk_sp<sksg::Group>         fRoot;
-    const sk_sp<SkFontMgr>           fFontMgr;
-    sk_sp<Logger>                    fLogger;
-    const AnchorPointGrouping        fAnchorPointGrouping;
+    const sk_sp<sksg::Group>                 fRoot;
+    const sk_sp<SkFontMgr>                   fFontMgr;
+    const sk_sp<CustomFont::GlyphCompMapper> fCustomGlyphMapper;
+    sk_sp<Logger>                            fLogger;
+    sk_sp<SkShapers::Factory>                fShapingFactory;
+    const AnchorPointGrouping                fAnchorPointGrouping;
 
-    std::vector<sk_sp<TextAnimator>> fAnimators;
-    std::vector<FragmentRec>         fFragments;
-    TextAnimator::DomainMaps         fMaps;
+    std::vector<sk_sp<TextAnimator>>         fAnimators;
+    std::vector<FragmentRec>                 fFragments;
+    TextAnimator::DomainMaps                 fMaps;
 
     // Helps detect external value changes.
     struct TextValueTracker {
@@ -111,13 +138,15 @@ private:
 
     TextValueTracker          fText;
     Vec2Value                 fGroupingAlignment = {0,0};
+    float                     fTextShapingScale  = 1;     // size adjustment from auto-scaling
 
     // Optional text path.
     struct PathInfo;
     std::unique_ptr<PathInfo> fPathInfo;
 
-    bool                      fHasBlurAnimator     : 1,
-                              fRequiresAnchorPoint : 1;
+    bool                      fHasBlurAnimator         : 1,
+                              fRequiresAnchorPoint     : 1,
+                              fRequiresLineAdjustments : 1;
 };
 
 } // namespace internal

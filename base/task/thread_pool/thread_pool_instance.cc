@@ -5,16 +5,18 @@
 #include "base/task/thread_pool/thread_pool_instance.h"
 
 #include <algorithm>
+#include <string_view>
 
 #include "base/check.h"
-#include "base/cxx17_backports.h"
 #include "base/memory/ptr_util.h"
 #include "base/system/sys_info.h"
 #include "base/task/thread_pool/thread_pool_impl.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "starboard/configuration_constants.h"
+#if BUILDFLAG(IS_STARBOARD)
+#include "starboard/configuration_constants.h"  // nogncheck
+#endif
 
 namespace base {
 
@@ -70,23 +72,36 @@ ThreadPoolInstance::ScopedBestEffortExecutionFence::
   g_thread_pool->EndBestEffortFence();
 }
 
+ThreadPoolInstance::ScopedRestrictedTasks::ScopedRestrictedTasks() {
+  DCHECK(g_thread_pool);
+  g_thread_pool->BeginRestrictedTasks();
+}
+
+ThreadPoolInstance::ScopedRestrictedTasks::~ScopedRestrictedTasks() {
+  DCHECK(g_thread_pool);
+  g_thread_pool->EndRestrictedTasks();
+}
+
 ThreadPoolInstance::ScopedFizzleBlockShutdownTasks::
     ScopedFizzleBlockShutdownTasks() {
   // It's possible for this to be called without a ThreadPool present in tests.
-  if (g_thread_pool)
+  if (g_thread_pool) {
     g_thread_pool->BeginFizzlingBlockShutdownTasks();
+  }
 }
 
 ThreadPoolInstance::ScopedFizzleBlockShutdownTasks::
     ~ScopedFizzleBlockShutdownTasks() {
   // It's possible for this to be called without a ThreadPool present in tests.
-  if (g_thread_pool)
+  if (g_thread_pool) {
     g_thread_pool->EndFizzlingBlockShutdownTasks();
+  }
 }
 
 #if !BUILDFLAG(IS_NACL)
 // static
-void ThreadPoolInstance::CreateAndStartWithDefaultParams(StringPiece name) {
+void ThreadPoolInstance::CreateAndStartWithDefaultParams(
+    std::string_view name) {
   Create(name);
   g_thread_pool->StartWithDefaultParams();
 }
@@ -98,19 +113,20 @@ void ThreadPoolInstance::StartWithDefaultParams() {
   // * The system is utilized maximally by foreground threads.
   // * The main thread is assumed to be busy, cap foreground workers at
   //   |num_cores - 1|.
-#if defined(STARBOARD)
-  const int kMaxNumberOfThreads = kSbMaxThreads;
-  const size_t max_num_foreground_threads = static_cast<size_t>(std::min(
-      (std::max(3, SysInfo::NumberOfProcessors() - 1)), kMaxNumberOfThreads));
+#if BUILDFLAG(IS_STARBOARD)
+  const uint32_t num_processors =
+      static_cast<uint32_t>(std::max(3, SysInfo::NumberOfProcessors() - 1));
+  const size_t max_num_foreground_threads =
+      std::min(num_processors, kSbMaxThreads);
 #else
   const size_t max_num_foreground_threads =
       static_cast<size_t>(std::max(3, SysInfo::NumberOfProcessors() - 1));
-#endif  // defined(STARBOARD)
+#endif  // BUILDFLAG(IS_STARBOARD)
   Start({max_num_foreground_threads});
 }
 #endif  // !BUILDFLAG(IS_NACL)
 
-void ThreadPoolInstance::Create(StringPiece name) {
+void ThreadPoolInstance::Create(std::string_view name) {
   Set(std::make_unique<internal::ThreadPoolImpl>(name));
 }
 

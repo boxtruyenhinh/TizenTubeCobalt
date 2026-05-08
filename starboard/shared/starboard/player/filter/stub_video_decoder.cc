@@ -14,20 +14,17 @@
 
 #include "starboard/shared/starboard/player/filter/stub_video_decoder.h"
 
+#include <limits>
 #include <string>
 
 #include "starboard/common/media.h"
 #include "starboard/shared/starboard/player/filter/cpu_video_frame.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 void StubVideoDecoder::Initialize(const DecoderStatusCB& decoder_status_cb,
                                   const ErrorCB& error_cb) {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
   SB_DCHECK(decoder_status_cb);
   SB_DCHECK(!decoder_status_cb_);
   decoder_status_cb_ = decoder_status_cb;
@@ -38,7 +35,7 @@ size_t StubVideoDecoder::GetPrerollFrameCount() const {
 }
 
 int64_t StubVideoDecoder::GetPrerollTimeout() const {
-  return kSbInt64Max;
+  return std::numeric_limits<int64_t>::max();
 }
 
 size_t StubVideoDecoder::GetMaxNumberOfCachedFrames() const {
@@ -46,21 +43,21 @@ size_t StubVideoDecoder::GetMaxNumberOfCachedFrames() const {
 }
 
 void StubVideoDecoder::WriteInputBuffers(const InputBuffers& input_buffers) {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
   SB_DCHECK(!input_buffers.empty());
 
   if (!decoder_thread_) {
-    decoder_thread_.reset(new JobThread("stub_video_decoder"));
+    decoder_thread_ = JobThread::Create("stub_video_decoder");
   }
-  decoder_thread_->job_queue()->Schedule(
+  decoder_thread_->Schedule(
       std::bind(&StubVideoDecoder::DecodeBuffers, this, input_buffers));
 }
 
 void StubVideoDecoder::WriteEndOfStream() {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
 
   if (decoder_thread_) {
-    decoder_thread_->job_queue()->Schedule(
+    decoder_thread_->Schedule(
         std::bind(&StubVideoDecoder::DecodeEndOfStream, this));
     return;
   }
@@ -68,10 +65,13 @@ void StubVideoDecoder::WriteEndOfStream() {
 }
 
 void StubVideoDecoder::Reset() {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
 
-  video_stream_info_ = media::VideoStreamInfo();
-  decoder_thread_.reset();
+  video_stream_info_ = VideoStreamInfo();
+  if (decoder_thread_) {
+    decoder_thread_->Stop();
+    decoder_thread_.reset();
+  }
   output_frame_timestamps_.clear();
   total_input_count_ = 0;
   CancelPendingJobs();
@@ -135,21 +135,18 @@ scoped_refptr<VideoFrame> StubVideoDecoder::CreateOutputFrame(
     // Assume 8 bits when |bits_per_channel| is unknown (0).
     bits_per_channel = 8;
   }
-  int uv_stride = bits_per_channel > 8 ? video_stream_info_.frame_width
-                                       : video_stream_info_.frame_width / 2;
+  int uv_stride = bits_per_channel > 8
+                      ? video_stream_info_.frame_size.width
+                      : video_stream_info_.frame_size.width / 2;
   int y_stride = uv_stride * 2;
-  std::string data(y_stride * video_stream_info_.frame_height, 0);
+  std::string data(y_stride * video_stream_info_.frame_size.height, 0);
 
   return CpuVideoFrame::CreateYV12Frame(
-      bits_per_channel, video_stream_info_.frame_width,
-      video_stream_info_.frame_height, y_stride, uv_stride, timestamp,
+      bits_per_channel, video_stream_info_.frame_size.width,
+      video_stream_info_.frame_size.height, y_stride, uv_stride, timestamp,
       reinterpret_cast<const uint8_t*>(data.data()),
       reinterpret_cast<const uint8_t*>(data.data()),
       reinterpret_cast<const uint8_t*>(data.data()));
 }
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

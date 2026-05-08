@@ -11,9 +11,10 @@
 #include "include/core/SkPixmap.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSize.h"
-#include "include/private/SkImageInfoPriv.h"
 #include "src/core/SkCachedData.h"
+#include "src/core/SkImageInfoPriv.h"
 #include "src/shaders/SkShaderBase.h"
+#include <memory>
 
 class SkBitmap;
 class SkData;
@@ -21,6 +22,12 @@ class SkDiscardableMemory;
 class SkMipmapBuilder;
 
 typedef SkDiscardableMemory* (*SkDiscardableFactoryProc)(size_t bytes);
+
+struct SkMipmapDownSampler {
+    virtual ~SkMipmapDownSampler() {}
+
+    virtual void buildLevel(const SkPixmap& dst, const SkPixmap& src) = 0;
+};
 
 /*
  * SkMipmap will generate mipmap levels when given a base mipmap level image.
@@ -31,6 +38,7 @@ typedef SkDiscardableMemory* (*SkDiscardableFactoryProc)(size_t bytes);
  */
 class SkMipmap : public SkCachedData {
 public:
+    ~SkMipmap() override;
     // Allocate and fill-in a mipmap. If computeContents is false, we just allocated
     // and compute the sizes/rowbytes, but leave the pixel-data uninitialized.
     static SkMipmap* Build(const SkPixmap& src, SkDiscardableFactoryProc,
@@ -48,6 +56,9 @@ public:
     // |level| is an index into the generated mipmap levels. It does not include
     // the base level. So index 0 represents mipmap level 1.
     static SkISize ComputeLevelSize(int baseWidth, int baseHeight, int level);
+    static SkISize ComputeLevelSize(SkISize s, int level) {
+        return ComputeLevelSize(s.width(), s.height(), level);
+    }
 
     // Computes the fractional level based on the scaling in X and Y.
     static float ComputeLevel(SkSize scaleSize);
@@ -73,8 +84,7 @@ public:
 
     bool validForRootLevel(const SkImageInfo&) const;
 
-    sk_sp<SkData> serialize() const;
-    static bool Deserialize(SkMipmapBuilder*, const void* data, size_t size);
+    static std::unique_ptr<SkMipmapDownSampler> MakeDownSampler(const SkPixmap&);
 
 protected:
     void onDataChange(void* oldData, void* newData) override {
@@ -86,12 +96,10 @@ private:
     Level*              fLevels;    // managed by the baseclass, may be null due to onDataChanged.
     int                 fCount;
 
-    SkMipmap(void* malloc, size_t size) : INHERITED(malloc, size) {}
-    SkMipmap(size_t size, SkDiscardableMemory* dm) : INHERITED(size, dm) {}
+    SkMipmap(void* malloc, size_t size);
+    SkMipmap(size_t size, SkDiscardableMemory* dm);
 
     static size_t AllocLevelsSize(int levelCount, size_t pixelSize);
-
-    using INHERITED = SkCachedData;
 };
 
 #endif

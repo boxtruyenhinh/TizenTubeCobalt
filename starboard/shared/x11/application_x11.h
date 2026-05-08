@@ -17,7 +17,9 @@
 
 #include <X11/Xlib.h>
 
+#include <cstdint>
 #include <memory>
+#include <mutex>
 #include <queue>
 #include <unordered_map>
 #include <vector>
@@ -26,27 +28,21 @@
 #include "starboard/player.h"
 #include "starboard/shared/internal_only.h"
 #include "starboard/shared/linux/dev_input/dev_input.h"
+#include "starboard/shared/linux/time_zone_monitor.h"
 #include "starboard/shared/starboard/application.h"
 #include "starboard/shared/starboard/queue_application.h"
-#include "starboard/types.h"
 #include "starboard/window.h"
 
 namespace starboard {
-namespace shared {
-namespace x11 {
 
 // This application engine combines the generic queue with the X11 event queue.
-class ApplicationX11 : public shared::starboard::QueueApplication {
+class ApplicationX11 : public QueueApplication {
  public:
-#if SB_API_VERSION >= 15
   explicit ApplicationX11(SbEventHandleCallback sb_event_handle_callback);
-#else
-  ApplicationX11();
-#endif  // SB_API_VERSION >= 15
   ~ApplicationX11() override;
 
   static ApplicationX11* Get() {
-    return static_cast<ApplicationX11*>(shared::starboard::Application::Get());
+    return static_cast<ApplicationX11*>(Application::Get());
   }
 
   SbWindow CreateWindow(const SbWindowOptions* options);
@@ -55,12 +51,6 @@ class ApplicationX11 : public shared::starboard::QueueApplication {
 
   // Make the current GL layer and video layer visible.
   void Composite();
-
-  // Call this function before updating the GL layer.
-  void SwapBuffersBegin();
-
-  // Call this function after the GL layer has been updated.
-  void SwapBuffersEnd();
 
   // This is called immediately when SbPlayerSetBounds is called. The
   // application will queue the new bounds until the UI frame using these
@@ -125,11 +115,11 @@ class ApplicationX11 : public shared::starboard::QueueApplication {
   SbWindow FindWindow(Window window);
 
   Atom wake_up_atom_;
-  Atom wm_delete_atom_;
   Atom wm_change_state_atom_;
+  Atom wm_delete_atom_;
 
   SbEventId composite_event_id_;
-  Mutex frame_mutex_;
+  std::mutex frame_mutex_;
 
   // The latest frame for every active player.
   std::unordered_map<SbPlayer, scoped_refptr<VideoFrame>> next_video_frames_;
@@ -154,14 +144,15 @@ class ApplicationX11 : public shared::starboard::QueueApplication {
   bool paste_buffer_key_release_pending_;
 
   // The /dev/input input handler. Only set when there is an open window.
-  std::unique_ptr<::starboard::shared::dev_input::DevInput> dev_input_;
+  std::unique_ptr<DevInput> dev_input_;
 
   // Indicates whether pointer input is from a touchscreen.
   bool touchscreen_pointer_;
+
+  std::unique_ptr<::starboard::shared::linux::TimeZoneMonitor>
+      time_zone_monitor_;
 };
 
-}  // namespace x11
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_X11_APPLICATION_X11_H_

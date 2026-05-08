@@ -5,6 +5,9 @@
 #ifndef INCLUDE_CPPGC_PLATFORM_H_
 #define INCLUDE_CPPGC_PLATFORM_H_
 
+#include <memory>
+
+#include "cppgc/source-location.h"
 #include "v8-platform.h"  // NOLINT(build/include_directory)
 #include "v8config.h"     // NOLINT(build/include_directory)
 
@@ -20,6 +23,7 @@ using PageAllocator = v8::PageAllocator;
 using Task = v8::Task;
 using TaskPriority = v8::TaskPriority;
 using TaskRunner = v8::TaskRunner;
+using TracingController = v8::TracingController;
 
 /**
  * Platform interface used by Heap. Contains allocators and executors.
@@ -29,8 +33,9 @@ class V8_EXPORT Platform {
   virtual ~Platform() = default;
 
   /**
-   * Returns the allocator used by cppgc to allocate its heap and various
-   * support structures.
+   * \returns the allocator used by cppgc to allocate its heap and various
+   * support structures. Returning nullptr results in using the `PageAllocator`
+   * provided by `cppgc::InitializeProcess()` instead.
    */
   virtual PageAllocator* GetPageAllocator() = 0;
 
@@ -47,6 +52,15 @@ class V8_EXPORT Platform {
    * Foreground task runner that should be used by a Heap.
    */
   virtual std::shared_ptr<TaskRunner> GetForegroundTaskRunner() {
+    return GetForegroundTaskRunner(TaskPriority::kUserBlocking);
+  }
+
+  /**
+   * Returns a TaskRunner with a specific |priority| which can be used to post a
+   * task on the foreground thread.
+   */
+  virtual std::shared_ptr<TaskRunner> GetForegroundTaskRunner(
+      TaskPriority priority) {
     return nullptr;
   }
 
@@ -113,24 +127,48 @@ class V8_EXPORT Platform {
       TaskPriority priority, std::unique_ptr<JobTask> job_task) {
     return nullptr;
   }
+
+  /**
+   * Returns an instance of a `TracingController`. This must be non-nullptr. The
+   * default implementation returns an empty `TracingController` that consumes
+   * trace data without effect.
+   */
+  virtual TracingController* GetTracingController();
 };
+
+V8_EXPORT bool IsInitialized();
 
 /**
  * Process-global initialization of the garbage collector. Must be called before
  * creating a Heap.
+ *
+ * Can be called multiple times when paired with `ShutdownProcess()`.
+ *
+ * \param page_allocator The allocator used for maintaining meta data. Must stay
+ *   always alive and not change between multiple calls to InitializeProcess. If
+ *   no allocator is provided, a default internal version will be used.
+ * \param desired_heap_size Desired amount of virtual address space to reserve
+ *   for the heap, in bytes. Actual size will be clamped to minimum and maximum
+ *   values based on compile-time settings and may be rounded up. If this
+ *   parameter is zero, a default value will be used.
  */
-V8_EXPORT void InitializeProcess(PageAllocator*);
+V8_EXPORT void InitializeProcess(PageAllocator* page_allocator = nullptr,
+                                 size_t desired_heap_size = 0);
 
 /**
- * Must be called after destroying the last used heap.
+ * Must be called after destroying the last used heap. Some process-global
+ * metadata may not be returned and reused upon a subsequent
+ * `InitializeProcess()` call.
  */
 V8_EXPORT void ShutdownProcess();
 
 namespace internal {
 
-V8_EXPORT void Abort();
+V8_EXPORT void Fatal(const std::string& reason = std::string(),
+                     const SourceLocation& = SourceLocation::Current());
 
 }  // namespace internal
+
 }  // namespace cppgc
 
 #endif  // INCLUDE_CPPGC_PLATFORM_H_

@@ -15,28 +15,25 @@
 #ifndef STARBOARD_STUB_APPLICATION_STUB_H_
 #define STARBOARD_STUB_APPLICATION_STUB_H_
 
+#include <cstdint>
+
 #include "starboard/configuration.h"
 #include "starboard/shared/internal_only.h"
 #include "starboard/shared/starboard/application.h"
 #include "starboard/shared/starboard/queue_application.h"
-#include "starboard/types.h"
 
 namespace starboard {
 namespace stub {
 
 // Stub application engine using the generic queue and a stub implementation.
-class ApplicationStub : public shared::starboard::QueueApplication {
+class ApplicationStub : public QueueApplication {
  public:
-#if SB_API_VERSION >= 15
   explicit ApplicationStub(SbEventHandleCallback sb_event_handle_callback);
-#else
-  ApplicationStub();
-#endif  // SB_API_VERSION >= 15
 
   ~ApplicationStub() override;
 
   static ApplicationStub* Get() {
-    return static_cast<ApplicationStub*>(shared::starboard::Application::Get());
+    return static_cast<ApplicationStub*>(Application::Get());
   }
 
  protected:

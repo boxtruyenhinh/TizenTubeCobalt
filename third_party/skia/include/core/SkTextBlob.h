@@ -9,16 +9,29 @@
 #define SkTextBlob_DEFINED
 
 #include "include/core/SkFont.h"
-#include "include/core/SkPaint.h"
+#include "include/core/SkFontTypes.h"
+#include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
-#include "include/core/SkString.h"
-#include "include/private/SkTemplates.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTemplates.h"
 
 #include <atomic>
+#include <cstdint>
+#include <cstring>
 
+class SkData;
+class SkPaint;
+class SkTypeface;
+struct SkDeserialProcs;
+struct SkPoint;
 struct SkRSXform;
 struct SkSerialProcs;
-struct SkDeserialProcs;
+
+namespace sktext {
+class GlyphRunList;
+}
 
 /** \class SkTextBlob
     SkTextBlob combines multiple text runs into an immutable container. Each text
@@ -196,13 +209,13 @@ public:
     class SK_API Iter {
     public:
         struct Run {
-            SkTypeface*     fTypeface;
-            int             fGlyphCount;
-            const uint16_t* fGlyphIndices;
+            SkTypeface* fTypeface;
+            int fGlyphCount;
+            const SkGlyphID* fGlyphIndices;
 #ifdef SK_UNTIL_CRBUG_1187654_IS_FIXED
             const uint32_t* fClusterIndex_forTest;
-            int             fUtf8Size_forTest;
-            const char*     fUtf8_forTest;
+            int fUtf8Size_forTest;
+            const char* fUtf8_forTest;
 #endif
         };
 
@@ -216,10 +229,10 @@ public:
 
         // Experimental, DO NO USE, will change/go-away
         struct ExperimentalRun {
-            SkFont          font;
-            int             count;
-            const uint16_t* glyphs;
-            const SkPoint*  positions;
+            SkFont font;
+            int count;
+            const SkGlyphID* glyphs;
+            const SkPoint* positions;
         };
         bool experimentalNext(ExperimentalRun*);
 
@@ -244,14 +257,16 @@ private:
 
     static unsigned ScalarsPerGlyph(GlyphPositioning pos);
 
+    using PurgeDelegate = void (*)(uint32_t blobID, uint32_t cacheID);
+
     // Call when this blob is part of the key to a cache entry. This allows the cache
     // to know automatically those entries can be purged when this SkTextBlob is deleted.
-    void notifyAddedToCache(uint32_t cacheID) const {
+    void notifyAddedToCache(uint32_t cacheID, PurgeDelegate purgeDelegate) const {
         fCacheID.store(cacheID);
+        fPurgeDelegate.store(purgeDelegate);
     }
 
-    friend class SkGlyphRunList;
-    friend class GrTextBlobCache;
+    friend class sktext::GlyphRunList;
     friend class SkTextBlobBuilder;
     friend class SkTextBlobPriv;
     friend class SkTextBlobRunIterator;
@@ -259,6 +274,7 @@ private:
     const SkRect                  fBounds;
     const uint32_t                fUniqueID;
     mutable std::atomic<uint32_t> fCacheID;
+    mutable std::atomic<PurgeDelegate> fPurgeDelegate;
 
     SkDEBUGCODE(size_t fStorageSize;)
 
@@ -488,7 +504,7 @@ private:
     friend class SkTextBlobPriv;
     friend class SkTextBlobBuilderPriv;
 
-    SkAutoTMalloc<uint8_t> fStorage;
+    skia_private::AutoTMalloc<uint8_t> fStorage;
     size_t                 fStorageSize;
     size_t                 fStorageUsed;
 

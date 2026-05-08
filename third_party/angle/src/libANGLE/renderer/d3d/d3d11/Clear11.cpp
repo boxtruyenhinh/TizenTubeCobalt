@@ -22,12 +22,10 @@
 #include "libANGLE/trace.h"
 
 // Precompiled shaders
-#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clear11_fl9vs.h"
 #include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clear11multiviewgs.h"
 #include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clear11multiviewvs.h"
 #include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clear11vs.h"
 #include "libANGLE/renderer/d3d/d3d11/shaders/compiled/cleardepth11ps.h"
-#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11_fl9ps.h"
 #include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11ps1.h"
 #include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11ps2.h"
 #include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11ps3.h"
@@ -112,10 +110,7 @@ bool UpdateDataCache(RtvDsvClearInfo<T> *dataCache,
                                          "Clear11 PS " ANGLE_STRINGIFY(Index))
 
 Clear11::ShaderManager::ShaderManager()
-    : mIl9(),
-      mVs9(g_VS_Clear_FL9, ArraySize(g_VS_Clear_FL9), "Clear11 VS FL9"),
-      mPsFloat9(g_PS_ClearFloat_FL9, ArraySize(g_PS_ClearFloat_FL9), "Clear11 PS FloatFL9"),
-      mVs(g_VS_Clear, ArraySize(g_VS_Clear), "Clear11 VS"),
+    : mVs(g_VS_Clear, ArraySize(g_VS_Clear), "Clear11 VS"),
       mVsMultiview(g_VS_Multiview_Clear, ArraySize(g_VS_Multiview_Clear), "Clear11 VS Multiview"),
       mGsMultiview(g_GS_Multiview_Clear, ArraySize(g_GS_Multiview_Clear), "Clear11 GS Multiview"),
       mPsDepth(g_PS_ClearDepth, ArraySize(g_PS_ClearDepth), "Clear11 PS Depth"),
@@ -142,31 +137,6 @@ angle::Result Clear11::ShaderManager::getShadersAndLayout(const gl::Context *con
                                                           const d3d11::PixelShader **ps)
 {
     Context11 *context11 = GetImplAs<Context11>(context);
-
-    if (renderer->getRenderer11DeviceCaps().featureLevel <= D3D_FEATURE_LEVEL_9_3)
-    {
-        ASSERT(clearType == GL_FLOAT);
-
-        ANGLE_TRY(mVs9.resolve(context11, renderer));
-        ANGLE_TRY(mPsFloat9.resolve(context11, renderer));
-
-        if (!mIl9.valid())
-        {
-            const D3D11_INPUT_ELEMENT_DESC ilDesc[] = {
-                {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0}};
-
-            InputElementArray ilDescArray(ilDesc);
-            ShaderData vertexShader(g_VS_Clear_FL9);
-
-            ANGLE_TRY(renderer->allocateResource(context11, ilDescArray, &vertexShader, &mIl9));
-        }
-
-        *vs = &mVs9.getObj();
-        *gs = nullptr;
-        *il = &mIl9;
-        *ps = &mPsFloat9.getObj();
-        return angle::Result::Continue;
-    }
 
     if (!hasLayeredLayout)
     {
@@ -262,11 +232,11 @@ angle::Result Clear11::ensureResourcesInitialized(const gl::Context *context)
     Context11 *context11 = GetImplAs<Context11>(context);
 
     ANGLE_TRY(mRenderer->allocateResource(context11, rsDesc, &mScissorDisabledRasterizerState));
-    mScissorDisabledRasterizerState.setDebugName("Clear11 Rasterizer State with scissor disabled");
+    mScissorDisabledRasterizerState.setInternalName("Clear11RasterizerStateWithScissorDisabled");
 
     rsDesc.ScissorEnable = TRUE;
     ANGLE_TRY(mRenderer->allocateResource(context11, rsDesc, &mScissorEnabledRasterizerState));
-    mScissorEnabledRasterizerState.setDebugName("Clear11 Rasterizer State with scissor enabled");
+    mScissorEnabledRasterizerState.setInternalName("Clear11RasterizerStateWithScissorEnabled");
 
     // Initialize Depthstencil state with defaults
     mDepthStencilStateKey.depthTest                = false;
@@ -287,15 +257,7 @@ angle::Result Clear11::ensureResourcesInitialized(const gl::Context *context)
     mDepthStencilStateKey.stencilBackFunc          = GL_ALWAYS;
 
     // Initialize BlendStateKey with defaults
-    mBlendStateKey.blendState.blend                 = false;
-    mBlendStateKey.blendState.sourceBlendRGB        = GL_ONE;
-    mBlendStateKey.blendState.sourceBlendAlpha      = GL_ONE;
-    mBlendStateKey.blendState.destBlendRGB          = GL_ZERO;
-    mBlendStateKey.blendState.destBlendAlpha        = GL_ZERO;
-    mBlendStateKey.blendState.blendEquationRGB      = GL_FUNC_ADD;
-    mBlendStateKey.blendState.blendEquationAlpha    = GL_FUNC_ADD;
-    mBlendStateKey.blendState.sampleAlphaToCoverage = false;
-    mBlendStateKey.blendState.dither                = true;
+    mBlendStateKey.blendStateExt = gl::BlendStateExt(mRenderer->getNativeCaps().maxDrawBuffers);
 
     mResourcesInitialized = true;
     return angle::Result::Continue;
@@ -330,7 +292,7 @@ angle::Result Clear11::ensureConstantBufferCreated(const gl::Context *context)
 
     ANGLE_TRY(mRenderer->allocateResource(GetImplAs<Context11>(context), bufferDesc, &initialData,
                                           &mConstantBuffer));
-    mConstantBuffer.setDebugName("Clear11 Constant Buffer");
+    mConstantBuffer.setInternalName("Clear11ConstantBuffer");
     return angle::Result::Continue;
 }
 
@@ -368,7 +330,7 @@ angle::Result Clear11::ensureVertexBufferCreated(const gl::Context *context)
 
     ANGLE_TRY(mRenderer->allocateResource(GetImplAs<Context11>(context), bufferDesc, &initialData,
                                           &mVertexBuffer));
-    mVertexBuffer.setDebugName("Clear11 Vertex Buffer");
+    mVertexBuffer.setInternalName("Clear11VertexBuffer");
     return angle::Result::Continue;
 }
 
@@ -428,7 +390,7 @@ angle::Result Clear11::clearFramebuffer(const gl::Context *context,
             clearParams.scissor.height == 0)
         {
             // The check assumes that the viewport offsets are not negative as according to the
-            // OVR_multiview2 spec.
+            // OVR_multiview spec.
             // Scissor rect is outside the renderbuffer or is an empty rect.
             return angle::Result::Continue;
         }
@@ -461,14 +423,17 @@ angle::Result Clear11::clearFramebuffer(const gl::Context *context,
     std::array<ID3D11RenderTargetView *, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT> rtvs;
     std::array<uint8_t, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT> rtvMasks = {};
 
-    uint32_t numRtvs = 0;
-    const uint8_t colorMask =
-        gl_d3d11::ConvertColorMask(clearParams.colorMaskRed, clearParams.colorMaskGreen,
-                                   clearParams.colorMaskBlue, clearParams.colorMaskAlpha);
+    uint32_t numRtvs        = 0;
+    uint8_t commonColorMask = 0;
 
     const auto &colorAttachments = fboData.getColorAttachments();
     for (auto colorAttachmentIndex : fboData.getEnabledDrawBuffers())
     {
+        const uint8_t colorMask = gl::BlendStateExt::ColorMaskStorage::GetValueIndexed(
+            colorAttachmentIndex, clearParams.colorMask);
+
+        commonColorMask |= colorMask;
+
         const gl::FramebufferAttachment &attachment = colorAttachments[colorAttachmentIndex];
 
         if (!clearParams.clearColor[colorAttachmentIndex])
@@ -494,10 +459,10 @@ angle::Result Clear11::clearFramebuffer(const gl::Context *context,
                    << ").";
         }
 
-        if ((formatInfo.redBits == 0 || !clearParams.colorMaskRed) &&
-            (formatInfo.greenBits == 0 || !clearParams.colorMaskGreen) &&
-            (formatInfo.blueBits == 0 || !clearParams.colorMaskBlue) &&
-            (formatInfo.alphaBits == 0 || !clearParams.colorMaskAlpha))
+        bool r, g, b, a;
+        gl::BlendStateExt::UnpackColorMask(colorMask, &r, &g, &b, &a);
+        if ((formatInfo.redBits == 0 || !r) && (formatInfo.greenBits == 0 || !g) &&
+            (formatInfo.blueBits == 0 || !b) && (formatInfo.alphaBits == 0 || !a))
         {
             // Every channel either does not exist in the render target or is masked out
             continue;
@@ -507,11 +472,9 @@ angle::Result Clear11::clearFramebuffer(const gl::Context *context,
         ASSERT(framebufferRTV.valid());
 
         if ((!(mRenderer->getRenderer11DeviceCaps().supportsClearView) && needScissoredClear) ||
-            clearParams.colorType != GL_FLOAT ||
-            (formatInfo.redBits > 0 && !clearParams.colorMaskRed) ||
-            (formatInfo.greenBits > 0 && !clearParams.colorMaskGreen) ||
-            (formatInfo.blueBits > 0 && !clearParams.colorMaskBlue) ||
-            (formatInfo.alphaBits > 0 && !clearParams.colorMaskAlpha))
+            clearParams.colorType != GL_FLOAT || (formatInfo.redBits > 0 && !r) ||
+            (formatInfo.greenBits > 0 && !g) || (formatInfo.blueBits > 0 && !b) ||
+            (formatInfo.alphaBits > 0 && !a))
         {
             rtvs[numRtvs]     = framebufferRTV.get();
             rtvMasks[numRtvs] = gl_d3d11::GetColorMask(formatInfo) & colorMask;
@@ -643,12 +606,13 @@ angle::Result Clear11::clearFramebuffer(const gl::Context *context,
     ASSERT(numRtvs <= static_cast<uint32_t>(mRenderer->getNativeCaps().maxDrawBuffers));
 
     // Setup BlendStateKey parameters
-    mBlendStateKey.blendState.colorMaskRed   = clearParams.colorMaskRed;
-    mBlendStateKey.blendState.colorMaskGreen = clearParams.colorMaskGreen;
-    mBlendStateKey.blendState.colorMaskBlue  = clearParams.colorMaskBlue;
-    mBlendStateKey.blendState.colorMaskAlpha = clearParams.colorMaskAlpha;
-    mBlendStateKey.rtvMax                    = numRtvs;
-    memcpy(mBlendStateKey.rtvMasks, &rtvMasks[0], sizeof(mBlendStateKey.rtvMasks));
+    mBlendStateKey.blendStateExt.setColorMask(false, false, false, false);
+    for (size_t i = 0; i < numRtvs; i++)
+    {
+        mBlendStateKey.blendStateExt.setColorMaskIndexed(i, rtvMasks[i]);
+    }
+
+    mBlendStateKey.rtvMax = static_cast<uint16_t>(numRtvs);
 
     // Get BlendState
     const d3d11::BlendState *blendState = nullptr;
@@ -676,15 +640,16 @@ angle::Result Clear11::clearFramebuffer(const gl::Context *context,
     switch (clearParams.colorType)
     {
         case GL_FLOAT:
-            dirtyCb = UpdateDataCache(&mShaderData, clearParams.colorF, zValue, numRtvs, colorMask);
+            dirtyCb =
+                UpdateDataCache(&mShaderData, clearParams.colorF, zValue, numRtvs, commonColorMask);
             break;
         case GL_UNSIGNED_INT:
             dirtyCb = UpdateDataCache(reinterpret_cast<RtvDsvClearInfo<uint32_t> *>(&mShaderData),
-                                      clearParams.colorUI, zValue, numRtvs, colorMask);
+                                      clearParams.colorUI, zValue, numRtvs, commonColorMask);
             break;
         case GL_INT:
             dirtyCb = UpdateDataCache(reinterpret_cast<RtvDsvClearInfo<int> *>(&mShaderData),
-                                      clearParams.colorI, zValue, numRtvs, colorMask);
+                                      clearParams.colorI, zValue, numRtvs, commonColorMask);
             break;
         default:
             UNREACHABLE();

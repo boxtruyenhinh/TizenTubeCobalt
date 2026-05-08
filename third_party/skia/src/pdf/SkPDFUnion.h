@@ -3,12 +3,17 @@
 #ifndef SkPDFUnion_DEFINED
 #define SkPDFUnion_DEFINED
 
-#include "src/pdf/SkPDFTypes.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkString.h"
+#include "include/private/base/SkTo.h"
 
-// Exposed for unit testing.
-void SkPDFWriteString(SkWStream* wStream, const char* cin, size_t len);
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 
-////////////////////////////////////////////////////////////////////////////////
+class SkPDFObject;
+class SkWStream;
+struct SkPDFIndirectReference;
 
 /**
    A SkPDFUnion is a non-virtualized implementation of the
@@ -50,9 +55,9 @@ public:
         whitespace characters).  This will not copy the name. */
     static SkPDFUnion Name(const char*);
 
-    /** SkPDFUnion::String will encode the passed string.  This will
-        not copy the name. */
-    static SkPDFUnion String(const char*);
+    /** SkPDFUnion::String will encode the passed string.  This will not copy. */
+    static SkPDFUnion ByteString(const char*);
+    static SkPDFUnion TextString(const char*);
 
     /** SkPDFUnion::Name(SkString) does not assume that the
         passed string is already a valid name and it will escape the
@@ -60,7 +65,8 @@ public:
     static SkPDFUnion Name(SkString);
 
     /** SkPDFUnion::String will encode the passed string. */
-    static SkPDFUnion String(SkString);
+    static SkPDFUnion ByteString(SkString);
+    static SkPDFUnion TextString(SkString);
 
     static SkPDFUnion Object(std::unique_ptr<SkPDFObject>);
 
@@ -91,9 +97,11 @@ private:
         kBool,
         kScalar,
         kName,
-        kString,
+        kByteString,
+        kTextString,
         kNameSkS,
-        kStringSkS,
+        kByteStringSkS,
+        kTextStringSkS,
         kObject,
         kRef,
     };

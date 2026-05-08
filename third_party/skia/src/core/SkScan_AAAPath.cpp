@@ -5,31 +5,29 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkColor.h"
 #include "include/core/SkPath.h"
-#include "include/core/SkRegion.h"
-#include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
+#include "include/core/SkPathTypes.h"
+#include "include/core/SkRect.h"
+#include "include/private/base/SkAlign.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkFixed.h"
+#include "include/private/base/SkMath.h"
+#include "include/private/base/SkSafe32.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkTSort.h"
+#include "src/core/SkAlphaRuns.h"
 #include "src/core/SkAnalyticEdge.h"
-#include "src/core/SkAntiRun.h"
-#include "src/core/SkAutoMalloc.h"
 #include "src/core/SkBlitter.h"
-#include "src/core/SkEdge.h"
 #include "src/core/SkEdgeBuilder.h"
-#include "src/core/SkGeometry.h"
-#include "src/core/SkQuadClipper.h"
-#include "src/core/SkRasterClip.h"
+#include "src/core/SkMask.h"
 #include "src/core/SkScan.h"
 #include "src/core/SkScanPriv.h"
-#include "src/core/SkTSort.h"
 
-#include <utility>
-
-#if defined(SK_DISABLE_AAA)
-void SkScan::AAAFillPath(const SkPath&, SkBlitter*, const SkIRect&, const SkIRect&, bool) {
-    SkDEBUGFAIL("AAA Disabled");
-    return;
-}
-#else
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
 
 /*
 
@@ -105,8 +103,8 @@ public:
     virtual SkBlitter* getRealBlitter(bool forceRealBlitter = false) = 0;
 
     virtual void blitAntiH(int x, int y, const SkAlpha antialias[], int len) = 0;
-    virtual void blitAntiH(int x, int y, const SkAlpha alpha)                = 0;
-    virtual void blitAntiH(int x, int y, int width, const SkAlpha alpha)     = 0;
+    virtual void blitAntiH(int x, int y, SkAlpha alpha)                = 0;
+    virtual void blitAntiH(int x, int y, int width, SkAlpha alpha)     = 0;
 
     void blitAntiH(int x, int y, const SkAlpha antialias[], const int16_t runs[]) override {
         SkDEBUGFAIL("Please call real blitter's blitAntiH instead.");
@@ -157,8 +155,8 @@ public:
 
     // Allowing following methods are used to blit rectangles during aaa_walk_convex_edges
     // Since there aren't many rectangles, we can still bear the slow speed of virtual functions.
-    void blitAntiH(int x, int y, const SkAlpha alpha) override;
-    void blitAntiH(int x, int y, int width, const SkAlpha alpha) override;
+    void blitAntiH(int x, int y, SkAlpha alpha) override;
+    void blitAntiH(int x, int y, int width, SkAlpha alpha) override;
     void blitV(int x, int y, int height, SkAlpha alpha) override;
     void blitRect(int x, int y, int width, int height) override;
     void blitAntiRect(int x, int y, int width, int height, SkAlpha leftAlpha, SkAlpha rightAlpha)
@@ -186,7 +184,7 @@ public:
     uint8_t* getRow(int y) {
         if (y != fY) {
             fY   = y;
-            fRow = fMask.fImage + (y - fMask.fBounds.fTop) * fMask.fRowBytes - fMask.fBounds.fLeft;
+            fRow = fMask.image() + (y - fMask.fBounds.fTop) * fMask.fRowBytes - fMask.fBounds.fLeft;
         }
         return fRow;
     }
@@ -197,7 +195,7 @@ private:
     static const int kMAX_STORAGE = 1024;
 
     SkBlitter* fRealBlitter;
-    SkMask     fMask;
+    SkMaskBuilder fMask;
     SkIRect    fClipRect;
     // we add 2 because we can write 1 extra byte at either end due to precision error
     uint32_t fStorage[(kMAX_STORAGE >> 2) + 2];
@@ -209,19 +207,14 @@ private:
 MaskAdditiveBlitter::MaskAdditiveBlitter(SkBlitter*     realBlitter,
                                          const SkIRect& ir,
                                          const SkIRect& clipBounds,
-                                         bool           isInverse) {
+                                         bool           isInverse)
+    : fRealBlitter(realBlitter)
+    , fMask((uint8_t*)fStorage + 1, ir, ir.width(), SkMask::kA8_Format)
+    , fRow(nullptr)
+    , fY(ir.fTop - 1)
+    {
     SkASSERT(CanHandleRect(ir));
     SkASSERT(!isInverse);
-
-    fRealBlitter = realBlitter;
-
-    fMask.fImage    = (uint8_t*)fStorage + 1;  // There's 1 extra byte at either end of fStorage
-    fMask.fBounds   = ir;
-    fMask.fRowBytes = ir.width();
-    fMask.fFormat   = SkMask::kA8_Format;
-
-    fY   = ir.fTop - 1;
-    fRow = nullptr;
 
     fClipRect = ir;
     if (!fClipRect.intersect(clipBounds)) {
@@ -236,12 +229,12 @@ void MaskAdditiveBlitter::blitAntiH(int x, int y, const SkAlpha antialias[], int
     SK_ABORT("Don't use this; directly add alphas to the mask.");
 }
 
-void MaskAdditiveBlitter::blitAntiH(int x, int y, const SkAlpha alpha) {
+void MaskAdditiveBlitter::blitAntiH(int x, int y, SkAlpha alpha) {
     SkASSERT(x >= fMask.fBounds.fLeft - 1);
     add_alpha(&this->getRow(y)[x], alpha);
 }
 
-void MaskAdditiveBlitter::blitAntiH(int x, int y, int width, const SkAlpha alpha) {
+void MaskAdditiveBlitter::blitAntiH(int x, int y, int width, SkAlpha alpha) {
     SkASSERT(x >= fMask.fBounds.fLeft - 1);
     uint8_t* row = this->getRow(y);
     for (int i = 0; i < width; ++i) {
@@ -297,8 +290,8 @@ public:
     SkBlitter* getRealBlitter(bool forceRealBlitter) override { return fRealBlitter; }
 
     void blitAntiH(int x, int y, const SkAlpha antialias[], int len) override;
-    void blitAntiH(int x, int y, const SkAlpha alpha) override;
-    void blitAntiH(int x, int y, int width, const SkAlpha alpha) override;
+    void blitAntiH(int x, int y, SkAlpha alpha) override;
+    void blitAntiH(int x, int y, int width, SkAlpha alpha) override;
 
     int getWidth() override { return fWidth; }
 
@@ -435,7 +428,7 @@ void RunBasedAdditiveBlitter::blitAntiH(int x, int y, const SkAlpha antialias[],
     }
 }
 
-void RunBasedAdditiveBlitter::blitAntiH(int x, int y, const SkAlpha alpha) {
+void RunBasedAdditiveBlitter::blitAntiH(int x, int y, SkAlpha alpha) {
     checkY(y);
     x -= fLeft;
 
@@ -448,7 +441,7 @@ void RunBasedAdditiveBlitter::blitAntiH(int x, int y, const SkAlpha alpha) {
     }
 }
 
-void RunBasedAdditiveBlitter::blitAntiH(int x, int y, int width, const SkAlpha alpha) {
+void RunBasedAdditiveBlitter::blitAntiH(int x, int y, int width, SkAlpha alpha) {
     checkY(y);
     x -= fLeft;
 
@@ -472,8 +465,8 @@ public:
             : RunBasedAdditiveBlitter(realBlitter, ir, clipBounds, isInverse) {}
 
     void blitAntiH(int x, int y, const SkAlpha antialias[], int len) override;
-    void blitAntiH(int x, int y, const SkAlpha alpha) override;
-    void blitAntiH(int x, int y, int width, const SkAlpha alpha) override;
+    void blitAntiH(int x, int y, SkAlpha alpha) override;
+    void blitAntiH(int x, int y, int width, SkAlpha alpha) override;
 };
 
 void SafeRLEAdditiveBlitter::blitAntiH(int x, int y, const SkAlpha antialias[], int len) {
@@ -505,7 +498,7 @@ void SafeRLEAdditiveBlitter::blitAntiH(int x, int y, const SkAlpha antialias[], 
     }
 }
 
-void SafeRLEAdditiveBlitter::blitAntiH(int x, int y, const SkAlpha alpha) {
+void SafeRLEAdditiveBlitter::blitAntiH(int x, int y, SkAlpha alpha) {
     checkY(y);
     x -= fLeft;
 
@@ -520,7 +513,7 @@ void SafeRLEAdditiveBlitter::blitAntiH(int x, int y, const SkAlpha alpha) {
     }
 }
 
-void SafeRLEAdditiveBlitter::blitAntiH(int x, int y, int width, const SkAlpha alpha) {
+void SafeRLEAdditiveBlitter::blitAntiH(int x, int y, int width, SkAlpha alpha) {
     checkY(y);
     x -= fLeft;
 
@@ -610,10 +603,10 @@ static void compute_alpha_above_line(SkAlpha* alphas,
         SkFixed last    = r - ((R - 1) << 16);  // horizontal edge length of the right-most triangle
         SkFixed firstH  = SkFixedMul(first, dY);  // vertical edge of the left-most triangle
         alphas[0]       = SkFixedMul(first, firstH) >> 9;  // triangle alpha
-        SkFixed alpha16 = firstH + (dY >> 1);              // rectangle plus triangle
+        SkFixed alpha16 = Sk32_sat_add(firstH, dY >> 1);                // rectangle plus triangle
         for (int i = 1; i < R - 1; ++i) {
             alphas[i] = alpha16 >> 8;
-            alpha16 += dY;
+            alpha16 = Sk32_sat_add(alpha16, dY);
         }
         alphas[R - 1] = fullAlpha - partial_triangle_to_alpha(last, dY);
     }
@@ -637,32 +630,28 @@ static void compute_alpha_below_line(SkAlpha* alphas,
         SkFixed last    = r - ((R - 1) << 16);  // horizontal edge length of the right-most triangle
         SkFixed lastH   = SkFixedMul(last, dY);          // vertical edge of the right-most triangle
         alphas[R - 1]   = SkFixedMul(last, lastH) >> 9;  // triangle alpha
-        SkFixed alpha16 = lastH + (dY >> 1);             // rectangle plus triangle
+        SkFixed alpha16 = Sk32_sat_add(lastH, dY >> 1);             // rectangle plus triangle
         for (int i = R - 2; i > 0; i--) {
             alphas[i] = (alpha16 >> 8) & 0xFF;
-            alpha16 += dY;
+            alpha16 = Sk32_sat_add(alpha16, dY);
         }
         alphas[0] = fullAlpha - partial_triangle_to_alpha(first, dY);
     }
 }
 
 // Note that if fullAlpha != 0xFF, we'll multiply alpha by fullAlpha
-static SK_ALWAYS_INLINE void blit_single_alpha(AdditiveBlitter* blitter,
-                                               int              y,
-                                               int              x,
-                                               SkAlpha          alpha,
-                                               SkAlpha          fullAlpha,
-                                               SkAlpha*         maskRow,
-                                               bool             isUsingMask,
-                                               bool             noRealBlitter,
-                                               bool             needSafeCheck) {
-    if (isUsingMask) {
+static void blit_single_alpha(AdditiveBlitter* blitter,
+                              int y,
+                              int x,
+                              SkAlpha alpha,
+                              SkAlpha fullAlpha,
+                              SkAlpha* maskRow,
+                              bool noRealBlitter) {
+    if (maskRow) {
         if (fullAlpha == 0xFF && !noRealBlitter) {  // noRealBlitter is needed for concave paths
             maskRow[x] = alpha;
-        } else if (needSafeCheck) {
-            safely_add_alpha(&maskRow[x], get_partial_alpha(alpha, fullAlpha));
         } else {
-            add_alpha(&maskRow[x], get_partial_alpha(alpha, fullAlpha));
+            safely_add_alpha(&maskRow[x], get_partial_alpha(alpha, fullAlpha));
         }
     } else {
         if (fullAlpha == 0xFF && !noRealBlitter) {
@@ -673,24 +662,17 @@ static SK_ALWAYS_INLINE void blit_single_alpha(AdditiveBlitter* blitter,
     }
 }
 
-static SK_ALWAYS_INLINE void blit_two_alphas(AdditiveBlitter* blitter,
-                                             int              y,
-                                             int              x,
-                                             SkAlpha          a1,
-                                             SkAlpha          a2,
-                                             SkAlpha          fullAlpha,
-                                             SkAlpha*         maskRow,
-                                             bool             isUsingMask,
-                                             bool             noRealBlitter,
-                                             bool             needSafeCheck) {
-    if (isUsingMask) {
-        if (needSafeCheck) {
-            safely_add_alpha(&maskRow[x], a1);
-            safely_add_alpha(&maskRow[x + 1], a2);
-        } else {
-            add_alpha(&maskRow[x], a1);
-            add_alpha(&maskRow[x + 1], a2);
-        }
+static void blit_two_alphas(AdditiveBlitter* blitter,
+                            int y,
+                            int x,
+                            SkAlpha a1,
+                            SkAlpha a2,
+                            SkAlpha fullAlpha,
+                            SkAlpha* maskRow,
+                            bool noRealBlitter) {
+    if (maskRow) {
+        safely_add_alpha(&maskRow[x], a1);
+        safely_add_alpha(&maskRow[x + 1], a2);
     } else {
         if (fullAlpha == 0xFF && !noRealBlitter) {
             blitter->getRealBlitter()->blitAntiH2(x, y, a1, a2);
@@ -701,22 +683,16 @@ static SK_ALWAYS_INLINE void blit_two_alphas(AdditiveBlitter* blitter,
     }
 }
 
-static SK_ALWAYS_INLINE void blit_full_alpha(AdditiveBlitter* blitter,
-                                             int              y,
-                                             int              x,
-                                             int              len,
-                                             SkAlpha          fullAlpha,
-                                             SkAlpha*         maskRow,
-                                             bool             isUsingMask,
-                                             bool             noRealBlitter,
-                                             bool             needSafeCheck) {
-    if (isUsingMask) {
+static void blit_full_alpha(AdditiveBlitter* blitter,
+                            int y,
+                            int x,
+                            int len,
+                            SkAlpha fullAlpha,
+                            SkAlpha* maskRow,
+                            bool noRealBlitter) {
+    if (maskRow) {
         for (int i = 0; i < len; ++i) {
-            if (needSafeCheck) {
-                safely_add_alpha(&maskRow[x + i], fullAlpha);
-            } else {
-                add_alpha(&maskRow[x + i], fullAlpha);
-            }
+            safely_add_alpha(&maskRow[x + i], fullAlpha);
         }
     } else {
         if (fullAlpha == 0xFF && !noRealBlitter) {
@@ -737,28 +713,18 @@ static void blit_aaa_trapezoid_row(AdditiveBlitter* blitter,
                                    SkFixed          rDY,
                                    SkAlpha          fullAlpha,
                                    SkAlpha*         maskRow,
-                                   bool             isUsingMask,
-                                   bool             noRealBlitter,
-                                   bool             needSafeCheck) {
+                                   bool             noRealBlitter) {
     int L = SkFixedFloorToInt(ul), R = SkFixedCeilToInt(lr);
     int len = R - L;
 
     if (len == 1) {
         SkAlpha alpha = trapezoid_to_alpha(ur - ul, lr - ll);
-        blit_single_alpha(blitter,
-                          y,
-                          L,
-                          alpha,
-                          fullAlpha,
-                          maskRow,
-                          isUsingMask,
-                          noRealBlitter,
-                          needSafeCheck);
+        blit_single_alpha(blitter, y, L, alpha, fullAlpha, maskRow, noRealBlitter);
         return;
     }
 
     const int kQuickLen = 31;
-    char      quickMemory[(sizeof(SkAlpha) * 2 + sizeof(int16_t)) * (kQuickLen + 1)];
+    alignas(2) char quickMemory[(sizeof(SkAlpha) * 2 + sizeof(int16_t)) * (kQuickLen + 1)];
     SkAlpha*  alphas;
 
     if (len <= kQuickLen) {
@@ -818,13 +784,9 @@ static void blit_aaa_trapezoid_row(AdditiveBlitter* blitter,
         }
     }
 
-    if (isUsingMask) {
+    if (maskRow) {
         for (int i = 0; i < len; ++i) {
-            if (needSafeCheck) {
-                safely_add_alpha(&maskRow[L + i], alphas[i]);
-            } else {
-                add_alpha(&maskRow[L + i], alphas[i]);
-            }
+            safely_add_alpha(&maskRow[L + i], alphas[i]);
         }
     } else {
         if (fullAlpha == 0xFF && !noRealBlitter) {
@@ -840,19 +802,17 @@ static void blit_aaa_trapezoid_row(AdditiveBlitter* blitter,
     }
 }
 
-static SK_ALWAYS_INLINE void blit_trapezoid_row(AdditiveBlitter* blitter,
-                                                int              y,
-                                                SkFixed          ul,
-                                                SkFixed          ur,
-                                                SkFixed          ll,
-                                                SkFixed          lr,
-                                                SkFixed          lDY,
-                                                SkFixed          rDY,
-                                                SkAlpha          fullAlpha,
-                                                SkAlpha*         maskRow,
-                                                bool             isUsingMask,
-                                                bool             noRealBlitter = false,
-                                                bool             needSafeCheck = false) {
+static void blit_trapezoid_row(AdditiveBlitter* blitter,
+                               int y,
+                               SkFixed ul,
+                               SkFixed ur,
+                               SkFixed ll,
+                               SkFixed lr,
+                               SkFixed lDY,
+                               SkFixed rDY,
+                               SkAlpha fullAlpha,
+                               SkAlpha* maskRow,
+                               bool noRealBlitter) {
     SkASSERT(lDY >= 0 && rDY >= 0);  // We should only send in the absolte value
 
     if (ul > ur) {
@@ -893,9 +853,7 @@ static SK_ALWAYS_INLINE void blit_trapezoid_row(AdditiveBlitter* blitter,
                                   alpha,
                                   fullAlpha,
                                   maskRow,
-                                  isUsingMask,
-                                  noRealBlitter,
-                                  needSafeCheck);
+                                  noRealBlitter);
             } else if (len == 2) {
                 SkFixed first  = joinLeft - SK_Fixed1 - ul;
                 SkFixed second = ll - ul - first;
@@ -908,9 +866,7 @@ static SK_ALWAYS_INLINE void blit_trapezoid_row(AdditiveBlitter* blitter,
                                 a2,
                                 fullAlpha,
                                 maskRow,
-                                isUsingMask,
-                                noRealBlitter,
-                                needSafeCheck);
+                                noRealBlitter);
             } else {
                 blit_aaa_trapezoid_row(blitter,
                                        y,
@@ -922,9 +878,7 @@ static SK_ALWAYS_INLINE void blit_trapezoid_row(AdditiveBlitter* blitter,
                                        SK_MaxS32,
                                        fullAlpha,
                                        maskRow,
-                                       isUsingMask,
-                                       noRealBlitter,
-                                       needSafeCheck);
+                                       noRealBlitter);
             }
         }
         // SkAAClip requires that we blit from left to right.
@@ -936,9 +890,7 @@ static SK_ALWAYS_INLINE void blit_trapezoid_row(AdditiveBlitter* blitter,
                             SkFixedFloorToInt(joinRite - joinLeft),
                             fullAlpha,
                             maskRow,
-                            isUsingMask,
-                            noRealBlitter,
-                            needSafeCheck);
+                            noRealBlitter);
         }
         if (lr > joinRite) {
             int len = SkFixedCeilToInt(lr - joinRite);
@@ -950,9 +902,7 @@ static SK_ALWAYS_INLINE void blit_trapezoid_row(AdditiveBlitter* blitter,
                                   alpha,
                                   fullAlpha,
                                   maskRow,
-                                  isUsingMask,
-                                  noRealBlitter,
-                                  needSafeCheck);
+                                  noRealBlitter);
             } else if (len == 2) {
                 SkFixed first  = joinRite + SK_Fixed1 - ur;
                 SkFixed second = lr - ur - first;
@@ -965,9 +915,7 @@ static SK_ALWAYS_INLINE void blit_trapezoid_row(AdditiveBlitter* blitter,
                                 a2,
                                 fullAlpha,
                                 maskRow,
-                                isUsingMask,
-                                noRealBlitter,
-                                needSafeCheck);
+                                noRealBlitter);
             } else {
                 blit_aaa_trapezoid_row(blitter,
                                        y,
@@ -979,9 +927,7 @@ static SK_ALWAYS_INLINE void blit_trapezoid_row(AdditiveBlitter* blitter,
                                        rDY,
                                        fullAlpha,
                                        maskRow,
-                                       isUsingMask,
-                                       noRealBlitter,
-                                       needSafeCheck);
+                                       noRealBlitter);
             }
         }
     } else {
@@ -995,31 +941,24 @@ static SK_ALWAYS_INLINE void blit_trapezoid_row(AdditiveBlitter* blitter,
                                rDY,
                                fullAlpha,
                                maskRow,
-                               isUsingMask,
-                               noRealBlitter,
-                               needSafeCheck);
+                               noRealBlitter);
     }
 }
 
-static bool operator<(const SkAnalyticEdge& a, const SkAnalyticEdge& b) {
-    int valuea = a.fUpperY;
-    int valueb = b.fUpperY;
-
-    if (valuea == valueb) {
-        valuea = a.fX;
-        valueb = b.fX;
+static bool compare_edges(const SkAnalyticEdge* a, const SkAnalyticEdge* b) {
+    if (a->fUpperY != b->fUpperY) {
+        return a->fUpperY < b->fUpperY;
     }
 
-    if (valuea == valueb) {
-        valuea = a.fDX;
-        valueb = b.fDX;
+    if (a->fX != b->fX) {
+        return a->fX < b->fX;
     }
 
-    return valuea < valueb;
+    return a->fDX < b->fDX;
 }
 
 static SkAnalyticEdge* sort_edges(SkAnalyticEdge* list[], int count, SkAnalyticEdge** last) {
-    SkTQSort(list, list + count);
+    SkTQSort(list, list + count, compare_edges);
 
     // now make the edges linked in sorted order
     for (int i = 1; i < count; ++i) {
@@ -1050,21 +989,22 @@ static void validate_sort(const SkAnalyticEdge* edge) {
 // relatively large compared to fQDDx/QCDDx and fQDDy/fCDDy
 static bool is_smooth_enough(SkAnalyticEdge* thisEdge, SkAnalyticEdge* nextEdge, int stop_y) {
     if (thisEdge->fCurveCount < 0) {
-        const SkCubicEdge& cEdge   = static_cast<SkAnalyticCubicEdge*>(thisEdge)->fCEdge;
-        int                ddshift = cEdge.fCurveShift;
-        return SkAbs32(cEdge.fCDx) >> 1 >= SkAbs32(cEdge.fCDDx) >> ddshift &&
-               SkAbs32(cEdge.fCDy) >> 1 >= SkAbs32(cEdge.fCDDy) >> ddshift &&
+        const auto cEdge = static_cast<SkAnalyticCubicEdge*>(thisEdge);
+        int      ddshift = cEdge->fCurveShift;
+        return SkAbs32(cEdge->fCDx) >> 1 >= SkAbs32(cEdge->fCDDx) >> ddshift &&
+               SkAbs32(cEdge->fCDy) >> 1 >= SkAbs32(cEdge->fCDDy) >> ddshift &&
                // current Dy is (fCDy - (fCDDy >> ddshift)) >> dshift
-               (cEdge.fCDy - (cEdge.fCDDy >> ddshift)) >> cEdge.fCubicDShift >= SK_Fixed1;
+               (cEdge->fCDy - (cEdge->fCDDy >> ddshift)) >> cEdge->fCubicDShift >= SK_Fixed1;
     } else if (thisEdge->fCurveCount > 0) {
-        const SkQuadraticEdge& qEdge = static_cast<SkAnalyticQuadraticEdge*>(thisEdge)->fQEdge;
-        return SkAbs32(qEdge.fQDx) >> 1 >= SkAbs32(qEdge.fQDDx) &&
-               SkAbs32(qEdge.fQDy) >> 1 >= SkAbs32(qEdge.fQDDy) &&
+        const auto qEdge = static_cast<SkAnalyticQuadraticEdge*>(thisEdge);
+        return SkAbs32(qEdge->fQDx) >> 1 >= SkAbs32(qEdge->fQDDx) &&
+               SkAbs32(qEdge->fQDy) >> 1 >= SkAbs32(qEdge->fQDDy) &&
                // current Dy is (fQDy - fQDDy) >> shift
-               (qEdge.fQDy - qEdge.fQDDy) >> qEdge.fCurveShift >= SK_Fixed1;
+               (qEdge->fQDy - qEdge->fQDDy) >> qEdge->fCurveShift >= SK_Fixed1;
     }
-    return SkAbs32(nextEdge->fDX - thisEdge->fDX) <= SK_Fixed1 &&  // DDx should be small
-           nextEdge->fLowerY - nextEdge->fUpperY >= SK_Fixed1;     // Dy should be large
+    // DDx should be small and Dy should be large
+    return SkAbs32(Sk32_sat_sub(nextEdge->fDX, thisEdge->fDX)) <= SK_Fixed1 &&
+           nextEdge->fLowerY - nextEdge->fUpperY >= SK_Fixed1;
 }
 
 // Check if the leftE and riteE are changing smoothly in terms of fDX.
@@ -1261,10 +1201,9 @@ static void aaa_walk_convex_edges(SkAnalyticEdge*  prevHead,
 
             // If we're using mask blitter, we advance the mask row in this function
             // to save some "if" condition checks.
-            SkAlpha* maskRow = nullptr;
-            if (isUsingMask) {
-                maskRow = static_cast<MaskAdditiveBlitter*>(blitter)->getRow(y >> 16);
-            }
+            SkAlpha* maskRow = isUsingMask
+                                       ? static_cast<MaskAdditiveBlitter*>(blitter)->getRow(y >> 16)
+                                       : nullptr;
 
             // Instead of writing one loop that handles both partial-row blit_trapezoid_row
             // and full-row trapezoid_row together, we use the following 3-stage flow to
@@ -1290,7 +1229,7 @@ static void aaa_walk_convex_edges(SkAnalyticEdge*  prevHead,
                                        riteE->fDY,
                                        get_partial_alpha(0xFF, dY),
                                        maskRow,
-                                       isUsingMask);
+                                       /*noRealBlitter=*/false);
                     blitter->flush_if_y_changed(y, nextY);
                     left = nextLeft;
                     rite = nextRite;
@@ -1316,7 +1255,7 @@ static void aaa_walk_convex_edges(SkAnalyticEdge*  prevHead,
                                        riteE->fDY,
                                        0xFF,
                                        maskRow,
-                                       isUsingMask);
+                                       /*noRealBlitter=*/false);
                     blitter->flush_if_y_changed(y, nextY);
                     left = nextLeft;
                     rite = nextRite;
@@ -1347,7 +1286,7 @@ static void aaa_walk_convex_edges(SkAnalyticEdge*  prevHead,
                                riteE->fDY,
                                get_partial_alpha(0xFF, dY),
                                maskRow,
-                               isUsingMask);
+                               /*noRealBlitter=*/false);
             blitter->flush_if_y_changed(y, local_bot_fixed);
             left = nextLeft;
             rite = nextRite;
@@ -1370,6 +1309,12 @@ static void update_next_next_y(SkFixed y, SkFixed nextY, SkFixed* nextNextY) {
 
 static void check_intersection(const SkAnalyticEdge* edge, SkFixed nextY, SkFixed* nextNextY) {
     if (edge->fPrev->fPrev && edge->fPrev->fX + edge->fPrev->fDX > edge->fX + edge->fDX) {
+        *nextNextY = nextY + (SK_Fixed1 >> SkAnalyticEdge::kDefaultAccuracy);
+    }
+}
+
+static void check_intersection_fwd(const SkAnalyticEdge* edge, SkFixed nextY, SkFixed* nextNextY) {
+    if (edge->fNext->fNext && edge->fX + edge->fDX > edge->fNext->fX + edge->fNext->fDX) {
         *nextNextY = nextY + (SK_Fixed1 >> SkAnalyticEdge::kDefaultAccuracy);
     }
 }
@@ -1409,6 +1354,7 @@ static void insert_new_edges(SkAnalyticEdge* newEdge, SkFixed y, SkFixed* nextNe
         insert_edge_after(newEdge, start);
     nextEdge:
         check_intersection(newEdge, y, nextNextY);
+        check_intersection_fwd(newEdge, y, nextNextY);
         update_next_next_y(newEdge->fLowerY, y, nextNextY);
         start   = newEdge;
         newEdge = next;
@@ -1455,101 +1401,6 @@ static bool edges_too_close(int prevRite, SkFixed ul, SkFixed ll) {
     return prevRite > SkFixedFloorToInt(ul) || prevRite > SkFixedFloorToInt(ll);
 }
 
-static void blit_saved_trapezoid(SkAnalyticEdge*  leftE,
-                                 SkFixed          lowerY,
-                                 SkFixed          lowerLeft,
-                                 SkFixed          lowerRite,
-                                 AdditiveBlitter* blitter,
-                                 SkAlpha*         maskRow,
-                                 bool             isUsingMask,
-                                 bool             noRealBlitter,
-                                 SkFixed          leftClip,
-                                 SkFixed          rightClip) {
-    SkAnalyticEdge* riteE = leftE->fRiteE;
-    SkASSERT(riteE);
-    SkASSERT(riteE->fNext == nullptr || leftE->fSavedY == riteE->fSavedY);
-    SkASSERT(SkFixedFloorToInt(lowerY - 1) == SkFixedFloorToInt(leftE->fSavedY));
-    int y = SkFixedFloorToInt(leftE->fSavedY);
-    // Instead of using fixed_to_alpha(lowerY - leftE->fSavedY), we use the following fullAlpha
-    // to elimiate cumulative error: if there are many fractional y scan lines within the
-    // same row, the former may accumulate the rounding error while the later won't.
-    SkAlpha fullAlpha = fixed_to_alpha(lowerY - SkIntToFixed(y)) -
-                        fixed_to_alpha(leftE->fSavedY - SkIntToFixed(y));
-    // We need fSavedDY because the (quad or cubic) edge might be updated
-    blit_trapezoid_row(
-            blitter,
-            y,
-            std::max(leftE->fSavedX, leftClip),
-            std::min(riteE->fSavedX, rightClip),
-            std::max(lowerLeft, leftClip),
-            std::min(lowerRite, rightClip),
-            leftE->fSavedDY,
-            riteE->fSavedDY,
-            fullAlpha,
-            maskRow,
-            isUsingMask,
-            noRealBlitter || (fullAlpha == 0xFF && (edges_too_close(leftE->fPrev, leftE, lowerY) ||
-                                                    edges_too_close(riteE, riteE->fNext, lowerY))),
-            true);
-    leftE->fRiteE = nullptr;
-}
-
-static void deferred_blit(SkAnalyticEdge* leftE,
-                          SkAnalyticEdge* riteE,
-                          SkFixed         left,
-                          SkFixed leftDY,  // don't save leftE->fX/fDY as they may have been updated
-                          SkFixed y,
-                          SkFixed nextY,
-                          bool    isIntegralNextY,
-                          bool    leftEnds,
-                          bool    riteEnds,
-                          AdditiveBlitter* blitter,
-                          SkAlpha*         maskRow,
-                          bool             isUsingMask,
-                          bool             noRealBlitter,
-                          SkFixed          leftClip,
-                          SkFixed          rightClip,
-                          int              yShift) {
-    if (leftE->fRiteE && leftE->fRiteE != riteE) {
-        // leftE's right edge changed. Blit the saved trapezoid.
-        SkASSERT(leftE->fRiteE->fNext == nullptr || leftE->fRiteE->fY == y);
-        blit_saved_trapezoid(leftE,
-                             y,
-                             left,
-                             leftE->fRiteE->fX,
-                             blitter,
-                             maskRow,
-                             isUsingMask,
-                             noRealBlitter,
-                             leftClip,
-                             rightClip);
-    }
-    if (!leftE->fRiteE) {
-        // Save and defer blitting the trapezoid
-        SkASSERT(riteE->fRiteE == nullptr);
-        SkASSERT(leftE->fPrev == nullptr || leftE->fY == nextY);
-        SkASSERT(riteE->fNext == nullptr || riteE->fY == y);
-        leftE->saveXY(left, y, leftDY);
-        riteE->saveXY(riteE->fX, y, riteE->fDY);
-        leftE->fRiteE = riteE;
-    }
-    SkASSERT(leftE->fPrev == nullptr || leftE->fY == nextY);
-    riteE->goY(nextY, yShift);
-    // Always blit when edges end or nextY is integral
-    if (isIntegralNextY || leftEnds || riteEnds) {
-        blit_saved_trapezoid(leftE,
-                             nextY,
-                             leftE->fX,
-                             riteE->fX,
-                             blitter,
-                             maskRow,
-                             isUsingMask,
-                             noRealBlitter,
-                             leftClip,
-                             rightClip);
-    }
-}
-
 static void aaa_walk_edges(SkAnalyticEdge*  prevHead,
                            SkAnalyticEdge*  nextTail,
                            SkPathFillType   fillType,
@@ -1560,7 +1411,6 @@ static void aaa_walk_edges(SkAnalyticEdge*  prevHead,
                            SkFixed          rightClip,
                            bool             isUsingMask,
                            bool             forceRLE,
-                           bool             useDeferred,
                            bool             skipIntersect) {
     prevHead->fX = prevHead->fUpperX = leftClip;
     nextTail->fX = nextTail->fUpperX = rightClip;
@@ -1594,8 +1444,6 @@ static void aaa_walk_edges(SkAnalyticEdge*  prevHead,
                         width,
                         fixed_to_alpha(y - SkIntToFixed(start_y)),
                         maskRow,
-                        isUsingMask,
-                        false,
                         false);
     }
 
@@ -1604,12 +1452,10 @@ static void aaa_walk_edges(SkAnalyticEdge*  prevHead,
         bool            in_interval     = isInverse;
         SkFixed         prevX           = prevHead->fX;
         SkFixed         nextY           = std::min(nextNextY, SkFixedCeilToFixed(y + 1));
-        bool            isIntegralNextY = (nextY & (SK_Fixed1 - 1)) == 0;
         SkAnalyticEdge* currE           = prevHead->fNext;
         SkAnalyticEdge* leftE           = prevHead;
         SkFixed         left            = leftClip;
         SkFixed         leftDY          = 0;
-        bool            leftEnds        = false;
         int             prevRite        = SkFixedFloorToInt(leftClip);
 
         nextNextY = SK_MaxS32;
@@ -1628,10 +1474,10 @@ static void aaa_walk_edges(SkAnalyticEdge*  prevHead,
 
         // If we're using mask blitter, we advance the mask row in this function
         // to save some "if" condition checks.
-        SkAlpha* maskRow = nullptr;
-        if (isUsingMask) {
-            maskRow = static_cast<MaskAdditiveBlitter*>(blitter)->getRow(SkFixedFloorToInt(y));
-        }
+        SkAlpha* maskRow =
+                isUsingMask
+                        ? static_cast<MaskAdditiveBlitter*>(blitter)->getRow(SkFixedFloorToInt(y))
+                        : nullptr;
 
         SkASSERT(currE->fPrev == prevHead);
         validate_edges_for_y(currE, y);
@@ -1644,95 +1490,39 @@ static void aaa_walk_edges(SkAnalyticEdge*  prevHead,
             SkASSERT(currE->fLowerY >= nextY);
             SkASSERT(currE->fY == y);
 
-            w += currE->fWinding;
+            w += static_cast<int>(currE->fWinding);
             bool prev_in_interval = in_interval;
             in_interval           = !(w & windingMask) == isInverse;
 
             bool isLeft   = in_interval && !prev_in_interval;
             bool isRite   = !in_interval && prev_in_interval;
-            bool currEnds = currE->fLowerY == nextY;
-
-            if (useDeferred) {
-                if (currE->fRiteE && !isLeft) {
-                    // currE is a left edge previously, but now it's not.
-                    // Blit the trapezoid between fSavedY and y.
-                    SkASSERT(currE->fRiteE->fY == y);
-                    blit_saved_trapezoid(currE,
-                                         y,
-                                         currE->fX,
-                                         currE->fRiteE->fX,
-                                         blitter,
-                                         maskRow,
-                                         isUsingMask,
-                                         noRealBlitter,
-                                         leftClip,
-                                         rightClip);
-                }
-                if (leftE->fRiteE == currE && !isRite) {
-                    // currE is a right edge previously, but now it's not.
-                    // Moreover, its corresponding leftE doesn't change (otherwise we'll handle it
-                    // in the previous if clause). Hence we blit the trapezoid.
-                    blit_saved_trapezoid(leftE,
-                                         y,
-                                         left,
-                                         currE->fX,
-                                         blitter,
-                                         maskRow,
-                                         isUsingMask,
-                                         noRealBlitter,
-                                         leftClip,
-                                         rightClip);
-                }
-            }
 
             if (isRite) {
-                if (useDeferred) {
-                    deferred_blit(leftE,
-                                  currE,
-                                  left,
-                                  leftDY,
-                                  y,
-                                  nextY,
-                                  isIntegralNextY,
-                                  leftEnds,
-                                  currEnds,
-                                  blitter,
-                                  maskRow,
-                                  isUsingMask,
-                                  noRealBlitter,
-                                  leftClip,
-                                  rightClip,
-                                  yShift);
-                } else {
-                    SkFixed rite = currE->fX;
-                    currE->goY(nextY, yShift);
-                    SkFixed nextLeft = std::max(leftClip, leftE->fX);
-                    rite             = std::min(rightClip, rite);
-                    SkFixed nextRite = std::min(rightClip, currE->fX);
-                    blit_trapezoid_row(
-                            blitter,
-                            y >> 16,
-                            left,
-                            rite,
-                            nextLeft,
-                            nextRite,
-                            leftDY,
-                            currE->fDY,
-                            fullAlpha,
-                            maskRow,
-                            isUsingMask,
-                            noRealBlitter || (fullAlpha == 0xFF &&
-                                              (edges_too_close(prevRite, left, leftE->fX) ||
-                                               edges_too_close(currE, currE->fNext, nextY))),
-                            true);
-                    prevRite = SkFixedCeilToInt(std::max(rite, currE->fX));
-                }
+                SkFixed rite = currE->fX;
+                currE->goY(nextY, yShift);
+                SkFixed nextLeft = std::max(leftClip, leftE->fX);
+                rite = std::min(rightClip, rite);
+                SkFixed nextRite = std::min(rightClip, currE->fX);
+                blit_trapezoid_row(
+                        blitter,
+                        y >> 16,
+                        left,
+                        rite,
+                        nextLeft,
+                        nextRite,
+                        leftDY,
+                        currE->fDY,
+                        fullAlpha,
+                        maskRow,
+                        noRealBlitter || (fullAlpha == 0xFF &&
+                                          (edges_too_close(prevRite, left, leftE->fX) ||
+                                           edges_too_close(currE, currE->fNext, nextY))));
+                prevRite = SkFixedCeilToInt(std::max(rite, currE->fX));
             } else {
                 if (isLeft) {
                     left     = std::max(currE->fX, leftClip);
                     leftDY   = currE->fDY;
                     leftE    = currE;
-                    leftEnds = leftE->fLowerY == nextY;
                 }
                 currE->goY(nextY, yShift);
             }
@@ -1765,21 +1555,8 @@ static void aaa_walk_edges(SkAnalyticEdge*  prevHead,
                 update_next_next_y(currE->fLowerY, nextY, &nextNextY);
                 newX = currE->fX;
                 SkASSERT(currE->fLowerY > nextY);
-                if (newX < prevX) {  // ripple currE backwards until it is x-sorted
-                    // If the crossing edge is a right edge, blit the saved trapezoid.
-                    if (leftE->fRiteE == currE && useDeferred) {
-                        SkASSERT(leftE->fY == nextY && currE->fY == nextY);
-                        blit_saved_trapezoid(leftE,
-                                             nextY,
-                                             leftE->fX,
-                                             currE->fX,
-                                             blitter,
-                                             maskRow,
-                                             isUsingMask,
-                                             noRealBlitter,
-                                             leftClip,
-                                             rightClip);
-                    }
+                if (newX < prevX) {
+                    // ripple currE backwards until it is x-sorted
                     backward_insert_edge_based_on_x(currE);
                 } else {
                     prevX = newX;
@@ -1795,39 +1572,18 @@ static void aaa_walk_edges(SkAnalyticEdge*  prevHead,
 
         // was our right-edge culled away?
         if (in_interval) {
-            if (useDeferred) {
-                deferred_blit(leftE,
-                              nextTail,
-                              left,
-                              leftDY,
-                              y,
-                              nextY,
-                              isIntegralNextY,
-                              leftEnds,
-                              false,
-                              blitter,
-                              maskRow,
-                              isUsingMask,
-                              noRealBlitter,
-                              leftClip,
-                              rightClip,
-                              yShift);
-            } else {
-                blit_trapezoid_row(blitter,
-                                   y >> 16,
-                                   left,
-                                   rightClip,
-                                   std::max(leftClip, leftE->fX),
-                                   rightClip,
-                                   leftDY,
-                                   0,
-                                   fullAlpha,
-                                   maskRow,
-                                   isUsingMask,
-                                   noRealBlitter || (fullAlpha == 0xFF &&
-                                                     edges_too_close(leftE->fPrev, leftE, nextY)),
-                                   true);
-            }
+            blit_trapezoid_row(blitter,
+                               y >> 16,
+                               left,
+                               rightClip,
+                               std::max(leftClip, leftE->fX),
+                               rightClip,
+                               leftDY,
+                               0,
+                               fullAlpha,
+                               maskRow,
+                               noRealBlitter || (fullAlpha == 0xFF &&
+                                                 edges_too_close(leftE->fPrev, leftE, nextY)));
         }
 
         if (forceRLE) {
@@ -1844,15 +1600,14 @@ static void aaa_walk_edges(SkAnalyticEdge*  prevHead,
     }
 }
 
-static SK_ALWAYS_INLINE void aaa_fill_path(
-        const SkPath&    path,
-        const SkIRect&   clipRect,
-        AdditiveBlitter* blitter,
-        int              start_y,
-        int              stop_y,
-        bool             pathContainedInClip,
-        bool             isUsingMask,
-        bool             forceRLE) {  // forceRLE implies that SkAAClip is calling us
+static void aaa_fill_path(const SkPath& path,
+                          const SkIRect& clipRect,
+                          AdditiveBlitter* blitter,
+                          int start_y,
+                          int stop_y,
+                          bool pathContainedInClip,
+                          bool isUsingMask,
+                          bool forceRLE) {  // forceRLE implies that SkAAClip is calling us
     SkASSERT(blitter);
 
     SkAnalyticEdgeBuilder builder;
@@ -1886,7 +1641,6 @@ static SK_ALWAYS_INLINE void aaa_fill_path(
     // this returns the first and last edge after they're sorted into a dlink list
     SkAnalyticEdge* edge = sort_edges(list, count, &last);
 
-    headEdge.fRiteE  = nullptr;
     headEdge.fPrev   = nullptr;
     headEdge.fNext   = edge;
     headEdge.fUpperY = headEdge.fLowerY = SK_MinS32;
@@ -1896,7 +1650,6 @@ static SK_ALWAYS_INLINE void aaa_fill_path(
     headEdge.fUpperX                    = SK_MinS32;
     edge->fPrev                         = &headEdge;
 
-    tailEdge.fRiteE  = nullptr;
     tailEdge.fPrev   = last;
     tailEdge.fNext   = nullptr;
     tailEdge.fUpperY = tailEdge.fLowerY = SK_MaxS32;
@@ -1930,11 +1683,6 @@ static SK_ALWAYS_INLINE void aaa_fill_path(
         aaa_walk_convex_edges(
                 &headEdge, blitter, start_y, stop_y, leftBound, rightBound, isUsingMask);
     } else {
-        // Only use deferred blitting if there are many edges.
-        bool useDeferred =
-                count >
-                (SkFixedFloorToInt(tailEdge.fPrev->fLowerY - headEdge.fNext->fUpperY) + 1) * 4;
-
         // We skip intersection computation if there are many points which probably already
         // give us enough fractional scan lines.
         bool skipIntersect = path.countPoints() > (stop_y - start_y) * 2;
@@ -1949,9 +1697,27 @@ static SK_ALWAYS_INLINE void aaa_fill_path(
                        rightBound,
                        isUsingMask,
                        forceRLE,
-                       useDeferred,
                        skipIntersect);
     }
+}
+
+// Check if the path is a rect and fat enough after clipping; if so, blit it.
+static inline bool try_blit_fat_anti_rect(SkBlitter* blitter,
+                                          const SkPath& path,
+                                          const SkIRect& clip) {
+    SkRect rect;
+    if (!path.isRect(&rect)) {
+        return false; // not rect
+    }
+    if (!rect.intersect(SkRect::Make(clip))) {
+        return true; // The intersection is empty. Hence consider it done.
+    }
+    SkIRect bounds = rect.roundOut();
+    if (bounds.width() < 3) {
+        return false; // not fat
+    }
+    blitter->blitFatAntiRect(rect);
+    return true;
 }
 
 void SkScan::AAAFillPath(const SkPath&  path,
@@ -1972,7 +1738,7 @@ void SkScan::AAAFillPath(const SkPath&  path,
     if (MaskAdditiveBlitter::CanHandleRect(ir) && !isInverse && !forceRLE) {
         // blitFatAntiRect is slower than the normal AAA flow without MaskAdditiveBlitter.
         // Hence only tryBlitFatAntiRect when MaskAdditiveBlitter would have been used.
-        if (!TryBlitFatAntiRect(blitter, path, clipBounds)) {
+        if (!try_blit_fat_anti_rect(blitter, path, clipBounds)) {
             MaskAdditiveBlitter additiveBlitter(blitter, ir, clipBounds, isInverse);
             aaa_fill_path(path,
                           clipBounds,
@@ -2012,4 +1778,3 @@ void SkScan::AAAFillPath(const SkPath&  path,
                       forceRLE);
     }
 }
-#endif  // defined(SK_DISABLE_AAA)

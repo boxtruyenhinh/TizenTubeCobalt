@@ -1,4 +1,4 @@
-// Copyright 2016 The Crashpad Authors. All rights reserved.
+// Copyright 2016 The Crashpad Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,6 +28,12 @@ PruneCrashReportThread::PruneCrashReportThread(
       database_(database) {}
 
 PruneCrashReportThread::~PruneCrashReportThread() {}
+
+#if BUILDFLAG(IS_NATIVE_TARGET)
+void PruneCrashReportThread::PruneNow() {
+  thread_.DoWorkNow();
+}
+#endif  // #if BUILDFLAG(IS_NATIVE_TARGET)
 
 void PruneCrashReportThread::Start() {
   thread_.Start(60 * 10);

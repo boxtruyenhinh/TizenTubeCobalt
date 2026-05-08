@@ -38,7 +38,7 @@
 bool SbAccessibilityGetCaptionSettings(
     SbAccessibilityCaptionSettings* caption_settings) {
   if (!caption_settings ||
-      !starboard::common::MemoryIsZero(
+      !starboard::MemoryIsZero(
           caption_settings, sizeof(SbAccessibilityCaptionSettings))) {
     return false;
   }

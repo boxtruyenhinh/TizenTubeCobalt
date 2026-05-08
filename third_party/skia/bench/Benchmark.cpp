@@ -23,7 +23,7 @@ const char* Benchmark::getUniqueName() {
     return this->onGetUniqueName();
 }
 
-SkIPoint Benchmark::getSize() {
+SkISize Benchmark::getSize() {
     return this->onGetSize();
 }
 
@@ -47,15 +47,22 @@ void Benchmark::perCanvasPostDraw(SkCanvas* canvas) {
     this->onPerCanvasPostDraw(canvas);
 }
 
-void Benchmark::draw(int loops, SkCanvas* canvas) {
+void Benchmark::draw(int loops, SkCanvas* canvas, std::function<void()> submitFrame) {
     SkAutoCanvasRestore ar(canvas, true/*save now*/);
-    this->onDraw(loops, canvas);
+    if (this->submitsInternalFrames()) {
+        this->onDrawFrame(loops, canvas, std::move(submitFrame));
+    } else {
+        this->onDraw(loops, canvas);
+        if (submitFrame) {
+            submitFrame();
+        }
+    }
 }
 
 void Benchmark::setupPaint(SkPaint* paint) {
     paint->setAntiAlias(true);
 }
 
-SkIPoint Benchmark::onGetSize() {
-    return SkIPoint::Make(640, 480);
+SkISize Benchmark::onGetSize() {
+    return SkISize::Make(640, 480);
 }

@@ -35,10 +35,11 @@
 #ifndef GOOGLETEST_INCLUDE_GTEST_INTERNAL_GTEST_PORT_ARCH_H_
 #define GOOGLETEST_INCLUDE_GTEST_INTERNAL_GTEST_PORT_ARCH_H_
 
-// Determines the platform on which Google Test is compiled.
-#if defined(STARBOARD)
-# define GTEST_OS_STARBOARD 1
-#elif __CYGWIN__
+#include "build/build_config.h"
+
+// TODO: b/399507045 - Cobalt: Fix build error, remove hack
+#if !BUILDFLAG(ENABLE_COBALT_HERMETIC_HACKS)
+#if __CYGWIN__
 #define GTEST_OS_CYGWIN 1
 #elif defined(__MINGW__) || defined(__MINGW32__) || defined(__MINGW64__)
 #define GTEST_OS_WINDOWS_MINGW 1
@@ -58,6 +59,8 @@
 #elif WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_TV_TITLE)
 #define GTEST_OS_WINDOWS_PHONE 1
 #define GTEST_OS_WINDOWS_TV_TITLE 1
+#elif WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_GAMES)
+#define GTEST_OS_WINDOWS_GAMES 1
 #else
 // WINAPI_FAMILY defined but no known partition matched.
 // Default to desktop.
@@ -113,6 +116,13 @@
 #define GTEST_OS_ESP32 1
 #elif defined(__XTENSA__)
 #define GTEST_OS_XTENSA 1
+#elif defined(__hexagon__)
+#define GTEST_OS_QURT 1
+#elif defined(CPU_QN9090) || defined(CPU_QN9090HN)
+#define GTEST_OS_NXP_QN9090 1
+#elif defined(NRF52)
+#define GTEST_OS_NRF52 1
 #endif  // __CYGWIN__
+#endif // !BUILDFLAG(ENABLE_COBALT_HERMETIC_HACKS)
 
 #endif  // GOOGLETEST_INCLUDE_GTEST_INTERNAL_GTEST_PORT_ARCH_H_

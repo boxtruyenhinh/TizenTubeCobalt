@@ -14,7 +14,6 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/pathops/SkPathOps.h"
 #include <tuple>
 
 namespace {
@@ -283,7 +282,7 @@ constexpr SkScalar gWidths[] = {
     0.0f,
     0.0f
 };
-static_assert(SK_ARRAY_COUNT(gWidths) == SK_ARRAY_COUNT(gProcs));
+static_assert(std::size(gWidths) == std::size(gProcs));
 
 constexpr SkScalar gMiters[] = {
     2.0f,
@@ -298,7 +297,7 @@ constexpr SkScalar gMiters[] = {
     4.0f,
     4.0f,
 };
-static_assert(SK_ARRAY_COUNT(gMiters) == SK_ARRAY_COUNT(gProcs));
+static_assert(std::size(gMiters) == std::size(gProcs));
 
 constexpr SkScalar gXTranslate[] = {
     0.0f,
@@ -313,9 +312,9 @@ constexpr SkScalar gXTranslate[] = {
     0.0f,
     0.0f,
 };
-static_assert(SK_ARRAY_COUNT(gXTranslate) == SK_ARRAY_COUNT(gProcs));
+static_assert(std::size(gXTranslate) == std::size(gProcs));
 
-#define N   SK_ARRAY_COUNT(gProcs)
+#define N   std::size(gProcs)
 
 // This GM tests out drawing small paths (i.e., for Ganesh, using the Distance
 // Field path renderer) which are filled, stroked and filledAndStroked. In
@@ -333,13 +332,9 @@ protected:
         }
     }
 
-    SkString onShortName() override {
-        return SkString("smallpaths");
-    }
+    SkString getName() const override { return SkString("smallpaths"); }
 
-    SkISize onISize() override {
-        return SkISize::Make(640, 512);
-    }
+    SkISize getISize() override { return SkISize::Make(640, 512); }
 
     void onDraw(SkCanvas* canvas) override {
         SkPaint paint;

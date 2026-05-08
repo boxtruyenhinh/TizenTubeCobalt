@@ -14,14 +14,16 @@
 
 #include "starboard/shared/widevine/widevine_storage.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+
+#include "starboard/common/check_op.h"
 #include "starboard/common/file.h"
 #include "starboard/common/log.h"
 #include "starboard/shared/widevine/widevine_keybox_hash.h"
-#include "starboard/types.h"
 
 namespace starboard {
-namespace shared {
-namespace widevine {
 
 // Reserved key name for referring to the Widevine Keybox checksum value.
 const char WidevineStorage::kCobaltWidevineKeyboxChecksumKey[] =
@@ -67,8 +69,16 @@ bool WriteFile(const std::string& path_name,
     return false;
   }
 
-  if (file.WriteAll(reinterpret_cast<const char*>(content.data()),
-                    static_cast<int>(content.size())) != content.size()) {
+  // Fail early if content size would overflow int.
+  if (content.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    SB_LOG(ERROR) << "Content size " << content.size()
+                  << " exceeds maximum writable size for " << path_name << '.';
+    return false;
+  }
+
+  const int size = static_cast<int>(content.size());
+  if (file.WriteAll(reinterpret_cast<const char*>(content.data()), size) !=
+      size) {
     SB_LOG(INFO) << "Failed to write content to " << path_name << '.';
     return false;
   }
@@ -148,35 +158,35 @@ WidevineStorage::WidevineStorage(const std::string& path_name)
 }
 
 bool WidevineStorage::read(const std::string& name, std::string* data) {
-  SB_DCHECK(name != kCobaltWidevineKeyboxChecksumKey);
+  SB_DCHECK_NE(name, kCobaltWidevineKeyboxChecksumKey);
   return readInternal(name, data);
 }
 
 bool WidevineStorage::write(const std::string& name, const std::string& data) {
-  SB_DCHECK(name != kCobaltWidevineKeyboxChecksumKey);
+  SB_DCHECK_NE(name, kCobaltWidevineKeyboxChecksumKey);
   return writeInternal(name, data);
 }
 
 bool WidevineStorage::exists(const std::string& name) {
-  SB_DCHECK(name != kCobaltWidevineKeyboxChecksumKey);
+  SB_DCHECK_NE(name, kCobaltWidevineKeyboxChecksumKey);
   return existsInternal(name);
 }
 
 bool WidevineStorage::remove(const std::string& name) {
-  SB_DCHECK(name != kCobaltWidevineKeyboxChecksumKey);
+  SB_DCHECK_NE(name, kCobaltWidevineKeyboxChecksumKey);
   return removeInternal(name);
 }
 
 int32_t WidevineStorage::size(const std::string& name) {
-  SB_DCHECK(name != kCobaltWidevineKeyboxChecksumKey);
-  ScopedLock scoped_lock(lock_);
+  SB_DCHECK_NE(name, kCobaltWidevineKeyboxChecksumKey);
+  std::lock_guard scoped_lock(lock_);
   auto iter = cache_.find(name);
   return iter == cache_.end() ? -1 : static_cast<int32_t>(iter->second.size());
 }
 
 bool WidevineStorage::list(std::vector<std::string>* records) {
   SB_DCHECK(records);
-  ScopedLock scoped_lock(lock_);
+  std::lock_guard scoped_lock(lock_);
   records->clear();
   for (auto item : cache_) {
     if (item.first == kCobaltWidevineKeyboxChecksumKey) {
@@ -190,7 +200,7 @@ bool WidevineStorage::list(std::vector<std::string>* records) {
 bool WidevineStorage::readInternal(const std::string& name,
                                    std::string* data) const {
   SB_DCHECK(data);
-  ScopedLock scoped_lock(lock_);
+  std::lock_guard scoped_lock(lock_);
   auto iter = cache_.find(name);
   if (iter == cache_.end()) {
     return false;
@@ -201,7 +211,7 @@ bool WidevineStorage::readInternal(const std::string& name,
 
 bool WidevineStorage::writeInternal(const std::string& name,
                                     const std::string& data) {
-  ScopedLock scoped_lock(lock_);
+  std::lock_guard scoped_lock(lock_);
   cache_[name] = data;
 
   std::vector<uint8_t> content;
@@ -213,12 +223,12 @@ bool WidevineStorage::writeInternal(const std::string& name,
 }
 
 bool WidevineStorage::existsInternal(const std::string& name) const {
-  ScopedLock scoped_lock(lock_);
+  std::lock_guard scoped_lock(lock_);
   return cache_.find(name) != cache_.end();
 }
 
 bool WidevineStorage::removeInternal(const std::string& name) {
-  ScopedLock scoped_lock(lock_);
+  std::lock_guard scoped_lock(lock_);
   auto iter = cache_.find(name);
   if (iter == cache_.end()) {
     return false;
@@ -227,6 +237,4 @@ bool WidevineStorage::removeInternal(const std::string& name) {
   return true;
 }
 
-}  // namespace widevine
-}  // namespace shared
 }  // namespace starboard

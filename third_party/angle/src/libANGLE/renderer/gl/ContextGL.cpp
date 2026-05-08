@@ -10,6 +10,8 @@
 #include "libANGLE/renderer/gl/ContextGL.h"
 
 #include "libANGLE/Context.h"
+#include "libANGLE/Context.inl.h"
+#include "libANGLE/PixelLocalStorage.h"
 #include "libANGLE/renderer/OverlayImpl.h"
 #include "libANGLE/renderer/gl/BufferGL.h"
 #include "libANGLE/renderer/gl/CompilerGL.h"
@@ -17,7 +19,7 @@
 #include "libANGLE/renderer/gl/FramebufferGL.h"
 #include "libANGLE/renderer/gl/FunctionsGL.h"
 #include "libANGLE/renderer/gl/MemoryObjectGL.h"
-#include "libANGLE/renderer/gl/PathGL.h"
+#include "libANGLE/renderer/gl/ProgramExecutableGL.h"
 #include "libANGLE/renderer/gl/ProgramGL.h"
 #include "libANGLE/renderer/gl/ProgramPipelineGL.h"
 #include "libANGLE/renderer/gl/QueryGL.h"
@@ -34,23 +36,45 @@
 
 namespace rx
 {
+namespace
+{
+GLsizei GetDrawAdjustedInstanceCount(const gl::ProgramExecutable *executable)
+{
+    const bool usesMultiview = executable->usesMultiview();
+    return usesMultiview ? executable->getNumViews() : 0;
+}
+
+GLsizei GetInstancedDrawAdjustedInstanceCount(const gl::ProgramExecutable *executable,
+                                              GLsizei instanceCount)
+{
+    GLsizei adjustedInstanceCount = instanceCount;
+    if (executable->usesMultiview())
+    {
+        adjustedInstanceCount *= executable->getNumViews();
+    }
+    return adjustedInstanceCount;
+}
+}  // anonymous namespace
 
 ContextGL::ContextGL(const gl::State &state,
                      gl::ErrorSet *errorSet,
-                     const std::shared_ptr<RendererGL> &renderer)
-    : ContextImpl(state, errorSet), mRenderer(renderer)
+                     const std::shared_ptr<RendererGL> &renderer,
+                     RobustnessVideoMemoryPurgeStatus robustnessVideoMemoryPurgeStatus)
+    : ContextImpl(state, errorSet),
+      mRenderer(renderer),
+      mRobustnessVideoMemoryPurgeStatus(robustnessVideoMemoryPurgeStatus)
 {}
 
 ContextGL::~ContextGL() {}
 
-angle::Result ContextGL::initialize()
+angle::Result ContextGL::initialize(const angle::ImageLoadContext &imageLoadContext)
 {
     return angle::Result::Continue;
 }
 
 CompilerImpl *ContextGL::createCompiler()
 {
-    return new CompilerGL(getFunctions());
+    return new CompilerGL(this);
 }
 
 ShaderImpl *ContextGL::createShader(const gl::ShaderState &data)
@@ -58,13 +82,17 @@ ShaderImpl *ContextGL::createShader(const gl::ShaderState &data)
     const FunctionsGL *functions = getFunctions();
     GLuint shader                = functions->createShader(ToGLenum(data.getShaderType()));
 
-    return new ShaderGL(data, shader, mRenderer->getMultiviewImplementationType(), mRenderer);
+    return new ShaderGL(data, shader);
 }
 
 ProgramImpl *ContextGL::createProgram(const gl::ProgramState &data)
 {
-    return new ProgramGL(data, getFunctions(), getFeaturesGL(), getStateManager(),
-                         getExtensions().pathRendering, mRenderer);
+    return new ProgramGL(data, getFunctions(), getFeaturesGL(), getStateManager(), mRenderer);
+}
+
+ProgramExecutableImpl *ContextGL::createProgramExecutable(const gl::ProgramExecutable *executable)
+{
+    return new ProgramExecutableGL(executable);
 }
 
 FramebufferImpl *ContextGL::createFramebuffer(const gl::FramebufferState &data)
@@ -72,9 +100,12 @@ FramebufferImpl *ContextGL::createFramebuffer(const gl::FramebufferState &data)
     const FunctionsGL *funcs = getFunctions();
 
     GLuint fbo = 0;
-    funcs->genFramebuffers(1, &fbo);
+    if (!data.isDefault())
+    {
+        funcs->genFramebuffers(1, &fbo);
+    }
 
-    return new FramebufferGL(data, fbo, false, false);
+    return new FramebufferGL(data, fbo, false);
 }
 
 TextureImpl *ContextGL::createTexture(const gl::TextureState &state)
@@ -103,12 +134,39 @@ RenderbufferImpl *ContextGL::createRenderbuffer(const gl::RenderbufferState &sta
 
 BufferImpl *ContextGL::createBuffer(const gl::BufferState &state)
 {
-    return new BufferGL(state, getFunctions(), getStateManager());
+    const FunctionsGL *functions = getFunctions();
+
+    GLuint buffer = 0;
+    functions->genBuffers(1, &buffer);
+
+    return new BufferGL(state, buffer);
 }
 
 VertexArrayImpl *ContextGL::createVertexArray(const gl::VertexArrayState &data)
 {
-    return new VertexArrayGL(data, getFunctions(), getStateManager());
+    const FunctionsGL *functions      = getFunctions();
+    const angle::FeaturesGL &features = getFeaturesGL();
+
+    // Use the shared default vertex array when forced to for workarounds
+    // (syncAllVertexArraysToDefault) or for the frontend default vertex array so that client data
+    // can be used directly
+    // Disable on external contexts so that the default VAO is not modified by both ANGLE and the
+    // external user.
+    if (features.syncAllVertexArraysToDefault.enabled ||
+        (features.syncDefaultVertexArraysToDefault.enabled && data.isDefault() &&
+         mState.areClientArraysEnabled()))
+    {
+        StateManagerGL *stateManager = getStateManager();
+
+        return new VertexArrayGL(data, stateManager->getDefaultVAO(),
+                                 stateManager->getDefaultVAOState());
+    }
+    else
+    {
+        GLuint vao = 0;
+        functions->genVertexArrays(1, &vao);
+        return new VertexArrayGL(data, vao);
+    }
 }
 
 QueryImpl *ContextGL::createQuery(gl::QueryType type)
@@ -157,26 +215,6 @@ ProgramPipelineImpl *ContextGL::createProgramPipeline(const gl::ProgramPipelineS
     return new ProgramPipelineGL(data, getFunctions());
 }
 
-std::vector<PathImpl *> ContextGL::createPaths(GLsizei range)
-{
-    const FunctionsGL *funcs = getFunctions();
-
-    std::vector<PathImpl *> ret;
-    ret.reserve(range);
-
-    const GLuint first = funcs->genPathsNV(range);
-    if (first == 0)
-        return ret;
-
-    for (GLsizei i = 0; i < range; ++i)
-    {
-        const auto id = first + i;
-        ret.push_back(new PathGL(funcs, id));
-    }
-
-    return ret;
-}
-
 MemoryObjectImpl *ContextGL::createMemoryObject()
 {
     const FunctionsGL *functions = getFunctions();
@@ -218,19 +256,37 @@ ANGLE_INLINE angle::Result ContextGL::setDrawArraysState(const gl::Context *cont
                                                          GLsizei count,
                                                          GLsizei instanceCount)
 {
-    if (context->getStateCache().hasAnyActiveClientAttrib())
+    const angle::FeaturesGL &features = getFeaturesGL();
+    if (context->getStateCache().hasAnyActiveClientAttrib() ||
+        (features.shiftInstancedArrayDataWithOffset.enabled && first > 0))
     {
-        const gl::State &glState   = context->getState();
-        const gl::Program *program = glState.getProgram();
-        const gl::VertexArray *vao = glState.getVertexArray();
-        const VertexArrayGL *vaoGL = GetImplAs<VertexArrayGL>(vao);
+        const gl::State &glState                = context->getState();
+        const gl::ProgramExecutable *executable = getState().getProgramExecutable();
+        const gl::VertexArray *vao              = glState.getVertexArray();
+        const VertexArrayGL *vaoGL              = GetImplAs<VertexArrayGL>(vao);
 
-        ANGLE_TRY(vaoGL->syncClientSideData(context, program->getActiveAttribLocationsMask(), first,
-                                            count, instanceCount));
+        ANGLE_TRY(vaoGL->syncClientSideData(context, executable->getActiveAttribLocationsMask(),
+                                            first, count, instanceCount));
 
 #if defined(ANGLE_STATE_VALIDATION_ENABLED)
-        vaoGL->validateState();
+        ANGLE_TRY(vaoGL->validateState(context));
 #endif  // ANGLE_STATE_VALIDATION_ENABLED
+    }
+    else if (features.shiftInstancedArrayDataWithOffset.enabled && first == 0)
+    {
+        // There could be previous draw call that has modified the attributes
+        // Instead of forcefully streaming attributes, we just rebind the original ones
+        const gl::State &glState   = context->getState();
+        const gl::VertexArray *vao = glState.getVertexArray();
+        const VertexArrayGL *vaoGL = GetImplAs<VertexArrayGL>(vao);
+        ANGLE_TRY(vaoGL->recoverForcedStreamingAttributesForDrawArraysInstanced(context));
+    }
+
+    if (features.setPrimitiveRestartFixedIndexForDrawArrays.enabled)
+    {
+        StateManagerGL *stateManager           = getStateManager();
+        constexpr GLuint primitiveRestartIndex = gl::GetPrimitiveRestartIndexFromType<GLuint>();
+        ANGLE_TRY(stateManager->setPrimitiveRestartIndex(context, primitiveRestartIndex));
     }
 
     return angle::Result::Continue;
@@ -243,17 +299,24 @@ ANGLE_INLINE angle::Result ContextGL::setDrawElementsState(const gl::Context *co
                                                            GLsizei instanceCount,
                                                            const void **outIndices)
 {
-    const gl::State &glState = context->getState();
+    const gl::State &glState                = context->getState();
+    const gl::ProgramExecutable *executable = getState().getProgramExecutable();
+    const gl::VertexArray *vao              = glState.getVertexArray();
+    const gl::StateCache &stateCache        = context->getStateCache();
 
-    const gl::Program *program = glState.getProgram();
+    const angle::FeaturesGL &features = getFeaturesGL();
+    if (features.shiftInstancedArrayDataWithOffset.enabled)
+    {
+        // There might be instanced arrays that are forced streaming for drawArraysInstanced
+        // They cannot be ELEMENT_ARRAY_BUFFER
+        const VertexArrayGL *vaoGL = GetImplAs<VertexArrayGL>(vao);
+        ANGLE_TRY(vaoGL->recoverForcedStreamingAttributesForDrawArraysInstanced(context));
+    }
 
-    const gl::VertexArray *vao = glState.getVertexArray();
-
-    const gl::StateCache &stateCache = context->getStateCache();
     if (stateCache.hasAnyActiveClientAttrib() || vao->getElementArrayBuffer() == nullptr)
     {
         const VertexArrayGL *vaoGL = GetImplAs<VertexArrayGL>(vao);
-        ANGLE_TRY(vaoGL->syncDrawElementsState(context, program->getActiveAttribLocationsMask(),
+        ANGLE_TRY(vaoGL->syncDrawElementsState(context, executable->getActiveAttribLocationsMask(),
                                                count, type, indices, instanceCount,
                                                glState.isPrimitiveRestartEnabled(), outIndices));
     }
@@ -262,18 +325,17 @@ ANGLE_INLINE angle::Result ContextGL::setDrawElementsState(const gl::Context *co
         *outIndices = indices;
     }
 
-    const angle::FeaturesGL &features = getFeaturesGL();
     if (glState.isPrimitiveRestartEnabled() && features.emulatePrimitiveRestartFixedIndex.enabled)
     {
         StateManagerGL *stateManager = getStateManager();
 
         GLuint primitiveRestartIndex = gl::GetPrimitiveRestartIndex(type);
-        stateManager->setPrimitiveRestartIndex(primitiveRestartIndex);
+        ANGLE_TRY(stateManager->setPrimitiveRestartIndex(context, primitiveRestartIndex));
     }
 
 #if defined(ANGLE_STATE_VALIDATION_ENABLED)
     const VertexArrayGL *vaoGL = GetImplAs<VertexArrayGL>(vao);
-    vaoGL->validateState();
+    ANGLE_TRY(vaoGL->validateState(context));
 #endif  // ANGLE_STATE_VALIDATION_ENABLED
 
     return angle::Result::Continue;
@@ -284,23 +346,25 @@ angle::Result ContextGL::drawArrays(const gl::Context *context,
                                     GLint first,
                                     GLsizei count)
 {
-    const gl::Program *program  = context->getState().getProgram();
-    const bool usesMultiview    = program->usesMultiview();
-    const GLsizei instanceCount = usesMultiview ? program->getNumViews() : 0;
+    const gl::ProgramExecutable *executable = context->getState().getProgramExecutable();
+    const GLsizei instanceCount             = GetDrawAdjustedInstanceCount(executable);
 
 #if defined(ANGLE_STATE_VALIDATION_ENABLED)
     validateState();
 #endif
 
     ANGLE_TRY(setDrawArraysState(context, first, count, instanceCount));
-    if (!usesMultiview)
+    if (!executable->usesMultiview())
     {
-        getFunctions()->drawArrays(ToGLenum(mode), first, count);
+        ANGLE_GL_TRY(context, getFunctions()->drawArrays(ToGLenum(mode), first, count));
     }
     else
     {
-        getFunctions()->drawArraysInstanced(ToGLenum(mode), first, count, instanceCount);
+        ANGLE_GL_TRY(context, getFunctions()->drawArraysInstanced(ToGLenum(mode), first, count,
+                                                                  instanceCount));
     }
+    mRenderer->markWorkSubmitted();
+
     return angle::Result::Continue;
 }
 
@@ -310,21 +374,21 @@ angle::Result ContextGL::drawArraysInstanced(const gl::Context *context,
                                              GLsizei count,
                                              GLsizei instanceCount)
 {
-    GLsizei adjustedInstanceCount = instanceCount;
-    const gl::Program *program    = context->getState().getProgram();
-    if (program->usesMultiview())
-    {
-        adjustedInstanceCount *= program->getNumViews();
-    }
+    const gl::ProgramExecutable *executable = context->getState().getProgramExecutable();
+    const GLsizei adjustedInstanceCount =
+        GetInstancedDrawAdjustedInstanceCount(executable, instanceCount);
 
     ANGLE_TRY(setDrawArraysState(context, first, count, adjustedInstanceCount));
-    getFunctions()->drawArraysInstanced(ToGLenum(mode), first, count, adjustedInstanceCount);
+    ANGLE_GL_TRY(context, getFunctions()->drawArraysInstanced(ToGLenum(mode), first, count,
+                                                              adjustedInstanceCount));
+    mRenderer->markWorkSubmitted();
+
     return angle::Result::Continue;
 }
 
-gl::AttributesMask ContextGL::updateAttributesForBaseInstance(const gl::Program *program,
-                                                              GLuint baseInstance)
+gl::AttributesMask ContextGL::updateAttributesForBaseInstance(GLuint baseInstance)
 {
+    const gl::ProgramExecutable *executable = getState().getProgramExecutable();
     gl::AttributesMask attribToUpdateMask;
 
     if (baseInstance != 0)
@@ -332,11 +396,11 @@ gl::AttributesMask ContextGL::updateAttributesForBaseInstance(const gl::Program 
         const FunctionsGL *functions = getFunctions();
         const auto &attribs          = mState.getVertexArray()->getVertexAttributes();
         const auto &bindings         = mState.getVertexArray()->getVertexBindings();
-        for (GLuint attribIndex = 0; attribIndex < gl::MAX_VERTEX_ATTRIBS; attribIndex++)
+        for (GLuint attribIndex = 0; attribIndex < attribs.size(); attribIndex++)
         {
             const gl::VertexAttribute &attrib = attribs[attribIndex];
             const gl::VertexBinding &binding  = bindings[attrib.bindingIndex];
-            if (program->isAttribLocationActive(attribIndex) && binding.getDivisor() != 0)
+            if (executable->isAttribLocationActive(attribIndex) && binding.getDivisor() != 0)
             {
                 attribToUpdateMask.set(attribIndex);
                 const char *p             = static_cast<const char *>(attrib.pointer);
@@ -405,12 +469,9 @@ angle::Result ContextGL::drawArraysInstancedBaseInstance(const gl::Context *cont
                                                          GLsizei instanceCount,
                                                          GLuint baseInstance)
 {
-    GLsizei adjustedInstanceCount = instanceCount;
-    const gl::Program *program    = context->getState().getProgram();
-    if (program->usesMultiview())
-    {
-        adjustedInstanceCount *= program->getNumViews();
-    }
+    const gl::ProgramExecutable *executable = context->getState().getProgramExecutable();
+    const GLsizei adjustedInstanceCount =
+        GetInstancedDrawAdjustedInstanceCount(executable, instanceCount);
 
     ANGLE_TRY(setDrawArraysState(context, first, count, adjustedInstanceCount));
 
@@ -419,23 +480,26 @@ angle::Result ContextGL::drawArraysInstancedBaseInstance(const gl::Context *cont
     if (functions->drawArraysInstancedBaseInstance)
     {
         // GL 4.2+ or GL_EXT_base_instance
-        functions->drawArraysInstancedBaseInstance(ToGLenum(mode), first, count,
-                                                   adjustedInstanceCount, baseInstance);
+        ANGLE_GL_TRY(context,
+                     functions->drawArraysInstancedBaseInstance(
+                         ToGLenum(mode), first, count, adjustedInstanceCount, baseInstance));
     }
     else
     {
         // GL 3.3+ or GLES 3.2+
-        // TODO(http://anglebug.com/3910): This is a temporary solution by setting and resetting
+        // TODO(http://anglebug.com/42262554): This is a temporary solution by setting and resetting
         // pointer offset calling vertexAttribPointer Will refactor stateCache and pass baseInstance
         // to setDrawArraysState to set pointer offset
 
-        gl::AttributesMask attribToResetMask =
-            updateAttributesForBaseInstance(program, baseInstance);
+        gl::AttributesMask attribToResetMask = updateAttributesForBaseInstance(baseInstance);
 
-        functions->drawArraysInstanced(ToGLenum(mode), first, count, adjustedInstanceCount);
+        ANGLE_GL_TRY(context, functions->drawArraysInstanced(ToGLenum(mode), first, count,
+                                                             adjustedInstanceCount));
 
         resetUpdatedAttributes(attribToResetMask);
     }
+
+    mRenderer->markWorkSubmitted();
 
     return angle::Result::Continue;
 }
@@ -446,26 +510,29 @@ angle::Result ContextGL::drawElements(const gl::Context *context,
                                       gl::DrawElementsType type,
                                       const void *indices)
 {
-    const gl::State &glState    = context->getState();
-    const gl::Program *program  = glState.getProgram();
-    const bool usesMultiview    = program->usesMultiview();
-    const GLsizei instanceCount = usesMultiview ? program->getNumViews() : 0;
-    const void *drawIndexPtr    = nullptr;
+    const gl::State &glState                = context->getState();
+    const gl::ProgramExecutable *executable = glState.getProgramExecutable();
+    const GLsizei instanceCount             = GetDrawAdjustedInstanceCount(executable);
+    const void *drawIndexPtr                = nullptr;
 
 #if defined(ANGLE_STATE_VALIDATION_ENABLED)
     validateState();
 #endif  // ANGLE_STATE_VALIDATION_ENABLED
 
     ANGLE_TRY(setDrawElementsState(context, count, type, indices, instanceCount, &drawIndexPtr));
-    if (!usesMultiview)
+    if (!executable->usesMultiview())
     {
-        getFunctions()->drawElements(ToGLenum(mode), count, ToGLenum(type), drawIndexPtr);
+        ANGLE_GL_TRY(context, getFunctions()->drawElements(ToGLenum(mode), count, ToGLenum(type),
+                                                           drawIndexPtr));
     }
     else
     {
-        getFunctions()->drawElementsInstanced(ToGLenum(mode), count, ToGLenum(type), drawIndexPtr,
-                                              instanceCount);
+        ANGLE_GL_TRY(context,
+                     getFunctions()->drawElementsInstanced(ToGLenum(mode), count, ToGLenum(type),
+                                                           drawIndexPtr, instanceCount));
     }
+    mRenderer->markWorkSubmitted();
+
     return angle::Result::Continue;
 }
 
@@ -476,27 +543,29 @@ angle::Result ContextGL::drawElementsBaseVertex(const gl::Context *context,
                                                 const void *indices,
                                                 GLint baseVertex)
 {
-    const gl::State &glState    = context->getState();
-    const gl::Program *program  = glState.getProgram();
-    const bool usesMultiview    = program->usesMultiview();
-    const GLsizei instanceCount = usesMultiview ? program->getNumViews() : 0;
-    const void *drawIndexPtr    = nullptr;
+    const gl::State &glState                = context->getState();
+    const gl::ProgramExecutable *executable = glState.getProgramExecutable();
+    const GLsizei instanceCount             = GetDrawAdjustedInstanceCount(executable);
+    const void *drawIndexPtr                = nullptr;
 
 #if defined(ANGLE_STATE_VALIDATION_ENABLED)
     validateState();
 #endif  // ANGLE_STATE_VALIDATION_ENABLED
 
     ANGLE_TRY(setDrawElementsState(context, count, type, indices, instanceCount, &drawIndexPtr));
-    if (!usesMultiview)
+    if (!executable->usesMultiview())
     {
-        getFunctions()->drawElementsBaseVertex(ToGLenum(mode), count, ToGLenum(type), drawIndexPtr,
-                                               baseVertex);
+        ANGLE_GL_TRY(context, getFunctions()->drawElementsBaseVertex(
+                                  ToGLenum(mode), count, ToGLenum(type), drawIndexPtr, baseVertex));
     }
     else
     {
-        getFunctions()->drawElementsInstancedBaseVertex(ToGLenum(mode), count, ToGLenum(type),
-                                                        drawIndexPtr, instanceCount, baseVertex);
+        ANGLE_GL_TRY(context, getFunctions()->drawElementsInstancedBaseVertex(
+                                  ToGLenum(mode), count, ToGLenum(type), drawIndexPtr,
+                                  instanceCount, baseVertex));
     }
+    mRenderer->markWorkSubmitted();
+
     return angle::Result::Continue;
 }
 
@@ -507,18 +576,16 @@ angle::Result ContextGL::drawElementsInstanced(const gl::Context *context,
                                                const void *indices,
                                                GLsizei instances)
 {
-    GLsizei adjustedInstanceCount = instances;
-    const gl::Program *program    = context->getState().getProgram();
-    if (program->usesMultiview())
-    {
-        adjustedInstanceCount *= program->getNumViews();
-    }
+    const gl::ProgramExecutable *executable = context->getState().getProgramExecutable();
+    const GLsizei adjustedInstanceCount =
+        GetInstancedDrawAdjustedInstanceCount(executable, instances);
     const void *drawIndexPointer = nullptr;
 
     ANGLE_TRY(setDrawElementsState(context, count, type, indices, adjustedInstanceCount,
                                    &drawIndexPointer));
-    getFunctions()->drawElementsInstanced(ToGLenum(mode), count, ToGLenum(type), drawIndexPointer,
-                                          adjustedInstanceCount);
+    ANGLE_GL_TRY(context,
+                 getFunctions()->drawElementsInstanced(ToGLenum(mode), count, ToGLenum(type),
+                                                       drawIndexPointer, adjustedInstanceCount));
     return angle::Result::Continue;
 }
 
@@ -530,18 +597,18 @@ angle::Result ContextGL::drawElementsInstancedBaseVertex(const gl::Context *cont
                                                          GLsizei instances,
                                                          GLint baseVertex)
 {
-    GLsizei adjustedInstanceCount = instances;
-    const gl::Program *program    = context->getState().getProgram();
-    if (program->usesMultiview())
-    {
-        adjustedInstanceCount *= program->getNumViews();
-    }
+    const gl::ProgramExecutable *executable = context->getState().getProgramExecutable();
+    const GLsizei adjustedInstanceCount =
+        GetInstancedDrawAdjustedInstanceCount(executable, instances);
     const void *drawIndexPointer = nullptr;
 
     ANGLE_TRY(setDrawElementsState(context, count, type, indices, adjustedInstanceCount,
                                    &drawIndexPointer));
-    getFunctions()->drawElementsInstancedBaseVertex(
-        ToGLenum(mode), count, ToGLenum(type), drawIndexPointer, adjustedInstanceCount, baseVertex);
+    ANGLE_GL_TRY(context, getFunctions()->drawElementsInstancedBaseVertex(
+                              ToGLenum(mode), count, ToGLenum(type), drawIndexPointer,
+                              adjustedInstanceCount, baseVertex));
+    mRenderer->markWorkSubmitted();
+
     return angle::Result::Continue;
 }
 
@@ -554,12 +621,9 @@ angle::Result ContextGL::drawElementsInstancedBaseVertexBaseInstance(const gl::C
                                                                      GLint baseVertex,
                                                                      GLuint baseInstance)
 {
-    GLsizei adjustedInstanceCount = instances;
-    const gl::Program *program    = context->getState().getProgram();
-    if (program->usesMultiview())
-    {
-        adjustedInstanceCount *= program->getNumViews();
-    }
+    const gl::ProgramExecutable *executable = context->getState().getProgramExecutable();
+    const GLsizei adjustedInstanceCount =
+        GetInstancedDrawAdjustedInstanceCount(executable, instances);
     const void *drawIndexPointer = nullptr;
 
     ANGLE_TRY(setDrawElementsState(context, count, type, indices, adjustedInstanceCount,
@@ -570,23 +634,24 @@ angle::Result ContextGL::drawElementsInstancedBaseVertexBaseInstance(const gl::C
     if (functions->drawElementsInstancedBaseVertexBaseInstance)
     {
         // GL 4.2+ or GL_EXT_base_instance
-        functions->drawElementsInstancedBaseVertexBaseInstance(
-            ToGLenum(mode), count, ToGLenum(type), drawIndexPointer, adjustedInstanceCount,
-            baseVertex, baseInstance);
+        ANGLE_GL_TRY(context, functions->drawElementsInstancedBaseVertexBaseInstance(
+                                  ToGLenum(mode), count, ToGLenum(type), drawIndexPointer,
+                                  adjustedInstanceCount, baseVertex, baseInstance));
     }
     else
     {
         // GL 3.3+ or GLES 3.2+
-        // TODO(http://anglebug.com/3910): same as above
-        gl::AttributesMask attribToResetMask =
-            updateAttributesForBaseInstance(program, baseInstance);
+        // TODO(http://anglebug.com/42262554): same as above
+        gl::AttributesMask attribToResetMask = updateAttributesForBaseInstance(baseInstance);
 
-        functions->drawElementsInstancedBaseVertex(ToGLenum(mode), count, ToGLenum(type),
-                                                   drawIndexPointer, adjustedInstanceCount,
-                                                   baseVertex);
+        ANGLE_GL_TRY(context, functions->drawElementsInstancedBaseVertex(
+                                  ToGLenum(mode), count, ToGLenum(type), drawIndexPointer,
+                                  adjustedInstanceCount, baseVertex));
 
         resetUpdatedAttributes(attribToResetMask);
     }
+
+    mRenderer->markWorkSubmitted();
 
     return angle::Result::Continue;
 }
@@ -599,23 +664,25 @@ angle::Result ContextGL::drawRangeElements(const gl::Context *context,
                                            gl::DrawElementsType type,
                                            const void *indices)
 {
-    const gl::Program *program   = context->getState().getProgram();
-    const bool usesMultiview     = program->usesMultiview();
-    const GLsizei instanceCount  = usesMultiview ? program->getNumViews() : 0;
-    const void *drawIndexPointer = nullptr;
+    const gl::ProgramExecutable *executable = mState.getProgramExecutable();
+    const GLsizei instanceCount             = GetDrawAdjustedInstanceCount(executable);
+    const void *drawIndexPointer            = nullptr;
 
     ANGLE_TRY(
         setDrawElementsState(context, count, type, indices, instanceCount, &drawIndexPointer));
-    if (!usesMultiview)
+    if (!executable->usesMultiview())
     {
-        getFunctions()->drawRangeElements(ToGLenum(mode), start, end, count, ToGLenum(type),
-                                          drawIndexPointer);
+        ANGLE_GL_TRY(context, getFunctions()->drawRangeElements(ToGLenum(mode), start, end, count,
+                                                                ToGLenum(type), drawIndexPointer));
     }
     else
     {
-        getFunctions()->drawElementsInstanced(ToGLenum(mode), count, ToGLenum(type),
-                                              drawIndexPointer, instanceCount);
+        ANGLE_GL_TRY(context,
+                     getFunctions()->drawElementsInstanced(ToGLenum(mode), count, ToGLenum(type),
+                                                           drawIndexPointer, instanceCount));
     }
+    mRenderer->markWorkSubmitted();
+
     return angle::Result::Continue;
 }
 
@@ -628,23 +695,26 @@ angle::Result ContextGL::drawRangeElementsBaseVertex(const gl::Context *context,
                                                      const void *indices,
                                                      GLint baseVertex)
 {
-    const gl::Program *program   = context->getState().getProgram();
-    const bool usesMultiview     = program->usesMultiview();
-    const GLsizei instanceCount  = usesMultiview ? program->getNumViews() : 0;
-    const void *drawIndexPointer = nullptr;
+    const gl::ProgramExecutable *executable = mState.getProgramExecutable();
+    const GLsizei instanceCount             = GetDrawAdjustedInstanceCount(executable);
+    const void *drawIndexPointer            = nullptr;
 
     ANGLE_TRY(
         setDrawElementsState(context, count, type, indices, instanceCount, &drawIndexPointer));
-    if (!usesMultiview)
+    if (!executable->usesMultiview())
     {
-        getFunctions()->drawRangeElementsBaseVertex(ToGLenum(mode), start, end, count,
-                                                    ToGLenum(type), drawIndexPointer, baseVertex);
+        ANGLE_GL_TRY(context, getFunctions()->drawRangeElementsBaseVertex(
+                                  ToGLenum(mode), start, end, count, ToGLenum(type),
+                                  drawIndexPointer, baseVertex));
     }
     else
     {
-        getFunctions()->drawElementsInstancedBaseVertex(
-            ToGLenum(mode), count, ToGLenum(type), drawIndexPointer, instanceCount, baseVertex);
+        ANGLE_GL_TRY(context, getFunctions()->drawElementsInstancedBaseVertex(
+                                  ToGLenum(mode), count, ToGLenum(type), drawIndexPointer,
+                                  instanceCount, baseVertex));
     }
+    mRenderer->markWorkSubmitted();
+
     return angle::Result::Continue;
 }
 
@@ -652,7 +722,9 @@ angle::Result ContextGL::drawArraysIndirect(const gl::Context *context,
                                             gl::PrimitiveMode mode,
                                             const void *indirect)
 {
-    getFunctions()->drawArraysIndirect(ToGLenum(mode), indirect);
+    ANGLE_GL_TRY(context, getFunctions()->drawArraysIndirect(ToGLenum(mode), indirect));
+    mRenderer->markWorkSubmitted();
+
     return angle::Result::Continue;
 }
 
@@ -661,150 +733,172 @@ angle::Result ContextGL::drawElementsIndirect(const gl::Context *context,
                                               gl::DrawElementsType type,
                                               const void *indirect)
 {
-    getFunctions()->drawElementsIndirect(ToGLenum(mode), ToGLenum(type), indirect);
+    ANGLE_GL_TRY(context,
+                 getFunctions()->drawElementsIndirect(ToGLenum(mode), ToGLenum(type), indirect));
     return angle::Result::Continue;
 }
 
-void ContextGL::stencilFillPath(const gl::Path *path, GLenum fillMode, GLuint mask)
+angle::Result ContextGL::multiDrawArrays(const gl::Context *context,
+                                         gl::PrimitiveMode mode,
+                                         const GLint *firsts,
+                                         const GLsizei *counts,
+                                         GLsizei drawcount)
 {
-    mRenderer->stencilFillPath(mState, path, fillMode, mask);
+    mRenderer->markWorkSubmitted();
+
+    return rx::MultiDrawArraysGeneral(this, context, mode, firsts, counts, drawcount);
 }
 
-void ContextGL::stencilStrokePath(const gl::Path *path, GLint reference, GLuint mask)
+angle::Result ContextGL::multiDrawArraysInstanced(const gl::Context *context,
+                                                  gl::PrimitiveMode mode,
+                                                  const GLint *firsts,
+                                                  const GLsizei *counts,
+                                                  const GLsizei *instanceCounts,
+                                                  GLsizei drawcount)
 {
-    mRenderer->stencilStrokePath(mState, path, reference, mask);
+    mRenderer->markWorkSubmitted();
+
+    return rx::MultiDrawArraysInstancedGeneral(this, context, mode, firsts, counts, instanceCounts,
+                                               drawcount);
 }
 
-void ContextGL::coverFillPath(const gl::Path *path, GLenum coverMode)
+angle::Result ContextGL::multiDrawArraysIndirect(const gl::Context *context,
+                                                 gl::PrimitiveMode mode,
+                                                 const void *indirect,
+                                                 GLsizei drawcount,
+                                                 GLsizei stride)
 {
-    mRenderer->coverFillPath(mState, path, coverMode);
+    mRenderer->markWorkSubmitted();
+
+    return rx::MultiDrawArraysIndirectGeneral(this, context, mode, indirect, drawcount, stride);
 }
 
-void ContextGL::coverStrokePath(const gl::Path *path, GLenum coverMode)
+angle::Result ContextGL::multiDrawElements(const gl::Context *context,
+                                           gl::PrimitiveMode mode,
+                                           const GLsizei *counts,
+                                           gl::DrawElementsType type,
+                                           const GLvoid *const *indices,
+                                           GLsizei drawcount)
 {
-    mRenderer->coverStrokePath(mState, path, coverMode);
+    mRenderer->markWorkSubmitted();
+
+    return rx::MultiDrawElementsGeneral(this, context, mode, counts, type, indices, drawcount);
 }
 
-void ContextGL::stencilThenCoverFillPath(const gl::Path *path,
-                                         GLenum fillMode,
-                                         GLuint mask,
-                                         GLenum coverMode)
+angle::Result ContextGL::multiDrawElementsInstanced(const gl::Context *context,
+                                                    gl::PrimitiveMode mode,
+                                                    const GLsizei *counts,
+                                                    gl::DrawElementsType type,
+                                                    const GLvoid *const *indices,
+                                                    const GLsizei *instanceCounts,
+                                                    GLsizei drawcount)
 {
-    mRenderer->stencilThenCoverFillPath(mState, path, fillMode, mask, coverMode);
+    mRenderer->markWorkSubmitted();
+
+    return rx::MultiDrawElementsInstancedGeneral(this, context, mode, counts, type, indices,
+                                                 instanceCounts, drawcount);
 }
 
-void ContextGL::stencilThenCoverStrokePath(const gl::Path *path,
-                                           GLint reference,
-                                           GLuint mask,
-                                           GLenum coverMode)
+angle::Result ContextGL::multiDrawElementsIndirect(const gl::Context *context,
+                                                   gl::PrimitiveMode mode,
+                                                   gl::DrawElementsType type,
+                                                   const void *indirect,
+                                                   GLsizei drawcount,
+                                                   GLsizei stride)
 {
-    mRenderer->stencilThenCoverStrokePath(mState, path, reference, mask, coverMode);
+    mRenderer->markWorkSubmitted();
+
+    return rx::MultiDrawElementsIndirectGeneral(this, context, mode, type, indirect, drawcount,
+                                                stride);
 }
 
-void ContextGL::coverFillPathInstanced(const std::vector<gl::Path *> &paths,
-                                       GLenum coverMode,
-                                       GLenum transformType,
-                                       const GLfloat *transformValues)
+angle::Result ContextGL::multiDrawArraysInstancedBaseInstance(const gl::Context *context,
+                                                              gl::PrimitiveMode mode,
+                                                              const GLint *firsts,
+                                                              const GLsizei *counts,
+                                                              const GLsizei *instanceCounts,
+                                                              const GLuint *baseInstances,
+                                                              GLsizei drawcount)
 {
-    mRenderer->coverFillPathInstanced(mState, paths, coverMode, transformType, transformValues);
+    mRenderer->markWorkSubmitted();
+
+    return rx::MultiDrawArraysInstancedBaseInstanceGeneral(
+        this, context, mode, firsts, counts, instanceCounts, baseInstances, drawcount);
 }
 
-void ContextGL::coverStrokePathInstanced(const std::vector<gl::Path *> &paths,
-                                         GLenum coverMode,
-                                         GLenum transformType,
-                                         const GLfloat *transformValues)
+angle::Result ContextGL::multiDrawElementsInstancedBaseVertexBaseInstance(
+    const gl::Context *context,
+    gl::PrimitiveMode mode,
+    const GLsizei *counts,
+    gl::DrawElementsType type,
+    const GLvoid *const *indices,
+    const GLsizei *instanceCounts,
+    const GLint *baseVertices,
+    const GLuint *baseInstances,
+    GLsizei drawcount)
 {
-    mRenderer->coverStrokePathInstanced(mState, paths, coverMode, transformType, transformValues);
-}
+    mRenderer->markWorkSubmitted();
 
-void ContextGL::stencilFillPathInstanced(const std::vector<gl::Path *> &paths,
-                                         GLenum fillMode,
-                                         GLuint mask,
-                                         GLenum transformType,
-                                         const GLfloat *transformValues)
-{
-    mRenderer->stencilFillPathInstanced(mState, paths, fillMode, mask, transformType,
-                                        transformValues);
-}
-
-void ContextGL::stencilStrokePathInstanced(const std::vector<gl::Path *> &paths,
-                                           GLint reference,
-                                           GLuint mask,
-                                           GLenum transformType,
-                                           const GLfloat *transformValues)
-{
-    mRenderer->stencilStrokePathInstanced(mState, paths, reference, mask, transformType,
-                                          transformValues);
-}
-
-void ContextGL::stencilThenCoverFillPathInstanced(const std::vector<gl::Path *> &paths,
-                                                  GLenum coverMode,
-                                                  GLenum fillMode,
-                                                  GLuint mask,
-                                                  GLenum transformType,
-                                                  const GLfloat *transformValues)
-{
-    mRenderer->stencilThenCoverFillPathInstanced(mState, paths, coverMode, fillMode, mask,
-                                                 transformType, transformValues);
-}
-
-void ContextGL::stencilThenCoverStrokePathInstanced(const std::vector<gl::Path *> &paths,
-                                                    GLenum coverMode,
-                                                    GLint reference,
-                                                    GLuint mask,
-                                                    GLenum transformType,
-                                                    const GLfloat *transformValues)
-{
-    mRenderer->stencilThenCoverStrokePathInstanced(mState, paths, coverMode, reference, mask,
-                                                   transformType, transformValues);
+    return rx::MultiDrawElementsInstancedBaseVertexBaseInstanceGeneral(
+        this, context, mode, counts, type, indices, instanceCounts, baseVertices, baseInstances,
+        drawcount);
 }
 
 gl::GraphicsResetStatus ContextGL::getResetStatus()
 {
-    return mRenderer->getResetStatus();
+    gl::GraphicsResetStatus resetStatus = mRenderer->getResetStatus();
+    if (resetStatus == gl::GraphicsResetStatus::PurgedContextResetNV)
+    {
+        if (mRobustnessVideoMemoryPurgeStatus == RobustnessVideoMemoryPurgeStatus::NOT_REQUESTED)
+        {
+            resetStatus = gl::GraphicsResetStatus::UnknownContextReset;
+        }
+    }
+    return resetStatus;
 }
 
-std::string ContextGL::getVendorString() const
-{
-    return mRenderer->getVendorString();
-}
-
-std::string ContextGL::getRendererDescription() const
-{
-    return mRenderer->getRendererDescription();
-}
-
-void ContextGL::insertEventMarker(GLsizei length, const char *marker)
+angle::Result ContextGL::insertEventMarker(GLsizei length, const char *marker)
 {
     mRenderer->insertEventMarker(length, marker);
+    return angle::Result::Continue;
 }
 
-void ContextGL::pushGroupMarker(GLsizei length, const char *marker)
+angle::Result ContextGL::pushGroupMarker(GLsizei length, const char *marker)
 {
     mRenderer->pushGroupMarker(length, marker);
+    return angle::Result::Continue;
 }
 
-void ContextGL::popGroupMarker()
+angle::Result ContextGL::popGroupMarker()
 {
     mRenderer->popGroupMarker();
+    return angle::Result::Continue;
 }
 
-void ContextGL::pushDebugGroup(GLenum source, GLuint id, const std::string &message)
+angle::Result ContextGL::pushDebugGroup(const gl::Context *context,
+                                        GLenum source,
+                                        GLuint id,
+                                        const std::string &message)
 {
     mRenderer->pushDebugGroup(source, id, message);
+    return angle::Result::Continue;
 }
 
-void ContextGL::popDebugGroup()
+angle::Result ContextGL::popDebugGroup(const gl::Context *context)
 {
     mRenderer->popDebugGroup();
+    return angle::Result::Continue;
 }
 
 angle::Result ContextGL::syncState(const gl::Context *context,
-                                   const gl::State::DirtyBits &dirtyBits,
-                                   const gl::State::DirtyBits &bitMask)
+                                   const gl::state::DirtyBits dirtyBits,
+                                   const gl::state::DirtyBits bitMask,
+                                   const gl::state::ExtendedDirtyBits extendedDirtyBits,
+                                   const gl::state::ExtendedDirtyBits extendedBitMask,
+                                   gl::Command command)
 {
-    mRenderer->getStateManager()->syncState(context, dirtyBits, bitMask);
-    return angle::Result::Continue;
+    return mRenderer->getStateManager()->syncState(context, dirtyBits, bitMask, extendedDirtyBits,
+                                                   extendedBitMask);
 }
 
 GLint ContextGL::getGPUDisjoint()
@@ -821,6 +915,16 @@ angle::Result ContextGL::onMakeCurrent(const gl::Context *context)
 {
     // Queries need to be paused/resumed on context switches
     return mRenderer->getStateManager()->onMakeCurrent(context);
+}
+
+angle::Result ContextGL::onUnMakeCurrent(const gl::Context *context)
+{
+    ANGLE_TRY(flush(context));
+    if (getFeaturesGL().unbindFBOBeforeSwitchingContext.enabled)
+    {
+        mRenderer->getStateManager()->bindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+    return ContextImpl::onUnMakeCurrent(context);
 }
 
 gl::Caps ContextGL::getNativeCaps() const
@@ -841,6 +945,11 @@ const gl::Extensions &ContextGL::getNativeExtensions() const
 const gl::Limitations &ContextGL::getNativeLimitations() const
 {
     return mRenderer->getNativeLimitations();
+}
+
+const ShPixelLocalStorageOptions &ContextGL::getNativePixelLocalStorageOptions() const
+{
+    return mRenderer->getNativePixelLocalStorageOptions();
 }
 
 StateManagerGL *ContextGL::getStateManager()
@@ -885,6 +994,28 @@ angle::Result ContextGL::memoryBarrierByRegion(const gl::Context *context, GLbit
     return mRenderer->memoryBarrierByRegion(barriers);
 }
 
+void ContextGL::framebufferFetchBarrier()
+{
+    mRenderer->framebufferFetchBarrier();
+}
+
+angle::Result ContextGL::startTiling(const gl::Context *context,
+                                     const gl::Rectangle &area,
+                                     GLbitfield preserveMask)
+{
+    const FunctionsGL *functions = getFunctions();
+    ANGLE_GL_TRY(context,
+                 functions->startTilingQCOM(area.x, area.y, area.width, area.height, preserveMask));
+    return angle::Result::Continue;
+}
+
+angle::Result ContextGL::endTiling(const gl::Context *context, GLbitfield preserveMask)
+{
+    const FunctionsGL *functions = getFunctions();
+    ANGLE_GL_TRY(context, functions->endTilingQCOM(preserveMask));
+    return angle::Result::Continue;
+}
+
 void ContextGL::setMaxShaderCompilerThreads(GLuint count)
 {
     mRenderer->setMaxShaderCompilerThreads(count);
@@ -899,6 +1030,31 @@ void ContextGL::validateState() const
 {
     const StateManagerGL *stateManager = mRenderer->getStateManager();
     stateManager->validateState();
+}
+
+void ContextGL::setNeedsFlushBeforeDeleteTextures()
+{
+    mRenderer->setNeedsFlushBeforeDeleteTextures();
+}
+
+void ContextGL::flushIfNecessaryBeforeDeleteTextures()
+{
+    mRenderer->flushIfNecessaryBeforeDeleteTextures();
+}
+
+void ContextGL::markWorkSubmitted()
+{
+    mRenderer->markWorkSubmitted();
+}
+
+MultiviewImplementationTypeGL ContextGL::getMultiviewImplementationType() const
+{
+    return mRenderer->getMultiviewImplementationType();
+}
+
+bool ContextGL::hasNativeParallelCompile()
+{
+    return mRenderer->hasNativeParallelCompile();
 }
 
 }  // namespace rx

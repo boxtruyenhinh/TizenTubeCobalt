@@ -27,10 +27,6 @@
 #include "starboard/common/metrics/stats_tracker.h"
 #include "starboard/common/string.h"
 #include "starboard/configuration_constants.h"
-#include "starboard/directory.h"
-#include "starboard/file.h"
-#include "starboard/shared/starboard/file_atomic_replace_write_file.h"
-#include "starboard/string.h"
 
 namespace starboard {
 namespace {
@@ -122,10 +118,14 @@ bool SbFileDeleteRecursive(const char* path, bool preserve_root) {
   struct dirent dirent_buffer;
   struct dirent* dirent;
   while (true) {
-    if (entry.size() < kSbFileMaxName || !dir || !entry.data()) {
+    if (entry.size() < static_cast<size_t>(kSbFileMaxName) || !dir ||
+        !entry.data()) {
       break;
     }
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     int result = readdir_r(dir, &dirent_buffer, &dirent);
+#pragma GCC diagnostic pop
     if (result || !dirent) {
       break;
     }

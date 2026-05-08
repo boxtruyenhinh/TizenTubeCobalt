@@ -142,7 +142,7 @@ platform-specific, so there are no constraints about expected ranges.
 #### Declaration
 
 ```
-void* SbWindowGetPlatformHandle(SbWindow window)
+void * SbWindowGetPlatformHandle(SbWindow window)
 ```
 
 ### SbWindowGetSize

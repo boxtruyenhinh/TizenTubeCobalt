@@ -9,9 +9,11 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkTypeface.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
+#include "src/base/SkUTF.h"
+#include "src/core/SkFontPriv.h"
 #include "src/utils/SkCharToGlyphCache.h"
-#include "src/utils/SkUTF.h"
+#include "tools/fonts/FontToolUtils.h"
 
 enum {
     NGLYPHS = 100
@@ -30,7 +32,7 @@ struct Rec {
 typedef void (*TypefaceProc)(const Rec& r);
 
 static void textToGlyphs_proc(const Rec& r) {
-    uint16_t glyphs[NGLYPHS];
+    SkGlyphID glyphs[NGLYPHS];
     SkASSERT(r.fCount <= NGLYPHS);
 
     for (int i = 0; i < r.fLoops; ++i) {
@@ -39,10 +41,10 @@ static void textToGlyphs_proc(const Rec& r) {
 }
 
 static void charsToGlyphs_proc(const Rec& r) {
-    uint16_t glyphs[NGLYPHS];
+    SkGlyphID glyphs[NGLYPHS];
     SkASSERT(r.fCount <= NGLYPHS);
 
-    SkTypeface* face = r.fFont.getTypefaceOrDefault();
+    SkTypeface* face = r.fFont.getTypeface();
     for (int i = 0; i < r.fLoops; ++i) {
         face->unicharsToGlyphs(r.fText, r.fCount, glyphs);
     }
@@ -86,11 +88,11 @@ public:
             fText[i] = rand.nextU() & 0xFFFF;
             fCache.addCharAndGlyph(fText[i], i);
         }
-        fFont.setTypeface(SkTypeface::MakeDefault());
+        fFont.setTypeface(ToolUtils::DefaultTypeface());
     }
 
     bool isSuitableFor(Backend backend) override {
-        return backend == kNonRendering_Backend;
+        return backend == Backend::kNonRendering;
     }
 
 protected:

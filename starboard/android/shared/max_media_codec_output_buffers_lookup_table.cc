@@ -14,21 +14,21 @@
 
 #include "starboard/android/shared/max_media_codec_output_buffers_lookup_table.h"
 
+#include <sstream>
+
 #include "starboard/common/log.h"
 #include "starboard/common/once.h"
 #include "starboard/common/string.h"
 
 namespace starboard {
-namespace android {
-namespace shared {
 
 bool VideoOutputFormat::operator<(const VideoOutputFormat& key) const {
   if (codec_ != key.codec_) {
     return codec_ < key.codec_;
-  } else if (output_width_ != key.output_width_) {
-    return output_width_ < key.output_width_;
-  } else if (output_height_ != key.output_height_) {
-    return output_height_ < key.output_height_;
+  } else if (output_size_.width != key.output_size_.width) {
+    return output_size_.width < key.output_size_.width;
+  } else if (output_size_.height != key.output_size_.height) {
+    return output_size_.height < key.output_size_.height;
   } else if (is_hdr_ != key.is_hdr_) {
     return is_hdr_ < key.is_hdr_;
   } else {
@@ -36,32 +36,30 @@ bool VideoOutputFormat::operator<(const VideoOutputFormat& key) const {
   }
 }
 
-std::string VideoOutputFormat::ToString() const {
-  std::string info = FormatString("Video codec  = %d res = [%d x %d]", codec_,
-                                  output_width_, output_height_);
-  if (is_hdr_) {
-    info += "+ HDR";
+std::ostream& operator<<(std::ostream& os, const VideoOutputFormat& format) {
+  os << "Video codec = " << format.codec_ << " res = " << format.output_size_;
+  if (format.is_hdr_) {
+    os << "+ HDR";
   }
-  return info;
+  return os;
 }
 
 SB_ONCE_INITIALIZE_FUNCTION(MaxMediaCodecOutputBuffersLookupTable,
-                            MaxMediaCodecOutputBuffersLookupTable::GetInstance);
+                            MaxMediaCodecOutputBuffersLookupTable::GetInstance)
 
-std::string MaxMediaCodecOutputBuffersLookupTable::DumpContent() const {
-  std::string table_content =
-      "[Preroll] MaxMediaCodecOutputBuffersLookupTable:\n";
-  for (const auto& item : lookup_table_) {
-    table_content += item.first.ToString();
-    table_content +=
-        FormatString(": max output video frame capacity = %d\n", item.second);
+std::ostream& operator<<(std::ostream& os,
+                         const MaxMediaCodecOutputBuffersLookupTable& table) {
+  os << "[Preroll] MaxMediaCodecOutputBuffersLookupTable:\n";
+  for (const auto& item : table.lookup_table_) {
+    os << item.first << ": max output video frame capacity = " << item.second
+       << "\n";
   }
-  return table_content;
+  return os;
 }
 
 int MaxMediaCodecOutputBuffersLookupTable::GetMaxOutputVideoBuffers(
     const VideoOutputFormat& format) const {
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
 
   auto iter = lookup_table_.find(format);
   if (iter == lookup_table_.end() || !enable_) {
@@ -72,7 +70,7 @@ int MaxMediaCodecOutputBuffersLookupTable::GetMaxOutputVideoBuffers(
 }
 
 void MaxMediaCodecOutputBuffersLookupTable::SetEnabled(bool enable) {
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
 
   enable_ = enable;
 }
@@ -80,7 +78,7 @@ void MaxMediaCodecOutputBuffersLookupTable::SetEnabled(bool enable) {
 void MaxMediaCodecOutputBuffersLookupTable::UpdateMaxOutputBuffers(
     const VideoOutputFormat& format,
     int max_num_of_frames) {
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
 
   if (!enable_) {
     return;
@@ -89,10 +87,8 @@ void MaxMediaCodecOutputBuffersLookupTable::UpdateMaxOutputBuffers(
   int max_output_buffer_record = lookup_table_[format];
   if (max_num_of_frames > max_output_buffer_record) {
     lookup_table_[format] = max_num_of_frames;
-    SB_DLOG(INFO) << DumpContent();
+    SB_DLOG(INFO) << *this;
   }
 }
 
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard

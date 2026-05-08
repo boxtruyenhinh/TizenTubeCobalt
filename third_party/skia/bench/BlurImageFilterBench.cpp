@@ -12,7 +12,7 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkString.h"
 #include "include/effects/SkImageFilters.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 
 #define FILTER_WIDTH_SMALL  32
 #define FILTER_HEIGHT_SMALL 32
@@ -69,10 +69,10 @@ public:
       , fSigmaX(sigmaX)
       , fSigmaY(sigmaY) {
         fName.printf("blur_image_filter_%s%s%s_%.2f_%.2f",
-            fIsSmall ? "small" : "large",
-            fIsCropped ? "_cropped" : "",
-            fIsExpanded ? "_expanded" : "",
-            SkScalarToFloat(sigmaX), SkScalarToFloat(sigmaY));
+                     fIsSmall ? "small" : "large",
+                     fIsCropped ? "_cropped" : "",
+                     fIsExpanded ? "_expanded" : "",
+                     sigmaX, sigmaY);
         SkASSERT(!fIsExpanded || fIsCropped); // never want expansion w/o cropping
     }
 

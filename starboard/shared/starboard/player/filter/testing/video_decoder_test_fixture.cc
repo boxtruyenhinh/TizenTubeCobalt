@@ -21,19 +21,18 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "starboard/common/condition_variable.h"
-#include "starboard/common/mutex.h"
 #include "starboard/common/string.h"
 #include "starboard/common/time.h"
 #include "starboard/configuration_constants.h"
 #include "starboard/drm.h"
 #include "starboard/media.h"
-#include "starboard/memory.h"
+#include "starboard/shared/starboard/experimental_features.h"
 #include "starboard/shared/starboard/media/media_util.h"
 #include "starboard/shared/starboard/player/filter/player_components.h"
 #include "starboard/shared/starboard/player/filter/stub_player_components_factory.h"
@@ -45,17 +44,10 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
-namespace testing {
 namespace {
 
-using ::starboard::testing::FakeGraphicsContextProvider;
 using ::std::placeholders::_1;
 using ::std::placeholders::_2;
-using video_dmp::VideoDmpReader;
 
 }  // namespace
 
@@ -66,10 +58,10 @@ VideoDecoderTestFixture::VideoDecoderTestFixture(
     SbPlayerOutputMode output_mode,
     bool using_stub_decoder)
     : job_queue_(job_queue),
-      fake_graphics_context_provider_(fake_graphics_context_provider),
       test_filename_(test_filename),
       output_mode_(output_mode),
       using_stub_decoder_(using_stub_decoder),
+      fake_graphics_context_provider_(fake_graphics_context_provider),
       dmp_reader_(test_filename, VideoDmpReader::kEnableReadOnDemand) {
   SB_DCHECK(job_queue_);
   SB_DCHECK(fake_graphics_context_provider_);
@@ -90,8 +82,8 @@ void VideoDecoderTestFixture::Initialize() {
 
   PlayerComponents::Factory::CreationParameters creation_parameters(
       GetVideoInputBuffer(0)->video_stream_info(), &player_, output_mode,
-      max_video_input_size,
-      fake_graphics_context_provider_->decoder_target_provider(), nullptr);
+      max_video_input_size, ExperimentalFeatures{}, /*surface_view=*/nullptr,
+      fake_graphics_context_provider_->decoder_target_provider(), job_queue_);
   ASSERT_EQ(creation_parameters.max_video_input_size(), max_video_input_size);
 
   std::unique_ptr<PlayerComponents::Factory> factory;
@@ -100,10 +92,11 @@ void VideoDecoderTestFixture::Initialize() {
   } else {
     factory = PlayerComponents::Factory::Create();
   }
-  std::string error_message;
-  ASSERT_TRUE(factory->CreateSubComponents(
-      creation_parameters, nullptr, nullptr, &video_decoder_,
-      &video_render_algorithm_, &video_renderer_sink_, &error_message));
+  auto sub_components = factory->CreateSubComponents(creation_parameters);
+  ASSERT_TRUE(sub_components) << sub_components.error();
+  video_decoder_ = std::move(sub_components->video.decoder);
+  video_render_algorithm_ = std::move(sub_components->video.render_algorithm);
+  video_renderer_sink_ = std::move(sub_components->video.renderer_sink);
   ASSERT_TRUE(video_decoder_);
 
   if (video_renderer_sink_) {
@@ -124,7 +117,7 @@ void VideoDecoderTestFixture::Initialize() {
 void VideoDecoderTestFixture::OnDecoderStatusUpdate(
     VideoDecoder::Status status,
     const scoped_refptr<VideoFrame>& frame) {
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   // TODO: Ensure that this is only called during dtor or Reset().
   if (status == VideoDecoder::kReleaseAllFrames) {
     SB_DCHECK(!frame);
@@ -142,7 +135,7 @@ void VideoDecoderTestFixture::OnDecoderStatusUpdate(
 }
 
 void VideoDecoderTestFixture::OnError() {
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   event_queue_.push_back(Event(kError, NULL));
   SB_LOG(WARNING) << "Video decoder received error.";
 }
@@ -168,7 +161,7 @@ void VideoDecoderTestFixture::WaitForNextEvent(Event* event, int64_t timeout) {
     job_queue_->RunUntilIdle();
     GetDecodeTargetWhenSupported();
     {
-      ScopedLock scoped_lock(mutex_);
+      std::lock_guard scoped_lock(mutex_);
       if (!event_queue_.empty()) {
         *event = event_queue_.front();
         event_queue_.pop_front();
@@ -190,7 +183,7 @@ void VideoDecoderTestFixture::WaitForNextEvent(Event* event, int64_t timeout) {
 
 bool VideoDecoderTestFixture::HasPendingEvents() {
   usleep(5000);
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   return !event_queue_.empty();
 }
 
@@ -224,7 +217,7 @@ void VideoDecoderTestFixture::WriteSingleInput(size_t index) {
 
   auto input_buffer = GetVideoInputBuffer(index);
   {
-    ScopedLock scoped_lock(mutex_);
+    std::lock_guard scoped_lock(mutex_);
     need_more_input_ = false;
     outstanding_inputs_.insert(input_buffer->timestamp());
   }
@@ -233,7 +226,7 @@ void VideoDecoderTestFixture::WriteSingleInput(size_t index) {
 
 void VideoDecoderTestFixture::WriteEndOfStream() {
   {
-    ScopedLock scoped_lock(mutex_);
+    std::lock_guard scoped_lock(mutex_);
     end_of_stream_written_ = true;
   }
   video_decoder_->WriteEndOfStream();
@@ -346,7 +339,7 @@ void VideoDecoderTestFixture::DrainOutputs(bool* error_occurred,
 
 void VideoDecoderTestFixture::ResetDecoderAndClearPendingEvents() {
   video_decoder_->Reset();
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   event_queue_.clear();
   need_more_input_ = true;
   end_of_stream_written_ = false;
@@ -369,9 +362,4 @@ scoped_refptr<InputBuffer> VideoDecoderTestFixture::GetVideoInputBuffer(
   return input_buffer;
 }
 
-}  // namespace testing
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

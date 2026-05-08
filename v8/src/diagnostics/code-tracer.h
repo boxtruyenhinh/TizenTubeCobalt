@@ -5,42 +5,42 @@
 #ifndef V8_DIAGNOSTICS_CODE_TRACER_H_
 #define V8_DIAGNOSTICS_CODE_TRACER_H_
 
-#include "src/base/optional.h"
-#include "src/common/globals.h"
+#include <optional>
+
+#include "src/base/platform/platform.h"
+#include "src/base/platform/wrappers.h"
+#include "src/base/strings.h"
+#include "src/base/vector.h"
 #include "src/flags/flags.h"
 #include "src/utils/allocation.h"
 #include "src/utils/ostreams.h"
 #include "src/utils/utils.h"
-#include "src/utils/vector.h"
 
 namespace v8 {
 namespace internal {
 
 class CodeTracer final : public Malloced {
  public:
-#if defined(V8_OS_STARBOARD)
-  explicit CodeTracer(int isolate_id) : scope_depth_(0) {
-#else
   explicit CodeTracer(int isolate_id) : file_(nullptr), scope_depth_(0) {
     if (!ShouldRedirect()) {
       file_ = stdout;
       return;
     }
-#endif
 
-    if (FLAG_redirect_code_traces_to != nullptr) {
-      StrNCpy(filename_, FLAG_redirect_code_traces_to, filename_.length());
+    if (v8_flags.redirect_code_traces_to != nullptr) {
+      base::StrNCpy(filename_, v8_flags.redirect_code_traces_to,
+                    filename_.length());
     } else if (isolate_id >= 0) {
-      SNPrintF(filename_, "code-%d-%d.asm", base::OS::GetCurrentProcessId(),
-               isolate_id);
+      base::SNPrintF(filename_, "code-%d-%d.asm",
+                     base::OS::GetCurrentProcessId(), isolate_id);
     } else {
-      SNPrintF(filename_, "code-%d.asm", base::OS::GetCurrentProcessId());
+      base::SNPrintF(filename_, "code-%d.asm", base::OS::GetCurrentProcessId());
     }
 
     WriteChars(filename_.begin(), "", 0, false);
   }
 
-  class Scope {
+  class V8_NODISCARD Scope {
    public:
     explicit Scope(CodeTracer* tracer) : tracer_(tracer) { tracer->OpenFile(); }
     ~Scope() { tracer_->CloseFile(); }
@@ -51,7 +51,7 @@ class CodeTracer final : public Malloced {
     CodeTracer* tracer_;
   };
 
-  class StreamScope : public Scope {
+  class V8_NODISCARD StreamScope : public Scope {
    public:
     explicit StreamScope(CodeTracer* tracer) : Scope(tracer) {
       FILE* file = this->file();
@@ -69,8 +69,8 @@ class CodeTracer final : public Malloced {
 
    private:
     // Exactly one of these two will be initialized.
-    base::Optional<StdoutStream> stdout_stream_;
-    base::Optional<OFStream> file_stream_;
+    std::optional<StdoutStream> stdout_stream_;
+    std::optional<OFStream> file_stream_;
   };
 
   void OpenFile() {
@@ -78,14 +78,12 @@ class CodeTracer final : public Malloced {
       return;
     }
 
-#if !defined(V8_OS_STARBOARD)
     if (file_ == nullptr) {
       file_ = base::OS::FOpen(filename_.begin(), "ab");
       CHECK_WITH_MSG(file_ != nullptr,
                      "could not open file. If on Android, try passing "
                      "--redirect-code-traces-to=/sdcard/Download/<file-name>");
     }
-#endif
 
     scope_depth_++;
   }
@@ -96,27 +94,19 @@ class CodeTracer final : public Malloced {
     }
 
     if (--scope_depth_ == 0) {
-#if !defined(V8_OS_STARBOARD)
       DCHECK_NOT_NULL(file_);
-      fclose(file_);
+      base::Fclose(file_);
       file_ = nullptr;
-#endif
     }
   }
 
-#if !defined(V8_OS_STARBOARD)
   FILE* file() const { return file_; }
-#else
-  FILE* file() const { return nullptr; }
-#endif
 
  private:
-  static bool ShouldRedirect() { return FLAG_redirect_code_traces; }
+  static bool ShouldRedirect() { return v8_flags.redirect_code_traces; }
 
-  EmbeddedVector<char, 128> filename_;
-#if !defined(V8_OS_STARBOARD)
+  base::EmbeddedVector<char, 128> filename_;
   FILE* file_;
-#endif
   int scope_depth_;
 };
 

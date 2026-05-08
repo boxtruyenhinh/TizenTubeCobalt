@@ -76,7 +76,7 @@ int MakeSecondFileDescriptor() {
 #endif
 }
 
-#if !PERFETTO_BUILDFLAG(PERFETTO_OS_WIN) && !defined(STARBOARD)
+#if !PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
 TEST(ScopedDirTest, CloseOutOfScope) {
   DIR* dir_handle = opendir(".");
   ASSERT_NE(nullptr, dir_handle);

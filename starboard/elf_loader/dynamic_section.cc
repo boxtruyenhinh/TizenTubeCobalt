@@ -17,7 +17,6 @@
 #include "starboard/common/log.h"
 #include "starboard/elf_loader/log.h"
 
-namespace starboard {
 namespace elf_loader {
 
 DynamicSection::DynamicSection(Addr base_memory_address,
@@ -28,7 +27,6 @@ DynamicSection::DynamicSection(Addr base_memory_address,
       soname_(NULL),
       dynamic_(dynamic),
       dynamic_count_(dynamic_count),
-      dynamic_flags_(dynamic_flags),
       has_DT_SYMBOLIC_(false),
       symbol_table_(NULL),
       string_table_(NULL),
@@ -91,8 +89,9 @@ bool DynamicSection::InitDynamicSection() {
         has_DT_SYMBOLIC_ = true;
         break;
       case DT_FLAGS:
-        if (dyn_value & DF_SYMBOLIC)
+        if (dyn_value & DF_SYMBOLIC) {
           has_DT_SYMBOLIC_ = true;
+        }
         break;
       case DT_SONAME:
         soname_ = string_table_ + dyn_value;
@@ -167,8 +166,9 @@ bool DynamicSection::IsWeakById(size_t symbol_id) const {
 const char* DynamicSection::LookupNameById(size_t symbol_id) const {
   const Sym* sym = LookupById(symbol_id);
   // TODO: Confirm that LookupById actually can return NULL.
-  if (!sym)
+  if (!sym) {
     return NULL;
+  }
   return string_table_ + sym->st_name;
 }
 
@@ -179,15 +179,16 @@ const Sym* DynamicSection::LookupByName(const char* symbol_name) const {
           : elf_hash_.LookupByName(symbol_name, symbol_table_, string_table_);
 
   // Ignore undefined symbols or those that are not global or weak definitions.
-  if (!sym || sym->st_shndx == SHN_UNDEF)
+  if (!sym || sym->st_shndx == SHN_UNDEF) {
     return NULL;
+  }
 
   uint8_t info = ELF_ST_BIND(sym->st_info);
-  if (info != STB_GLOBAL && info != STB_WEAK)
+  if (info != STB_GLOBAL && info != STB_WEAK) {
     return NULL;
+  }
 
   return sym;
 }
 
 }  // namespace elf_loader
-}  // namespace starboard

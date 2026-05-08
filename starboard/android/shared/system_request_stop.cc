@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/system.h"
+// clang-format on
 
-#include "starboard/android/shared/jni_env_ext.h"
-
-using starboard::android::shared::JniEnvExt;
+#include "starboard/common/log.h"
 
 void SbSystemRequestStop(int error_level) {
-  JniEnvExt* env = JniEnvExt::Get();
-  env->CallStarboardVoidMethodOrAbort("requestStop", "(I)V", error_level);
+  // TODO: b/450024477 - Implement this method when AOSP is used.
+  SB_LOG(WARNING) << __func__ << "(error_level=" << error_level
+                  << ") is called, but it's ignored on Android";
 }

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Copyright 2021 Google Inc.
 #
@@ -10,21 +10,17 @@ import json
 import os
 import platform
 import re
-import shutil
 import stat
 import sys
 import tempfile
 import zipfile
 
-if sys.version_info[0] < 3:
-  from urllib2 import urlopen
-else:
-  from urllib.request import urlopen
+from urllib.request import urlopen
 
 
 def sha256sum(path):
   try:
-    with open(sk_path, 'rb') as f:
+    with open(path, 'rb') as f:
       return hashlib.sha256(f.read()).hexdigest()
   except OSError:
     return ''
@@ -33,7 +29,7 @@ def sha256sum(path):
 os.chdir(os.path.join(os.path.dirname(__file__), os.pardir))
 
 OS  = {'darwin': 'mac', 'linux': 'linux', 'linux2': 'linux', 'win32': 'windows'}[sys.platform]
-cpu = {'amd64': 'amd64', 'arm64': 'arm64', 'x86_64': 'amd64'}[platform.machine().lower()]
+cpu = {'aarch64': 'arm64', 'amd64': 'amd64', 'arm64': 'arm64', 'x86_64': 'amd64'}[platform.machine().lower()]
 platform = '%s-%s' % (OS, cpu)
 sk = 'sk'
 if 'windows' in platform:
@@ -42,11 +38,11 @@ if 'windows' in platform:
 # Find the version of 'sk' requested by DEPS.
 with open('DEPS', 'rb') as f:
   deps = f.read().decode()
-found = re.findall(r"'sk_tool_revision':\s*'(\S+)'", deps)
+found = re.findall(r"'infra_revision':\s*'(\S+)'", deps)
 if len(found) != 1:
-  print('Unable to find sk_tool_revision in DEPS', file=sys.stderr)
+  print('Unable to find infra_revision in DEPS', file=sys.stderr)
   exit(1)
-desired_version = found[0]
+desired_version = "git_revision:" + found[0]
 
 # Determine which version (if any) we currently have.
 sk_path = os.path.join('bin', sk)

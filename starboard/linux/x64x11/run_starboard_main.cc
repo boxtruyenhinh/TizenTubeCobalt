@@ -12,19 +12,47 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "starboard/event.h"
+#include <malloc.h>
+#include <time.h>
 
+#include "starboard/configuration.h"
+#include "starboard/crashpad_wrapper/wrapper.h"
+#include "starboard/event.h"
+#include "starboard/shared/signal/crash_signals.h"
+#include "starboard/shared/signal/debug_signals.h"
+#include "starboard/shared/signal/suspend_signals.h"
 #include "starboard/shared/starboard/link_receiver.h"
 #include "starboard/shared/x11/application_x11.h"
+#if SB_IS(EVERGREEN_COMPATIBLE)
+#include "starboard/common/command_line.h"
+#include "starboard/common/paths.h"
+#include "starboard/elf_loader/elf_loader_constants.h"
+#endif
+#include "starboard/shared/x11/application_x11.h"
 
-#if SB_API_VERSION >= 15
 int SbRunStarboardMain(int argc, char** argv, SbEventHandleCallback callback) {
-  starboard::shared::x11::ApplicationX11 application(callback);
-  int result = 0;
-  {
-    starboard::shared::starboard::LinkReceiver receiver(&application);
-    result = application.Run(argc, argv);
-  }
+  // Set M_ARENA_MAX to a low value to slow memory growth due to fragmentation.
+  mallopt(M_ARENA_MAX, 2);
+
+  tzset();
+  starboard::InstallCrashSignalHandlers();
+  starboard::InstallDebugSignalHandlers();
+  starboard::InstallSuspendSignalHandlers();
+
+#if SB_HAS_QUIRK(BACKTRACE_DLOPEN_BUG)
+  // Call backtrace() once to work around potential
+  // crash bugs in glibc, in dlopen()
+  SbLogRawDumpStack(3);
+#endif
+
+  starboard::ApplicationX11 application(callback);
+
+  starboard::LinkReceiver receiver(&application);
+  int result = application.Run(argc, argv);
+
+  starboard::UninstallSuspendSignalHandlers();
+  starboard::UninstallDebugSignalHandlers();
+  starboard::UninstallCrashSignalHandlers();
+
   return result;
 }
-#endif  // SB_API_VERSION >= 15

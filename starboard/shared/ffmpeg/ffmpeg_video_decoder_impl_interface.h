@@ -15,27 +15,26 @@
 #ifndef STARBOARD_SHARED_FFMPEG_FFMPEG_VIDEO_DECODER_IMPL_INTERFACE_H_
 #define STARBOARD_SHARED_FFMPEG_FFMPEG_VIDEO_DECODER_IMPL_INTERFACE_H_
 
+#include <memory>
+
 #include "starboard/media.h"
 #include "starboard/shared/ffmpeg/ffmpeg_video_decoder.h"
 #include "starboard/shared/internal_only.h"
 
 namespace starboard {
-namespace shared {
-namespace ffmpeg {
 
 // For each version V that is supported, there will be an explicit
 // specialization of the VideoDecoder class.
 template <int V>
-class VideoDecoderImpl : public VideoDecoder {
+class FfmpegVideoDecoderImpl : public FfmpegVideoDecoder {
  public:
-  static VideoDecoder* Create(SbMediaVideoCodec video_codec,
-                              SbPlayerOutputMode output_mode,
-                              SbDecodeTargetGraphicsContextProvider*
-                                  decode_target_graphics_context_provider);
+  static std::unique_ptr<FfmpegVideoDecoder> Create(
+      SbMediaVideoCodec video_codec,
+      SbPlayerOutputMode output_mode,
+      SbDecodeTargetGraphicsContextProvider*
+          decode_target_graphics_context_provider);
 };
 
-}  // namespace ffmpeg
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_FFMPEG_FFMPEG_VIDEO_DECODER_IMPL_INTERFACE_H_

@@ -15,12 +15,15 @@
 #ifndef STARBOARD_SHARED_LIBVPX_VPX_VIDEO_DECODER_H_
 #define STARBOARD_SHARED_LIBVPX_VPX_VIDEO_DECODER_H_
 
+#include <limits>
 #include <memory>
+#include <mutex>
 #include <queue>
 #include <string>
 
 #include "starboard/common/log.h"
 #include "starboard/common/ref_counted.h"
+#include "starboard/common/size.h"
 #include "starboard/media.h"
 #include "starboard/shared/internal_only.h"
 #include "starboard/shared/starboard/player/filter/cpu_video_frame.h"
@@ -33,22 +36,22 @@
 #include "third_party/libvpx/source/libvpx/vpx/vpx_decoder.h"
 
 namespace starboard {
-namespace shared {
-namespace vpx {
 
-class VideoDecoder : public starboard::player::filter::VideoDecoder,
-                     private starboard::player::JobQueue::JobOwner {
+class VpxVideoDecoder : public VideoDecoder, private JobQueue::JobOwner {
  public:
-  VideoDecoder(SbMediaVideoCodec video_codec,
-               SbPlayerOutputMode output_mode,
-               SbDecodeTargetGraphicsContextProvider*
-                   decode_target_graphics_context_provider);
-  ~VideoDecoder() override;
+  VpxVideoDecoder(JobQueue* job_queue,
+                  SbMediaVideoCodec video_codec,
+                  SbPlayerOutputMode output_mode,
+                  SbDecodeTargetGraphicsContextProvider*
+                      decode_target_graphics_context_provider);
+  ~VpxVideoDecoder() override;
 
   void Initialize(const DecoderStatusCB& decoder_status_cb,
                   const ErrorCB& error_cb) override;
   size_t GetPrerollFrameCount() const override { return 8; }
-  int64_t GetPrerollTimeout() const override { return kSbInt64Max; }
+  int64_t GetPrerollTimeout() const override {
+    return std::numeric_limits<int64_t>::max();
+  }
   size_t GetMaxNumberOfCachedFrames() const override { return 12; }
 
   void WriteInputBuffers(const InputBuffers& input_buffers) override;
@@ -56,9 +59,6 @@ class VideoDecoder : public starboard::player::filter::VideoDecoder,
   void Reset() override;
 
  private:
-  typedef ::starboard::shared::starboard::player::filter::CpuVideoFrame
-      CpuVideoFrame;
-
   void ReportError(const std::string& error_message);
 
   // The following four functions are only called on the decoder thread except
@@ -78,15 +78,14 @@ class VideoDecoder : public starboard::player::filter::VideoDecoder,
   DecoderStatusCB decoder_status_cb_;
   ErrorCB error_cb_;
 
-  int current_frame_width_;
-  int current_frame_height_;
+  Size current_frame_size_;
   std::unique_ptr<vpx_codec_ctx> context_;
 
   bool stream_ended_;
   bool error_occurred_;
 
   // Working thread to avoid lengthy decoding work block the player thread.
-  starboard::player::ScopedJobThreadPtr decoder_thread_;
+  std::unique_ptr<JobThread> decoder_thread_;
 
   // Decode-to-texture related state.
   SbPlayerOutputMode output_mode_;
@@ -102,13 +101,11 @@ class VideoDecoder : public starboard::player::filter::VideoDecoder,
   // to obtain the current decode target (which ultimately ends up being a
   // copy of |decode_target_|), we need to safe-guard access to |decode_target_|
   // and we do so through this mutex.
-  Mutex decode_target_mutex_;
+  std::mutex decode_target_mutex_;
 
   std::queue<scoped_refptr<CpuVideoFrame>> frames_;
 };
 
-}  // namespace vpx
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_LIBVPX_VPX_VIDEO_DECODER_H_

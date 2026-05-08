@@ -20,10 +20,6 @@
 #include "starboard/shared/starboard/player/filter/common.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 class MediaTimeProvider {
  public:
@@ -41,10 +37,6 @@ class MediaTimeProvider {
   virtual ~MediaTimeProvider() {}
 };
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_MEDIA_TIME_PROVIDER_H_

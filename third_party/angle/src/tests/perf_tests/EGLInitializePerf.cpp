@@ -8,7 +8,7 @@
 //
 
 #include "ANGLEPerfTest.h"
-#include "platform/Platform.h"
+#include "platform/PlatformMethods.h"
 #include "test_utils/angle_test_configs.h"
 #include "test_utils/angle_test_instantiate.h"
 #include "util/Timer.h"
@@ -29,7 +29,7 @@ struct Captures final : private angle::NonCopyable
 double CapturePlatform_currentTime(angle::PlatformMethods *platformMethods)
 {
     Captures *captures = static_cast<Captures *>(platformMethods->context);
-    return captures->timer.getElapsedTime();
+    return captures->timer.getElapsedWallClockTime();
 }
 
 void CapturePlatform_histogramCustomCounts(angle::PlatformMethods *platformMethods,
@@ -79,7 +79,7 @@ EGLInitializePerfTest::EGLInitializePerfTest()
 {
     auto platform = GetParam().eglParameters;
 
-    std::vector<EGLint> displayAttributes;
+    std::vector<EGLAttrib> displayAttributes;
     displayAttributes.push_back(EGL_PLATFORM_ANGLE_TYPE_ANGLE);
     displayAttributes.push_back(platform.renderer);
     displayAttributes.push_back(EGL_PLATFORM_ANGLE_MAX_VERSION_MAJOR_ANGLE);
@@ -98,17 +98,17 @@ EGLInitializePerfTest::EGLInitializePerfTest()
     mOSWindow = OSWindow::New();
     mOSWindow->initialize("EGLInitialize Test", 64, 64);
 
-    auto eglGetPlatformDisplayEXT = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
-        eglGetProcAddress("eglGetPlatformDisplayEXT"));
-    if (eglGetPlatformDisplayEXT == nullptr)
+    auto eglGetPlatformDisplay =
+        reinterpret_cast<PFNEGLGETPLATFORMDISPLAYPROC>(eglGetProcAddress("eglGetPlatformDisplay"));
+    if (eglGetPlatformDisplay == nullptr)
     {
         std::cerr << "Error getting platform display!" << std::endl;
         return;
     }
 
-    mDisplay = eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE,
-                                        reinterpret_cast<void *>(mOSWindow->getNativeDisplay()),
-                                        &displayAttributes[0]);
+    mDisplay = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE,
+                                     reinterpret_cast<void *>(mOSWindow->getNativeDisplay()),
+                                     &displayAttributes[0]);
 }
 
 void EGLInitializePerfTest::SetUp()
@@ -157,6 +157,9 @@ TEST_P(EGLInitializePerfTest, Run)
     run();
 }
 
-ANGLE_INSTANTIATE_TEST(EGLInitializePerfTest, angle::ES2_D3D11(), angle::ES2_VULKAN());
+ANGLE_INSTANTIATE_TEST(EGLInitializePerfTest,
+                       angle::ES2_D3D11(),
+                       angle::ES2_METAL(),
+                       angle::ES2_VULKAN());
 
 }  // namespace

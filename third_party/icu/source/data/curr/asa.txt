@@ -175,9 +175,13 @@ asa{
             "SHP",
             "pauni ya Thantahelena",
         }
+        SLE{
+            "SLE",
+            "leoni",
+        }
         SLL{
             "SLL",
-            "leoni",
+            "leoni (1964—2022)",
         }
         SOS{
             "SOS",
@@ -216,7 +220,7 @@ asa{
             "faranga CFA BEAC",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "faranga CFA BCEAO",
         }
         ZAR{

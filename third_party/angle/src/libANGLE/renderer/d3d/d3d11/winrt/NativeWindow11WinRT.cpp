@@ -38,11 +38,11 @@ bool NativeWindow11WinRT::initialize()
         // to use the EGLNativeWindowType specified in the property set.
         // mWindow is treated as a raw pointer not an AddRef'd interface, so
         // the old mWindow does not need a Release() before this assignment.
-        window = eglNativeWindow.Get();
+        window = reinterpret_cast<EGLNativeWindowType>(eglNativeWindow.Get());
     }
 
     ComPtr<ABI::Windows::UI::Core::ICoreWindow> coreWindow;
-    ComPtr<ABI::Windows::UI::Xaml::Controls::ISwapChainPanel> swapChainPanel;
+    ComPtr<ISwapChainPanel> swapChainPanel;
     if (IsCoreWindow(window, &coreWindow))
     {
         mImpl = std::make_shared<CoreWindowNativeWindow>();

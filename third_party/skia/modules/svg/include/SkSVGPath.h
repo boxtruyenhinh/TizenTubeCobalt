@@ -9,9 +9,19 @@
 #define SkSVGPath_DEFINED
 
 #include "include/core/SkPath.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/private/base/SkAPI.h"
+#include "modules/svg/include/SkSVGNode.h"
 #include "modules/svg/include/SkSVGShape.h"
 
-class SkSVGPath final : public SkSVGShape {
+class SkCanvas;
+class SkPaint;
+class SkSVGLengthContext;
+class SkSVGRenderContext;
+enum class SkPathFillType;
+
+class SK_API SkSVGPath final : public SkSVGShape {
 public:
     static sk_sp<SkSVGPath> Make() { return sk_sp<SkSVGPath>(new SkSVGPath()); }
 
@@ -25,7 +35,7 @@ protected:
 
     SkPath onAsPath(const SkSVGRenderContext&) const override;
 
-    SkRect onObjectBoundingBox(const SkSVGRenderContext&) const override;
+    SkRect onTransformableObjectBoundingBox(const SkSVGRenderContext&) const override;
 
 private:
     SkSVGPath();

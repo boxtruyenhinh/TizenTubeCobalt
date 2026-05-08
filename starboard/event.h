@@ -90,9 +90,11 @@
 #ifndef STARBOARD_EVENT_H_
 #define STARBOARD_EVENT_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "starboard/configuration.h"
 #include "starboard/export.h"
-#include "starboard/types.h"
 #include "starboard/window.h"
 
 #ifdef __cplusplus
@@ -180,39 +182,17 @@ typedef enum SbEventType {
   // SbInputData (from input.h) is passed as the data argument.
   kSbEventTypeInput,
 
-  // A user change event, which means a new user signed-in or signed-out, or the
-  // current user changed. No data argument.
-  kSbEventTypeUser,
-
   // A navigational link has come from the system, and the application should
   // consider handling it by navigating to the corresponding application
   // location. The data argument is an application-specific, null-terminated
   // string.
   kSbEventTypeLink,
 
-  // The beginning of a vertical sync has been detected. This event is very
-  // timing-sensitive, so as little work as possible should be done on the main
-  // thread if the application wants to receive this event in a timely manner.
-  // No data argument.
-  kSbEventTypeVerticalSync,
-
   // An event type reserved for scheduled callbacks. It will only be sent in
   // response to an application call to SbEventSchedule(), and it will call the
   // callback directly, so SbEventHandle should never receive this event
   // directly. The data type is an internally-defined structure.
   kSbEventTypeScheduled,
-
-  // The platform's accessibility settings have changed. The application should
-  // query the accessibility settings using the appropriate APIs to get the
-  // new settings. Note this excludes captions settings changes, which
-  // causes kSbEventTypeAccessibilityCaptionSettingsChanged to fire. If the
-  // starboard version has
-  // kSbEventTypeAccessib(i)lityTextToSpeechSettingsChanged, then that event
-  // should be used to signal text-to-speech settings changes instead; platforms
-  // using older starboard versions should use
-  // kSbEventTypeAccessib(i)litySettingsChanged for text-to-speech settings
-  // changes.
-  kSbEventTypeAccessibilitySettingsChanged,
 
   // An optional event that platforms may send to indicate that the application
   // may soon be terminated (or crash) due to low memory availability. The
@@ -224,64 +204,6 @@ typedef enum SbEventType {
   // The size or position of a SbWindow has changed. The data is
   // SbEventWindowSizeChangedData.
   kSbEventTypeWindowSizeChanged,
-
-  // The platform has shown the on screen keyboard. This event is triggered by
-  // the system or by the application's OnScreenKeyboard show method. The event
-  // has int data representing a ticket. The ticket is used by the application
-  // to mark individual calls to the show method as successfully completed.
-  // Events triggered by the application have tickets passed in via
-  // SbWindowShowOnScreenKeyboard. System-triggered events have ticket value
-  // kSbEventOnScreenKeyboardInvalidTicket.
-  kSbEventTypeOnScreenKeyboardShown,
-
-  // The platform has hidden the on screen keyboard. This event is triggered by
-  // the system or by the application's OnScreenKeyboard hide method. The event
-  // has int data representing a ticket. The ticket is used by the application
-  // to mark individual calls to the hide method as successfully completed.
-  // Events triggered by the application have tickets passed in via
-  // SbWindowHideOnScreenKeyboard. System-triggered events have ticket value
-  // kSbEventOnScreenKeyboardInvalidTicket.
-  kSbEventTypeOnScreenKeyboardHidden,
-
-  // The platform has focused the on screen keyboard. This event is triggered by
-  // the system or by the application's OnScreenKeyboard focus method. The event
-  // has int data representing a ticket. The ticket is used by the application
-  // to mark individual calls to the focus method as successfully completed.
-  // Events triggered by the application have tickets passed in via
-  // SbWindowFocusOnScreenKeyboard. System-triggered events have ticket value
-  // kSbEventOnScreenKeyboardInvalidTicket.
-  kSbEventTypeOnScreenKeyboardFocused,
-
-  // The platform has blurred the on screen keyboard. This event is triggered by
-  // the system or by the application's OnScreenKeyboard blur method. The event
-  // has int data representing a ticket. The ticket is used by the application
-  // to mark individual calls to the blur method as successfully completed.
-  // Events triggered by the application have tickets passed in via
-  // SbWindowBlurOnScreenKeyboard. System-triggered events have ticket value
-  // kSbEventOnScreenKeyboardInvalidTicket.
-  kSbEventTypeOnScreenKeyboardBlurred,
-
-#if SB_API_VERSION < 16
-  // The platform has updated the on screen keyboard suggestions. This event is
-  // triggered by the system or by the application's OnScreenKeyboard update
-  // suggestions method. The event has int data representing a ticket. The
-  // ticket is used by the application to mark individual calls to the update
-  // suggestions method as successfully completed. Events triggered by the
-  // application have tickets passed in via
-  // SbWindowUpdateOnScreenKeyboardSuggestions. System-triggered events have
-  // ticket value kSbEventOnScreenKeyboardInvalidTicket.
-  kSbEventTypeOnScreenKeyboardSuggestionsUpdated,
-#else
-  // Reserved for deprecated events.
-  kSbEventTypeReserved1,
-#endif  // SB_API_VERSION < 16
-
-  // One or more of the fields returned by SbAccessibilityGetCaptionSettings
-  // has changed.
-  kSbEventTypeAccessibilityCaptionSettingsChanged,
-
-  // The platform's text-to-speech settings have changed.
-  kSbEventTypeAccessibilityTextToSpeechSettingsChanged,
 
   // The platform has detected a network disconnection. There are likely to
   // be cases where the platform cannot detect the disconnection but the
@@ -301,6 +223,10 @@ typedef enum SbEventType {
   // as a change in the timezone setting). This should trigger the application
   // to re-query the relevant APIs to update the date and time.
   kSbEventDateTimeConfigurationChanged,
+
+  // The platform's text-to-speech settings have changed. The data field of
+  // this SbEvent type is a boolean indicating if text-to-speech is enabled.
+  kSbEventTypeAccessibilityTextToSpeechSettingsChanged,
 } SbEventType;
 
 // Structure representing a Starboard event and its data.
@@ -345,14 +271,12 @@ static SB_C_FORCE_INLINE bool SbEventIsIdValid(SbEventId handle) {
   return handle != kSbEventIdInvalid;
 }
 
-#if SB_API_VERSION >= 15
 typedef void (*SbEventHandleCallback)(const SbEvent* event);
 // Serves as the entry point in the Starboard library for running the Starboard
 // event loop with the application event handler.
 SB_EXPORT int SbRunStarboardMain(int argc,
                                  char** argv,
                                  SbEventHandleCallback callback);
-#endif  // SB_API_VERSION >= 15
 // The entry point that Starboard applications MUST implement. Any memory
 // pointed at by |event| or the |data| field inside |event| is owned by the
 // system, and that memory is reclaimed after this function returns, so the
@@ -364,11 +288,7 @@ SB_EXPORT int SbRunStarboardMain(int argc,
 // specification about what other work might happen on this thread, so the
 // application should generally do as little work as possible on this thread,
 // and just dispatch it over to another thread.
-#if SB_API_VERSION >= 15
 SB_EXPORT_PLATFORM void SbEventHandle(const SbEvent* event);
-#else
-SB_IMPORT void SbEventHandle(const SbEvent* event);
-#endif  // SB_API_VERSION >= 15
 
 // Schedules an event |callback| into the main Starboard event loop.
 // This function may be called from any thread, but |callback| is always

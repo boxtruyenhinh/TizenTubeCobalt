@@ -8,11 +8,20 @@
 #ifndef SkSVGFeColorMatrix_DEFINED
 #define SkSVGFeColorMatrix_DEFINED
 
+#include "include/core/SkRefCnt.h"
 #include "include/effects/SkColorMatrix.h"
+#include "include/private/base/SkAPI.h"
 #include "modules/svg/include/SkSVGFe.h"
+#include "modules/svg/include/SkSVGNode.h"
 #include "modules/svg/include/SkSVGTypes.h"
 
-class SkSVGFeColorMatrix final : public SkSVGFe {
+#include <vector>
+
+class SkImageFilter;
+class SkSVGFilterContext;
+class SkSVGRenderContext;
+
+class SK_API SkSVGFeColorMatrix final : public SkSVGFe {
 public:
     static sk_sp<SkSVGFeColorMatrix> Make() {
         return sk_sp<SkSVGFeColorMatrix>(new SkSVGFeColorMatrix());

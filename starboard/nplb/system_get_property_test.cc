@@ -15,35 +15,30 @@
 #include <string.h>
 
 #include "starboard/common/device_type.h"
-#include "starboard/common/string.h"
 #include "starboard/common/system_property.h"
-#include "starboard/memory.h"
 #include "starboard/system.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
+using ::starboard::kSystemDeviceTypeAndroidTV;
+using ::starboard::kSystemDeviceTypeAuto;
+using ::starboard::kSystemDeviceTypeBlueRayDiskPlayer;
+using ::starboard::kSystemDeviceTypeDesktopPC;
+using ::starboard::kSystemDeviceTypeGameConsole;
+using ::starboard::kSystemDeviceTypeHospitality;
+using ::starboard::kSystemDeviceTypeMonitor;
+using ::starboard::kSystemDeviceTypeMultimediaDevices;
+using ::starboard::kSystemDeviceTypeOverTheTopBox;
+using ::starboard::kSystemDeviceTypeSetTopBox;
+using ::starboard::kSystemDeviceTypeSoundBar;
+using ::starboard::kSystemDeviceTypeTV;
+using ::starboard::kSystemDeviceTypeUnknown;
+using ::starboard::kSystemDeviceTypeVideoProjector;
 
 // Size of appropriate value buffer.
 const size_t kValueSize = 1024;
 
-#if SB_API_VERSION < 15
-bool IsCEDevice(SbSystemDeviceType device_type) {
-  switch (device_type) {
-    case kSbSystemDeviceTypeBlueRayDiskPlayer:
-    case kSbSystemDeviceTypeGameConsole:
-    case kSbSystemDeviceTypeOverTheTopBox:
-    case kSbSystemDeviceTypeSetTopBox:
-    case kSbSystemDeviceTypeTV:
-      return true;
-    case kSbSystemDeviceTypeDesktopPC:
-    case kSbSystemDeviceTypeUnknown:
-    default:
-      return false;
-  }
-}
-#endif
 bool IsCEDevice(std::string device_type) {
   if (device_type == kSystemDeviceTypeBlueRayDiskPlayer ||
       device_type == kSystemDeviceTypeGameConsole ||
@@ -97,17 +92,6 @@ TEST(SbSystemGetPropertyTest, ReturnsRequired) {
   BasicTest(kSbSystemPropertyFirmwareVersion, false, true, __LINE__);
   BasicTest(kSbSystemPropertySystemIntegratorName, false, true, __LINE__);
   BasicTest(kSbSystemPropertySpeechApiKey, false, true, __LINE__);
-#if SB_API_VERSION < 15
-  if (IsCEDevice(SbSystemGetDeviceType())) {
-    BasicTest(kSbSystemPropertyBrandName, true, true, __LINE__);
-    BasicTest(kSbSystemPropertyModelName, true, true, __LINE__);
-    BasicTest(kSbSystemPropertyModelYear, false, true, __LINE__);
-  } else {
-    BasicTest(kSbSystemPropertyBrandName, false, true, __LINE__);
-    BasicTest(kSbSystemPropertyModelName, false, true, __LINE__);
-    BasicTest(kSbSystemPropertyModelYear, false, true, __LINE__);
-  }
-#else
   const size_t kSystemPropertyMaxLength = 1024;
   char value[kSystemPropertyMaxLength];
   bool result;
@@ -122,7 +106,6 @@ TEST(SbSystemGetPropertyTest, ReturnsRequired) {
     BasicTest(kSbSystemPropertyModelName, false, true, __LINE__);
     BasicTest(kSbSystemPropertyModelYear, false, true, __LINE__);
   }
-#endif
 }
 
 TEST(SbSystemGetPropertyTest, FailsGracefullyZeroBufferLength) {
@@ -164,7 +147,7 @@ TEST(SbSystemGetPropertyTest, SpeechApiKeyNotLeaked) {
       SbSystemGetProperty(kSbSystemPropertySpeechApiKey, speech_api_key, kSize);
 
   if (!has_speech_key) {
-    EXPECT_EQ(0, strlen(speech_api_key));
+    EXPECT_EQ(0u, strlen(speech_api_key));
     return;
   }
 
@@ -188,10 +171,9 @@ TEST(SbSystemGetPropertyTest, SpeechApiKeyNotLeaked) {
   }
 }
 
-#if SB_API_VERSION >= 15
 TEST(SbSystemGetPropertyTest, DeviceTypeAllowed) {
   std::string device_type =
-      GetSystemPropertyString(kSbSystemPropertyDeviceType);
+      starboard::GetSystemPropertyString(kSbSystemPropertyDeviceType);
 
   std::string device_type_values[] = {
       kSystemDeviceTypeBlueRayDiskPlayer,
@@ -219,8 +201,6 @@ TEST(SbSystemGetPropertyTest, DeviceTypeAllowed) {
   }
   ASSERT_TRUE(result);
 }
-#endif
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

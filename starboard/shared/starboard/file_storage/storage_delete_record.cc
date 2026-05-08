@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/common/storage.h"
+// clang-format on
 
 #include <unistd.h>
 
@@ -21,15 +23,10 @@
 #include "starboard/configuration_constants.h"
 #include "starboard/shared/starboard/file_storage/storage_internal.h"
 
-#if SB_API_VERSION < 16
-#include "starboard/user.h"
-bool SbStorageDeleteRecord(SbUser user, const char* name) {
-#else
 bool SbStorageDeleteRecord(const char* name) {
-#endif  // SB_API_VERSION < 16
   std::vector<char> path(kSbFileMaxPath);
-  bool success = starboard::shared::starboard::GetStorageFilePath(
-      name, path.data(), static_cast<int>(path.size()));
+  bool success = starboard::GetStorageFilePath(name, path.data(),
+                                               static_cast<int>(path.size()));
   if (!success) {
     return false;
   }

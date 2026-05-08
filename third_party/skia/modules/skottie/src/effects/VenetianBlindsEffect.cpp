@@ -5,15 +5,30 @@
  * found in the LICENSE file.
  */
 
-#include "modules/skottie/src/effects/Effects.h"
-
+#include "include/core/SkColor.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkShader.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkTileMode.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/effects/SkShaderMaskFilter.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "modules/skottie/src/SkottiePriv.h"
 #include "modules/skottie/src/SkottieValue.h"
-#include "modules/sksg/include/SkSGRenderEffect.h"
-#include "src/utils/SkJSON.h"
+#include "modules/skottie/src/effects/Effects.h"
+#include "modules/sksg/include/SkSGRenderNode.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <utility>
+
+namespace skjson {
+class ArrayValue;
+}
 
 namespace skottie {
 namespace internal {
@@ -128,7 +143,7 @@ private:
             1 - df1 - df0,  // fp3
             1,
         };
-        static_assert(SK_ARRAY_COUNT(colors) == SK_ARRAY_COUNT(pos), "");
+        static_assert(std::size(colors) == std::size(pos), "");
 
         const auto center = SkPoint::Make(0.5f * this->layerSize().width(),
                                           0.5f * this->layerSize().height()),
@@ -141,7 +156,7 @@ private:
         };
 
         return {
-            SkGradientShader::MakeLinear(pts, colors, pos, SK_ARRAY_COUNT(colors),
+            SkGradientShader::MakeLinear(pts, colors, pos, std::size(colors),
                                          SkTileMode::kRepeat),
             true
         };

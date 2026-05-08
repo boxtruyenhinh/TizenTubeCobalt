@@ -6,8 +6,11 @@
 
 #ifdef STARBOARD
 #include <pthread.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "build/build_config.h"
 #include "starboard/common/log.h"
-#include "starboard/types.h"
 #endif  // STARBOARD
 
 #define malloc __libc_malloc

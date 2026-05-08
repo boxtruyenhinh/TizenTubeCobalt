@@ -22,13 +22,12 @@
 #include "starboard/nplb/file_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
 // Sets up an empty test fixture, required for typed tests.
 template <class SbFileReadType>
-class PosixFileReadTest : public testing::Test {};
+class PosixFileReadTest : public ::testing::Test {};
 
 class PosixRead {
  public:
@@ -40,18 +39,18 @@ class PosixRead {
 class PosixReadAll {
  public:
   static ssize_t Read(int file, void* data, size_t size) {
-    return ReadAll(file, data, size);
+    return starboard::ReadAll(file, data, size);
   }
 };
 
-typedef testing::Types<PosixRead, PosixReadAll> PosixFileReadTestTypes;
+using PosixFileReadTestTypes = ::testing::Types<PosixRead, PosixReadAll>;
 
 template <typename T, size_t n>
 size_t array_size(const T (&)[n]) {
   return n;
 }
 
-TYPED_TEST_CASE(PosixFileReadTest, PosixFileReadTestTypes);
+TYPED_TEST_SUITE(PosixFileReadTest, PosixFileReadTestTypes);
 
 const int kBufferLength = 16 * 1024;
 
@@ -191,14 +190,16 @@ TYPED_TEST(PosixFileReadTest, ReadFromMiddle) {
 
   for (int i = 0; i < kBufferOffset; ++i) {
     EXPECT_EQ('\xCD', real_buffer[i]);
-    if ('\xCD' != real_buffer[i])
+    if ('\xCD' != real_buffer[i]) {
       break;
+    }
   }
 
   for (int i = kBufferOffset + bytes_read; i < kRealBufferLength; ++i) {
     EXPECT_EQ('\xCD', real_buffer[i]);
-    if ('\xCD' != real_buffer[i])
+    if ('\xCD' != real_buffer[i]) {
       break;
+    }
   }
 
   int result = close(file);
@@ -224,7 +225,6 @@ TYPED_TEST(PosixFileReadTest, ReadStaticContent) {
 
     // Read and check the whole file.
     std::string content;
-    int total = 0;
     int max = 0;
     while (true) {
       int bytes_read = TypeParam::Read(file, buffer, kBufferLength);
@@ -239,7 +239,6 @@ TYPED_TEST(PosixFileReadTest, ReadStaticContent) {
       EXPECT_LT(0, bytes_read);
 
       // Do some accounting to check later.
-      total += bytes_read;
       if (bytes_read > max) {
         max = bytes_read;
       }
@@ -264,6 +263,88 @@ TYPED_TEST(PosixFileReadTest, ReadStaticContent) {
   }
 }
 
+TYPED_TEST(PosixFileReadTest, PreadSuccess) {
+  // Create a temporary file.
+  std::string tmpl = GetTempDir() + "pread_test.XXXXXX";
+  char buffer[tmpl.size() + 1];
+  strcpy(buffer, tmpl.c_str());
+  int fd = mkstemp(buffer);
+  ASSERT_NE(fd, -1) << "mkstemp failed: " << strerror(errno);
+  unlink(buffer);  // delete the file.
+
+  // Write some data to the file.
+  const char write_data[] = "Hello, pread!";
+  const auto bytes_written = write(fd, write_data, sizeof(write_data) - 1);
+  EXPECT_NE(bytes_written, -1) << "write() failed: " << strerror(errno);
+  ASSERT_EQ(static_cast<size_t>(bytes_written), sizeof(write_data) - 1);
+
+  // Prepare a buffer to read into.
+  char read_buffer[sizeof(write_data)] = {};
+
+  // Read from the beginning of the file using pread.
+  const ssize_t bytes_read = pread(fd, read_buffer, sizeof(read_buffer) - 1, 0);
+  ASSERT_EQ(static_cast<size_t>(bytes_read), sizeof(write_data) - 1)
+      << strerror(errno);
+
+  // Verify the data read.
+  EXPECT_STREQ(read_buffer, write_data);
+
+  EXPECT_EQ(close(fd), 0) << "close failed: " << strerror(errno);
+}
+
+TYPED_TEST(PosixFileReadTest, PreadOffset) {
+  // Create a temporary file.
+  std::string tmpl = GetTempDir() + "pread_offset_test.XXXXXX";
+  char buffer[tmpl.size() + 1];
+  strcpy(buffer, tmpl.c_str());
+  int fd = mkstemp(buffer);
+  ASSERT_NE(fd, -1) << "mkstemp failed: " << strerror(errno);
+  unlink(buffer);  // delete the file.
+
+  // Write data with an offset.
+  const char write_data[] = "0123456789";
+  const auto bytes_written = write(fd, write_data, sizeof(write_data) - 1);
+  EXPECT_NE(bytes_written, -1) << "write() failed: " << strerror(errno);
+  ASSERT_EQ(static_cast<size_t>(bytes_written), sizeof(write_data) - 1);
+
+  // Read only part of the data using an offset with pread.
+  char read_buffer[5] = {};
+  const ssize_t bytes_read = pread(fd, read_buffer, sizeof(read_buffer) - 1,
+                                   2);  // Read from offset 2.
+  ASSERT_EQ(static_cast<size_t>(bytes_read), sizeof(read_buffer) - 1)
+      << strerror(errno);
+
+  // Verify the data read.
+  EXPECT_STREQ(read_buffer, "2345");
+
+  EXPECT_EQ(close(fd), 0) << "close failed: " << strerror(errno);
+}
+
+TYPED_TEST(PosixFileReadTest, PreadReadMore) {
+  // Create a temporary file.
+  std::string tmpl = GetTempDir() + "pread_read_more.XXXXXX";
+  char buffer[tmpl.size() + 1];
+  strcpy(buffer, tmpl.c_str());
+  int fd = mkstemp(buffer);
+  ASSERT_NE(fd, -1) << "mkstemp failed: " << strerror(errno);
+  unlink(buffer);  // delete the file.
+
+  // Write some data.
+  const char write_data[] = "abc";
+  const auto bytes_written = write(fd, write_data, sizeof(write_data) - 1);
+  EXPECT_NE(bytes_written, -1) << "write() failed: " << strerror(errno);
+  ASSERT_EQ(static_cast<size_t>(bytes_written), sizeof(write_data) - 1);
+
+  // Try to read more than is available.
+  char read_buffer[10] = {};
+  const ssize_t bytes_read = pread(fd, read_buffer, sizeof(read_buffer) - 1, 0);
+  EXPECT_EQ(static_cast<size_t>(bytes_read), sizeof(write_data) - 1)
+      << strerror(errno);
+
+  // Verify the data read.
+  EXPECT_STREQ(read_buffer, "abc");
+  EXPECT_EQ(close(fd), 0) << "close failed: " << strerror(errno);
+}
+
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

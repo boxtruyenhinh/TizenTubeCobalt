@@ -12,21 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "starboard/elf_loader/lz4_file_impl.h"
+
+#include <string.h>
 #include <sys/stat.h>
 
 #include <algorithm>
 #include <vector>
 
-#include "starboard/elf_loader/lz4_file_impl.h"
-
 #include "starboard/common/log.h"
 #include "starboard/common/time.h"
 #include "starboard/extension/loader_app_metrics.h"
-#include "starboard/memory.h"
 #include "starboard/system.h"
 
-namespace starboard {
 namespace elf_loader {
+using ::starboard::CurrentMonotonicTime;
 
 LZ4FileImpl::LZ4FileImpl() {
   const LZ4F_errorCode_t lz4f_error_code =
@@ -217,4 +217,3 @@ bool LZ4FileImpl::ReadFromOffset(int64_t offset, char* buffer, int size) {
 }
 
 }  // namespace elf_loader
-}  // namespace starboard

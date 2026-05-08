@@ -16,14 +16,14 @@
 #define STARBOARD_SHARED_STARBOARD_PLAYER_VIDEO_DMP_READER_H_
 
 #include <map>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "starboard/common/file.h"
 #include "starboard/common/log.h"
-#include "starboard/common/mutex.h"
-#include "starboard/common/optional.h"
 #include "starboard/common/ref_counted.h"
 #include "starboard/media.h"
 #include "starboard/player.h"
@@ -33,10 +33,6 @@
 #include "starboard/shared/starboard/player/video_dmp_common.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace video_dmp {
 
 class VideoDmpReader {
  public:
@@ -74,15 +70,15 @@ class VideoDmpReader {
     AudioAccessUnit(int64_t timestamp,
                     const SbDrmSampleInfoWithSubSampleMapping* drm_sample_info,
                     std::vector<uint8_t> data,
-                    media::AudioSampleInfo audio_sample_info)
+                    AudioSampleInfo audio_sample_info)
         : AccessUnit(timestamp, drm_sample_info, std::move(data)),
           audio_sample_info_(std::move(audio_sample_info)) {}
-    const media::AudioSampleInfo& audio_sample_info() const {
+    const AudioSampleInfo& audio_sample_info() const {
       return audio_sample_info_;
     }
 
    private:
-    media::AudioSampleInfo audio_sample_info_;
+    AudioSampleInfo audio_sample_info_;
   };
 
   class VideoAccessUnit : public AccessUnit {
@@ -90,15 +86,15 @@ class VideoDmpReader {
     VideoAccessUnit(int64_t timestamp,
                     const SbDrmSampleInfoWithSubSampleMapping* drm_sample_info,
                     std::vector<uint8_t> data,
-                    media::VideoSampleInfo video_sample_info)
+                    VideoSampleInfo video_sample_info)
         : AccessUnit(timestamp, drm_sample_info, std::move(data)),
           video_sample_info_(std::move(video_sample_info)) {}
-    const media::VideoSampleInfo& video_sample_info() const {
+    const VideoSampleInfo& video_sample_info() const {
       return video_sample_info_;
     }
 
    private:
-    media::VideoSampleInfo video_sample_info_;
+    VideoSampleInfo video_sample_info_;
   };
 
   explicit VideoDmpReader(
@@ -107,10 +103,10 @@ class VideoDmpReader {
   ~VideoDmpReader();
 
   SbMediaAudioCodec audio_codec() const { return dmp_info_.audio_codec; }
-  const media::AudioStreamInfo& audio_stream_info() const {
+  const AudioStreamInfo& audio_stream_info() const {
     return dmp_info_.audio_sample_info.stream_info;
   }
-  const media::VideoStreamInfo& video_stream_info() {
+  const VideoStreamInfo& video_stream_info() {
     EnsureSampleLoaded(kSbMediaTypeVideo, 0);
     SB_DCHECK(!video_access_units_.empty());
     return video_access_units_[0].video_sample_info().stream_info;
@@ -133,15 +129,17 @@ class VideoDmpReader {
   }
 
   SbPlayerSampleInfo GetPlayerSampleInfo(SbMediaType type, size_t index);
-  const media::AudioSampleInfo& GetAudioSampleInfo(size_t index);
+  const AudioSampleInfo& GetAudioSampleInfo(size_t index);
 
  private:
   struct DmpInfo {
     SbMediaAudioCodec audio_codec = kSbMediaAudioCodecNone;
-    media::AudioSampleInfo audio_sample_info;
+    AudioSampleInfo audio_sample_info;
     size_t audio_access_units_size = 0;
     int64_t audio_bitrate = 0;
     int audio_duration = 0;
+    std::optional<uint8_t> iamf_primary_profile;
+    std::optional<uint8_t> iamf_additional_profile;
 
     SbMediaVideoCodec video_codec = kSbMediaVideoCodecNone;
     size_t video_access_units_size = 0;
@@ -156,7 +154,7 @@ class VideoDmpReader {
     void Register(const std::string& filename, const DmpInfo& dmp_info);
 
    private:
-    Mutex mutex_;
+    mutable std::mutex mutex_;
     std::map<std::string, DmpInfo> dmp_infos_;
   };
 
@@ -178,16 +176,12 @@ class VideoDmpReader {
   ReadCB read_cb_;
   DmpInfo dmp_info_;
 
-  optional<bool> reverse_byte_order_;
+  std::optional<bool> reverse_byte_order_;
 
   std::vector<AudioAccessUnit> audio_access_units_;
   std::vector<VideoAccessUnit> video_access_units_;
 };
 
-}  // namespace video_dmp
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_VIDEO_DMP_READER_H_

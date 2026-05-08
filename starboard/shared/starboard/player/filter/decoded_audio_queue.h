@@ -24,13 +24,8 @@
 #include "starboard/configuration.h"
 #include "starboard/shared/internal_only.h"
 #include "starboard/shared/starboard/player/decoded_audio_internal.h"
-#include "starboard/types.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 // A queue of AudioBuffers to support reading of arbitrary chunks of a media
 // data source. Audio data can be copied into an DecodedAudio for output. The
@@ -75,7 +70,7 @@ class DecodedAudioQueue {
 
  private:
   // Definition of the buffer queue.
-  typedef std::deque<scoped_refptr<DecodedAudio> > BufferQueue;
+  using BufferQueue = std::deque<scoped_refptr<DecodedAudio>>;
 
   // An internal method shared by ReadFrames() and SeekFrames() that actually
   // does reading. It reads a maximum of |frames| frames into |dest|. Returns
@@ -101,10 +96,6 @@ class DecodedAudioQueue {
   void operator=(const DecodedAudioQueue&) = delete;
 };
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_DECODED_AUDIO_QUEUE_H_

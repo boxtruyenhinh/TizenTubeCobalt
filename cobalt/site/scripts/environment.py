@@ -55,7 +55,22 @@ def read_file(path):
 
 def write_file(path, contents):
   with open(path, 'w', encoding='utf8') as output:
-    output.write(contents)
+    output.write(contents.rstrip() + '\n')
+
+
+def verify_and_clean_newlines(directory):
+  """Recursively ensures all .md files in directory end with one newline."""
+  for root, _, files in os.walk(directory):
+    for filename in files:
+      if not filename.endswith('.md'):
+        continue
+      file_path = os.path.join(root, filename)
+      with open(file_path, 'r', encoding='utf8') as f:
+        contents = f.read()
+
+      if not contents.endswith('\n') or contents.endswith('\n\n'):
+        logging.info('Fixing trailing newlines in %s', file_path)
+        write_file(file_path, contents)
 
 
 def setup_logging(default_level=logging.INFO):

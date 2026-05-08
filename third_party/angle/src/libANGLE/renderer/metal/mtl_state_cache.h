@@ -18,9 +18,15 @@
 #include "libANGLE/State.h"
 #include "libANGLE/angletypes.h"
 #include "libANGLE/renderer/metal/mtl_common.h"
+#include "libANGLE/renderer/metal/mtl_context_device.h"
 #include "libANGLE/renderer/metal/mtl_resources.h"
 
 static inline bool operator==(const MTLClearColor &lhs, const MTLClearColor &rhs);
+
+namespace angle
+{
+struct FeaturesMtl;
+}
 
 namespace rx
 {
@@ -28,26 +34,34 @@ class ContextMtl;
 
 namespace mtl
 {
-struct StencilDesc
+
+ANGLE_ENABLE_STRUCT_PADDING_WARNINGS
+struct alignas(4) StencilDesc
 {
     bool operator==(const StencilDesc &rhs) const;
 
     // Set default values
     void reset();
 
-    MTLStencilOperation stencilFailureOperation;
-    MTLStencilOperation depthFailureOperation;
-    MTLStencilOperation depthStencilPassOperation;
+    // Use bitfield instead of MTLStencilOperation to compact space
+    uint16_t stencilFailureOperation : 4;
+    uint16_t depthFailureOperation : 4;
+    uint16_t depthStencilPassOperation : 4;
 
-    MTLCompareFunction stencilCompareFunction;
+    // Use bitfield instead of MTLCompareFunction to compact space
+    uint16_t stencilCompareFunction : 4;
 
-    uint32_t readMask;
-    uint32_t writeMask;
+    uint16_t readMask : 8;
+    uint16_t writeMask : 8;
 };
 
-struct DepthStencilDesc
+struct alignas(4) DepthStencilDesc
 {
     DepthStencilDesc();
+    DepthStencilDesc(const DepthStencilDesc &src);
+    DepthStencilDesc(DepthStencilDesc &&src);
+
+    DepthStencilDesc &operator=(const DepthStencilDesc &src);
 
     bool operator==(const DepthStencilDesc &rhs) const;
 
@@ -71,15 +85,20 @@ struct DepthStencilDesc
     StencilDesc backFaceStencil;
     StencilDesc frontFaceStencil;
 
-    MTLCompareFunction depthCompareFunction;
-    bool depthWriteEnabled;
+    // Use bitfield instead of MTLCompareFunction to compact space
+    uint16_t depthCompareFunction;
+    uint16_t depthWriteEnabled;
 };
 
-struct SamplerDesc
+struct alignas(4) SamplerDesc
 {
     SamplerDesc();
+    SamplerDesc(const SamplerDesc &src);
+    SamplerDesc(SamplerDesc &&src);
 
     explicit SamplerDesc(const gl::SamplerState &glState);
+
+    SamplerDesc &operator=(const SamplerDesc &src);
 
     // Set default values. All filters are nearest, and addresModes are clamp to edge.
     void reset();
@@ -88,15 +107,20 @@ struct SamplerDesc
 
     size_t hash() const;
 
-    MTLSamplerAddressMode rAddressMode;
-    MTLSamplerAddressMode sAddressMode;
-    MTLSamplerAddressMode tAddressMode;
+    // Use bitfield instead of MTLSamplerAddressMode to compact space
+    uint16_t rAddressMode : 3;
+    uint16_t sAddressMode : 3;
+    uint16_t tAddressMode : 3;
 
-    MTLSamplerMinMagFilter minFilter;
-    MTLSamplerMinMagFilter magFilter;
-    MTLSamplerMipFilter mipFilter;
+    uint16_t maxAnisotropy : 5;
 
-    uint32_t maxAnisotropy;
+    // Use bitfield instead of MTLSamplerMinMagFilter to compact space
+    uint16_t minFilter : 1;
+    uint16_t magFilter : 1;
+    uint16_t mipFilter : 2;
+
+    // Use bitfield instead of MTLCompareFunction to compact space
+    uint16_t compareFunction : 14;
 };
 
 struct VertexAttributeDesc
@@ -106,9 +130,12 @@ struct VertexAttributeDesc
         return format == rhs.format && offset == rhs.offset && bufferIndex == rhs.bufferIndex;
     }
     inline bool operator!=(const VertexAttributeDesc &rhs) const { return !(*this == rhs); }
-    MTLVertexFormat format;
-    NSUInteger offset;
-    NSUInteger bufferIndex;
+
+    // Use uint16_t instead of MTLVertexFormat to compact space
+    uint16_t format;
+    // Offset is only used for default attributes buffer. So 8 bits are enough.
+    uint16_t offset : 8;
+    uint16_t bufferIndex : 8;
 };
 
 struct VertexBufferLayoutDesc
@@ -119,9 +146,10 @@ struct VertexBufferLayoutDesc
     }
     inline bool operator!=(const VertexBufferLayoutDesc &rhs) const { return !(*this == rhs); }
 
-    MTLVertexStepFunction stepFunction;
-    NSUInteger stepRate;
-    NSUInteger stride;
+    uint32_t stepRate;
+    uint32_t stride;
+
+    uint32_t stepFunction;
 };
 
 struct VertexDesc
@@ -129,11 +157,11 @@ struct VertexDesc
     VertexAttributeDesc attributes[kMaxVertexAttribs];
     VertexBufferLayoutDesc layouts[kMaxVertexAttribs];
 
-    uint8_t numAttribs;
-    uint8_t numBufferLayouts;
+    uint16_t numAttribs;
+    uint16_t numBufferLayouts;
 };
 
-struct BlendDesc
+struct alignas(2) BlendDesc
 {
     bool operator==(const BlendDesc &rhs) const;
     BlendDesc &operator=(const BlendDesc &src) = default;
@@ -142,25 +170,28 @@ struct BlendDesc
     void reset();
     void reset(MTLColorWriteMask writeMask);
 
-    void updateWriteMask(const gl::BlendState &blendState);
-    void updateBlendFactors(const gl::BlendState &blendState);
-    void updateBlendOps(const gl::BlendState &blendState);
-    void updateBlendEnabled(const gl::BlendState &blendState);
+    void updateWriteMask(const uint8_t angleMask);
 
-    MTLColorWriteMask writeMask;
+    // Use bitfield instead of MTLColorWriteMask to compact space
+    uint16_t writeMask : 4;
 
-    MTLBlendOperation alphaBlendOperation;
-    MTLBlendOperation rgbBlendOperation;
+    uint16_t blendingEnabled : 1;
 
-    MTLBlendFactor destinationAlphaBlendFactor;
-    MTLBlendFactor destinationRGBBlendFactor;
-    MTLBlendFactor sourceAlphaBlendFactor;
-    MTLBlendFactor sourceRGBBlendFactor;
+    // Use bitfield instead of MTLBlendOperation to compact space
+    uint16_t alphaBlendOperation : 3;
+    uint16_t rgbBlendOperation : 3;
 
-    bool blendingEnabled;
+    // Use bitfield instead of MTLBlendFactor to compact space
+    uint16_t destinationAlphaBlendFactor : 5;
+    uint16_t destinationRGBBlendFactor : 5;
+    uint16_t sourceAlphaBlendFactor : 5;
+    uint16_t sourceRGBBlendFactor : 6;
 };
 
-struct RenderPipelineColorAttachmentDesc : public BlendDesc
+using BlendDescArray = std::array<BlendDesc, kMaxRenderTargets>;
+using WriteMaskArray = std::array<uint8_t, kMaxRenderTargets>;
+
+struct alignas(2) RenderPipelineColorAttachmentDesc : public BlendDesc
 {
     bool operator==(const RenderPipelineColorAttachmentDesc &rhs) const;
     inline bool operator!=(const RenderPipelineColorAttachmentDesc &rhs) const
@@ -172,54 +203,98 @@ struct RenderPipelineColorAttachmentDesc : public BlendDesc
     void reset();
     void reset(MTLPixelFormat format);
     void reset(MTLPixelFormat format, MTLColorWriteMask writeMask);
-    void reset(MTLPixelFormat format, const BlendDesc &blendState);
+    void reset(MTLPixelFormat format, const BlendDesc &blendDesc);
 
-    void update(const BlendDesc &blendState);
-
-    MTLPixelFormat pixelFormat;
+    // Use uint16_t instead of MTLPixelFormat to compact space
+    uint16_t pixelFormat;
 };
 
-struct RenderPipelineOutputDesc
+struct alignas(2) RenderPipelineOutputDesc
 {
-    bool operator==(const RenderPipelineOutputDesc &rhs) const;
+    void updateEnabledDrawBuffers(gl::DrawBufferMask enabledBuffers);
 
-    RenderPipelineColorAttachmentDesc colorAttachments[kMaxRenderTargets];
-    MTLPixelFormat depthAttachmentPixelFormat;
-    MTLPixelFormat stencilAttachmentPixelFormat;
+    std::array<RenderPipelineColorAttachmentDesc, kMaxRenderTargets> colorAttachments;
 
-    uint8_t numColorAttachments;
+    // Use uint16_t instead of MTLPixelFormat to compact space
+    uint16_t depthAttachmentPixelFormat;
+    uint16_t stencilAttachmentPixelFormat;
+
+    uint16_t numColorAttachments : 8;
+    uint16_t rasterSampleCount : 8;
 };
 
-// Some SDK levels don't declare MTLPrimitiveTopologyClass. Needs to do compile time check here:
-#if !(TARGET_OS_OSX || TARGET_OS_MACCATALYST) && ANGLE_IOS_DEPLOY_TARGET < __IPHONE_12_0
-#    define ANGLE_MTL_PRIMITIVE_TOPOLOGY_CLASS_AVAILABLE 0
-using PrimitiveTopologyClass                                     = uint32_t;
-constexpr PrimitiveTopologyClass kPrimitiveTopologyClassTriangle = 0;
-constexpr PrimitiveTopologyClass kPrimitiveTopologyClassPoint    = 0;
-#else
-#    define ANGLE_MTL_PRIMITIVE_TOPOLOGY_CLASS_AVAILABLE 1
-using PrimitiveTopologyClass = MTLPrimitiveTopologyClass;
-constexpr PrimitiveTopologyClass kPrimitiveTopologyClassTriangle =
-    MTLPrimitiveTopologyClassTriangle;
-constexpr PrimitiveTopologyClass kPrimitiveTopologyClassPoint = MTLPrimitiveTopologyClassPoint;
-#endif
+enum class RenderPipelineRasterization : uint32_t
+{
+    // This flag is used for vertex shader not writing any stage output (e.g gl_Position).
+    // This will disable fragment shader stage. This is useful for transform feedback ouput vertex
+    // shader.
+    Disabled,
 
-struct RenderPipelineDesc
+    // Fragment shader is enabled.
+    Enabled,
+
+    // This flag is for rasterization discard emulation when vertex shader still writes to stage
+    // output. Disabled flag cannot be used in this case since Metal doesn't allow that. The
+    // emulation would insert a code snippet to move gl_Position out of clip space's visible area to
+    // simulate the discard.
+    EmulatedDiscard,
+
+    EnumCount,
+};
+
+template <typename T>
+using RenderPipelineRasterStateMap = angle::PackedEnumMap<RenderPipelineRasterization, T>;
+
+struct alignas(4) RenderPipelineDesc
 {
     RenderPipelineDesc();
+    RenderPipelineDesc(const RenderPipelineDesc &src);
+    RenderPipelineDesc(RenderPipelineDesc &&src);
+
+    RenderPipelineDesc &operator=(const RenderPipelineDesc &src);
 
     bool operator==(const RenderPipelineDesc &rhs) const;
-
     size_t hash() const;
+    bool rasterizationEnabled() const;
+
+    angle::ObjCPtr<MTLRenderPipelineDescriptor> createMetalDesc(
+        id<MTLFunction> vertexShader,
+        id<MTLFunction> fragmentShader) const;
 
     VertexDesc vertexDescriptor;
 
     RenderPipelineOutputDesc outputDescriptor;
 
-    PrimitiveTopologyClass inputPrimitiveTopology;
+    // Use bitfield instead of MTLPrimitiveTopologyClass to compact space.
+    uint16_t inputPrimitiveTopology : 8;
 
-    bool rasterizationEnabled;
+    uint16_t alphaToCoverageEnabled : 8;
+
+    // These flags are for emulation and do not correspond to any flags in
+    // MTLRenderPipelineDescriptor descriptor. These flags should be used by
+    // RenderPipelineCacheSpecializeShaderFactory.
+    RenderPipelineRasterization rasterizationType;
 };
+
+struct alignas(4) ProvokingVertexComputePipelineDesc
+{
+    ProvokingVertexComputePipelineDesc();
+    ProvokingVertexComputePipelineDesc(const ProvokingVertexComputePipelineDesc &src);
+    ProvokingVertexComputePipelineDesc(ProvokingVertexComputePipelineDesc &&src);
+
+    ProvokingVertexComputePipelineDesc &operator=(const ProvokingVertexComputePipelineDesc &src);
+
+    bool operator==(const ProvokingVertexComputePipelineDesc &rhs) const;
+    bool operator!=(const ProvokingVertexComputePipelineDesc &rhs) const;
+    size_t hash() const;
+
+    gl::PrimitiveMode primitiveMode;
+    uint8_t elementType;
+    bool primitiveRestartEnabled;
+    bool generateIndices;
+};
+
+ANGLE_DISABLE_STRUCT_PADDING_WARNINGS
 
 struct RenderPassAttachmentDesc
 {
@@ -230,9 +305,22 @@ struct RenderPassAttachmentDesc
     bool equalIgnoreLoadStoreOptions(const RenderPassAttachmentDesc &other) const;
     bool operator==(const RenderPassAttachmentDesc &other) const;
 
+    ANGLE_INLINE bool hasImplicitMSTexture() const { return implicitMSTexture.get(); }
+
+    const TextureRef &getImplicitMSTextureIfAvailOrTexture() const
+    {
+        return hasImplicitMSTexture() ? implicitMSTexture : texture;
+    }
+
     TextureRef texture;
-    uint32_t level;
-    uint32_t slice;
+    // Implicit multisample texture that will be rendered into and discarded at the end of
+    // a render pass. Its result will be resolved into normal texture above.
+    TextureRef implicitMSTexture;
+    MipmapNativeLevel level;
+    uint32_t sliceOrDepth;
+
+    // This attachment is blendable or not.
+    bool blendable;
     MTLLoadAction loadAction;
     MTLStoreAction storeAction;
     MTLStoreActionOptions storeActionOptions;
@@ -262,7 +350,7 @@ struct RenderPassDepthAttachmentDesc : public RenderPassAttachmentDesc
         return !(*this == other);
     }
 
-    double clearDepth = 0;
+    double clearDepth = 1.0;
 };
 
 struct RenderPassStencilAttachmentDesc : public RenderPassAttachmentDesc
@@ -278,21 +366,29 @@ struct RenderPassStencilAttachmentDesc : public RenderPassAttachmentDesc
     uint32_t clearStencil = 0;
 };
 
+//
+// This is C++ equivalent of Objective-C MTLRenderPassDescriptor.
+// We could use MTLRenderPassDescriptor directly, however, using C++ struct has benefits of fast
+// copy, stack allocation, inlined comparing function, etc.
+//
 struct RenderPassDesc
 {
-    RenderPassColorAttachmentDesc colorAttachments[kMaxRenderTargets];
+    std::array<RenderPassColorAttachmentDesc, kMaxRenderTargets> colorAttachments;
     RenderPassDepthAttachmentDesc depthAttachment;
     RenderPassStencilAttachmentDesc stencilAttachment;
+
+    void convertToMetalDesc(MTLRenderPassDescriptor *objCDesc,
+                            uint32_t deviceMaxRenderTargets) const;
 
     // This will populate the RenderPipelineOutputDesc with default blend state and
     // MTLColorWriteMaskAll
     void populateRenderPipelineOutputDesc(RenderPipelineOutputDesc *outDesc) const;
     // This will populate the RenderPipelineOutputDesc with default blend state and the specified
     // MTLColorWriteMask
-    void populateRenderPipelineOutputDesc(MTLColorWriteMask colorWriteMask,
+    void populateRenderPipelineOutputDesc(const WriteMaskArray &writeMaskArray,
                                           RenderPipelineOutputDesc *outDesc) const;
     // This will populate the RenderPipelineOutputDesc with the specified blend state
-    void populateRenderPipelineOutputDesc(const BlendDesc &blendState,
+    void populateRenderPipelineOutputDesc(const BlendDescArray &blendDescArray,
                                           RenderPipelineOutputDesc *outDesc) const;
 
     bool equalIgnoreLoadStoreOptions(const RenderPassDesc &other) const;
@@ -300,10 +396,11 @@ struct RenderPassDesc
     inline bool operator!=(const RenderPassDesc &other) const { return !(*this == other); }
 
     uint32_t numColorAttachments = 0;
+    uint32_t rasterSampleCount   = 1;
+    uint32_t defaultWidth        = 0;
+    uint32_t defaultHeight       = 0;
 };
 
-// convert to Metal object
-AutoObjCObj<MTLRenderPassDescriptor> ToMetalObj(const RenderPassDesc &desc);
 }  // namespace mtl
 }  // namespace rx
 
@@ -328,77 +425,45 @@ struct hash<rx::mtl::RenderPipelineDesc>
     size_t operator()(const rx::mtl::RenderPipelineDesc &key) const { return key.hash(); }
 };
 
+template <>
+struct hash<rx::mtl::ProvokingVertexComputePipelineDesc>
+{
+    size_t operator()(const rx::mtl::ProvokingVertexComputePipelineDesc &key) const
+    {
+        return key.hash();
+    }
+};
 }  // namespace std
 
 namespace rx
 {
 namespace mtl
 {
-// render pipeline state cache per shader program
-class RenderPipelineCache final : angle::NonCopyable
-{
-  public:
-    RenderPipelineCache();
-    ~RenderPipelineCache();
-
-    void setVertexShader(Context *context, id<MTLFunction> shader);
-    void setFragmentShader(Context *context, id<MTLFunction> shader);
-
-    id<MTLFunction> getVertexShader() { return mVertexShader.get(); }
-    id<MTLFunction> getFragmentShader() { return mFragmentShader.get(); }
-
-    AutoObjCPtr<id<MTLRenderPipelineState>> getRenderPipelineState(ContextMtl *context,
-                                                                   const RenderPipelineDesc &desc);
-
-    void clear();
-
-  protected:
-    AutoObjCPtr<id<MTLFunction>> mVertexShader   = nil;
-    AutoObjCPtr<id<MTLFunction>> mFragmentShader = nil;
-
-  private:
-    void clearPipelineStates();
-    void recreatePipelineStates(Context *context);
-    AutoObjCPtr<id<MTLRenderPipelineState>> insertRenderPipelineState(
-        Context *context,
-        const RenderPipelineDesc &desc,
-        bool insertDefaultAttribLayout);
-    AutoObjCPtr<id<MTLRenderPipelineState>> createRenderPipelineState(
-        Context *context,
-        const RenderPipelineDesc &desc,
-        bool insertDefaultAttribLayout);
-
-    bool hasDefaultAttribs(const RenderPipelineDesc &desc) const;
-
-    // One table with default attrib and one table without.
-    std::unordered_map<RenderPipelineDesc, AutoObjCPtr<id<MTLRenderPipelineState>>>
-        mRenderPipelineStates[2];
-};
 
 class StateCache final : angle::NonCopyable
 {
   public:
-    StateCache();
+    StateCache(const angle::FeaturesMtl &features);
     ~StateCache();
 
     // Null depth stencil state has depth/stecil read & write disabled.
-    inline AutoObjCPtr<id<MTLDepthStencilState>> getNullDepthStencilState(Context *context)
-    {
-        return getNullDepthStencilState(context->getMetalDevice());
-    }
-    AutoObjCPtr<id<MTLDepthStencilState>> getNullDepthStencilState(id<MTLDevice> device);
-    AutoObjCPtr<id<MTLDepthStencilState>> getDepthStencilState(id<MTLDevice> device,
-                                                               const DepthStencilDesc &desc);
-    AutoObjCPtr<id<MTLSamplerState>> getSamplerState(id<MTLDevice> device, const SamplerDesc &desc);
+    angle::ObjCPtr<id<MTLDepthStencilState>> getNullDepthStencilState(
+        const mtl::ContextDevice &device);
+    angle::ObjCPtr<id<MTLDepthStencilState>> getDepthStencilState(const mtl::ContextDevice &device,
+                                                                  const DepthStencilDesc &desc);
+    angle::ObjCPtr<id<MTLSamplerState>> getSamplerState(const mtl::ContextDevice &device,
+                                                        const SamplerDesc &desc);
     // Null sampler state uses default SamplerDesc
-    AutoObjCPtr<id<MTLSamplerState>> getNullSamplerState(Context *context);
-    AutoObjCPtr<id<MTLSamplerState>> getNullSamplerState(id<MTLDevice> device);
+    angle::ObjCPtr<id<MTLSamplerState>> getNullSamplerState(ContextMtl *context);
+    angle::ObjCPtr<id<MTLSamplerState>> getNullSamplerState(const mtl::ContextDevice &device);
     void clear();
 
   private:
-    AutoObjCPtr<id<MTLDepthStencilState>> mNullDepthStencilState = nil;
-    std::unordered_map<DepthStencilDesc, AutoObjCPtr<id<MTLDepthStencilState>>> mDepthStencilStates;
-    std::unordered_map<SamplerDesc, AutoObjCPtr<id<MTLSamplerState>>> mSamplerStates;
+    const angle::FeaturesMtl &mFeatures;
+
+    angle::ObjCPtr<id<MTLDepthStencilState>> mNullDepthStencilState = nil;
+    angle::HashMap<DepthStencilDesc, angle::ObjCPtr<id<MTLDepthStencilState>>> mDepthStencilStates;
+    angle::HashMap<SamplerDesc, angle::ObjCPtr<id<MTLSamplerState>>> mSamplerStates;
 };
 
 }  // namespace mtl

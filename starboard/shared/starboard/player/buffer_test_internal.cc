@@ -12,17 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "starboard/shared/starboard/player/buffer_internal.h"
-
 #include <utility>
 
+#include "starboard/shared/starboard/player/buffer_internal.h"
 #include "starboard/thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
 namespace {
 
 TEST(BufferTest, DefaultCtor) {
@@ -92,7 +88,5 @@ TEST(BufferTest, MoveAssignmentOperator) {
 }
 
 }  // namespace
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
+
 }  // namespace starboard

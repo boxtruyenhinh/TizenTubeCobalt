@@ -16,13 +16,11 @@
 
 #include <vector>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace media {
 namespace {
 
 std::vector<uint8_t> operator+(const std::vector<uint8_t>& left,
@@ -34,18 +32,18 @@ std::vector<uint8_t> operator+(const std::vector<uint8_t>& left,
 
 uint8_t CreateSuperframeMarker(size_t bytes_of_size,
                                size_t number_of_subframes) {
-  SB_DCHECK(bytes_of_size > 0);
-  SB_DCHECK(bytes_of_size <= 4);
-  SB_DCHECK(number_of_subframes > 0);
-  SB_DCHECK(number_of_subframes <= Vp9FrameParser::kMaxNumberOfSubFrames);
+  SB_DCHECK_GT(bytes_of_size, 0U);
+  SB_DCHECK_LE(bytes_of_size, 4U);
+  SB_DCHECK_GT(number_of_subframes, 0U);
+  SB_DCHECK_LE(number_of_subframes, Vp9FrameParser::kMaxNumberOfSubFrames);
 
   return static_cast<uint8_t>(0b11000000 | ((bytes_of_size - 1) << 3) |
                               (number_of_subframes - 1));
 }
 
 std::vector<uint8_t> ConvertSizeToBytes(size_t size, size_t bytes_of_size) {
-  SB_DCHECK(bytes_of_size > 0);
-  SB_DCHECK(bytes_of_size <= 4);
+  SB_DCHECK_GT(bytes_of_size, 0U);
+  SB_DCHECK_LE(bytes_of_size, 4U);
 
   std::vector<uint8_t> size_in_bytes;
 
@@ -55,7 +53,7 @@ std::vector<uint8_t> ConvertSizeToBytes(size_t size, size_t bytes_of_size) {
     size /= 256;
   }
 
-  SB_DCHECK(size == 0);
+  SB_DCHECK_EQ(size, 0U);
 
   return size_in_bytes;
 }
@@ -76,15 +74,15 @@ void AddSubframe(const std::vector<uint8_t>& subframe,
 TEST(Vp9FrameParserTests, EmptyFrame) {
   Vp9FrameParser parser(nullptr, 0);
 
-  ASSERT_EQ(parser.number_of_subframes(), 1);
-  EXPECT_EQ(parser.size_of_subframe(0), 0);
+  ASSERT_EQ(parser.number_of_subframes(), 1U);
+  EXPECT_EQ(parser.size_of_subframe(0), 0U);
 }
 
 TEST(Vp9FrameParserTests, NonSuperFrame) {
   std::vector<uint8_t> kFrameData({1, 2, 3, 0});
   Vp9FrameParser parser(kFrameData.data(), kFrameData.size());
 
-  ASSERT_EQ(parser.number_of_subframes(), 1);
+  ASSERT_EQ(parser.number_of_subframes(), 1U);
   EXPECT_EQ(parser.address_of_subframe(0), kFrameData.data());
   EXPECT_EQ(parser.size_of_subframe(0), kFrameData.size());
 }
@@ -167,7 +165,5 @@ TEST(Vp9FrameParserTests, SuperFramesWithEmptySubframes) {
 }
 
 }  // namespace
-}  // namespace media
-}  // namespace starboard
-}  // namespace shared
+
 }  // namespace starboard

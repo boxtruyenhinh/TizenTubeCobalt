@@ -8,8 +8,16 @@
 #include "modules/svg/include/SkSVGMask.h"
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkM44.h"
+#include "include/core/SkPaint.h"
 #include "include/effects/SkLumaColorFilter.h"
+#include "include/private/base/SkTArray.h"
+#include "modules/svg/include/SkSVGAttribute.h"
+#include "modules/svg/include/SkSVGAttributeParser.h"
 #include "modules/svg/include/SkSVGRenderContext.h"
+
+#include <utility>
 
 bool SkSVGMask::parseAndSetAttribute(const char* n, const char* v) {
     return INHERITED::parseAndSetAttribute(n, v) ||

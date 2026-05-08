@@ -5,7 +5,9 @@
  * found in the LICENSE file.
  */
 #include "src/core/SkPtrRecorder.h"
-#include "src/core/SkTSearch.h"
+
+#include "include/private/base/SkAssert.h"
+#include "src/base/SkTSearch.h"
 
 void SkPtrSet::reset() {
     Pair* p = fList.begin();
@@ -26,7 +28,7 @@ uint32_t SkPtrSet::find(void* ptr) const {
         return 0;
     }
 
-    int count = fList.count();
+    int count = fList.size();
     Pair pair;
     pair.fPtr = ptr;
 
@@ -42,7 +44,7 @@ uint32_t SkPtrSet::add(void* ptr) {
         return 0;
     }
 
-    int count = fList.count();
+    int count = fList.size();
     Pair pair;
     pair.fPtr = ptr;
 
@@ -59,7 +61,7 @@ uint32_t SkPtrSet::add(void* ptr) {
 }
 
 void SkPtrSet::copyToArray(void* array[]) const {
-    int count = fList.count();
+    int count = fList.size();
     if (count > 0) {
         SkASSERT(array);
         const Pair* p = fList.begin();

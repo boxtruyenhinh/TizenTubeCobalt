@@ -9,7 +9,8 @@
 #define SkCharToGlyphCache_DEFINED
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/private/base/SkTo.h"
 
 class SkCharToGlyphCache {
 public:
@@ -18,7 +19,7 @@ public:
 
     // return number of unichars cached
     int count() const {
-        return fK32.count();
+        return fKUnichar.size();
     }
 
     void reset();       // forget all cache entries (to save memory)
@@ -54,8 +55,8 @@ public:
     }
 
 private:
-    SkTDArray<int32_t>   fK32;
-    SkTDArray<uint16_t>  fV16;
+    SkTDArray<SkUnichar> fKUnichar;
+    SkTDArray<SkGlyphID> fVGlyph;
     double               fDenom;
 };
 

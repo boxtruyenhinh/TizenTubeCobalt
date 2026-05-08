@@ -16,13 +16,9 @@
 #define STARBOARD_ANDROID_SHARED_PLAYER_SET_MAX_VIDEO_INPUT_SIZE_H_
 
 namespace starboard {
-namespace android {
-namespace shared {
 
 const void* GetPlayerSetMaxVideoInputSizeApi();
 
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard
 
 #endif  // STARBOARD_ANDROID_SHARED_PLAYER_SET_MAX_VIDEO_INPUT_SIZE_H_

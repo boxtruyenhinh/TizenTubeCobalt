@@ -9,23 +9,18 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 
-
-#if defined(STARBOARD)
-#include "base/test/allow_check_is_test_for_testing.h"
-#include "starboard/client_porting/wrap_main/wrap_main.h"
-
-
-int TestSuiteRun(int argc, char** argv) {
-  base::AtExitManager exit_manager;
-  base::test::AllowCheckIsTestForTesting();
-  return base::TestSuite(argc, argv).Run();
-}
-
-STARBOARD_WRAP_SIMPLE_MAIN(TestSuiteRun);
-#else
 #if BUILDFLAG(IS_WIN)
 #include "base/win/com_init_util.h"
 #endif  // BUILDFLAG(IS_WIN)
+
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#include "base/process/set_process_title_linux.h"
+#endif
+
+#if BUILDFLAG(IS_COBALT_HERMETIC_BUILD)
+#include "base/test/allow_check_is_test_for_testing.h"
+#include "starboard/client_porting/wrap_main/wrap_main.h"
+#endif  // BUILDFLAG(IS_COBALT_HERMETIC_BUILD)
 
 namespace base {
 
@@ -79,10 +74,31 @@ class BaseUnittestSuite : public TestSuite {
 
 }  // namespace base
 
+#if BUILDFLAG(IS_COBALT_HERMETIC_BUILD)
+static int InitAndRunAllTests(int argc, char** argv) {
+  base::test::AllowCheckIsTestForTesting();
+  return base::TestSuite(argc, argv).Run();
+}
+
+// For the Starboard OS define SbEventHandle as the entry point
+SB_EXPORT STARBOARD_WRAP_SIMPLE_MAIN(InitAndRunAllTests)
+
+#if !SB_IS(EVERGREEN)
+// Define main() for non-Evergreen Starboard OS.
 int main(int argc, char** argv) {
+  return SbRunStarboardMain(argc, argv, SbEventHandle);
+}
+#endif  // !SB_IS(EVERGREEN)
+#else
+int main(int argc, char** argv) {
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+  // For setproctitle unit tests.
+  setproctitle_init(const_cast<const char**>(argv));
+#endif
+
   base::BaseUnittestSuite test_suite(argc, argv);
   return base::LaunchUnitTests(
       argc, argv,
       base::BindOnce(&base::TestSuite::Run, base::Unretained(&test_suite)));
 }
-#endif
+#endif  // BUILDFLAG(IS_COBALT_HERMETIC_BUILD)

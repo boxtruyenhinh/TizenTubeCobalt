@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "starboard/shared/linux/system_network_status.h"
+
 #include <asm/types.h>
 #include <errno.h>
 #include <linux/netlink.h>
@@ -20,12 +22,15 @@
 #include <stdio.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
 #include <cstring>
 
+#include "build/build_config.h"
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
+#include "starboard/common/thread.h"
+#include "starboard/common/thread_options.h"
 #include "starboard/shared/linux/singleton.h"
-#include "starboard/shared/linux/system_network_status.h"
-#include "starboard/shared/pthread/thread_create_priority.h"
 #include "starboard/shared/starboard/application.h"
 #include "starboard/system.h"
 
@@ -35,7 +40,7 @@ namespace {
 // Cobalt application is kill. This function checks kernel message for IP
 // address changes.
 bool GetOnlineStatus(bool* is_online_ptr, int netlink_fd) {
-  SB_DCHECK(is_online_ptr != NULL);
+  SB_DCHECK(is_online_ptr);
 
   struct sockaddr_nl sa;
   memset(&sa, 0, sizeof(sa));
@@ -43,7 +48,7 @@ bool GetOnlineStatus(bool* is_online_ptr, int netlink_fd) {
   sa.nl_groups = RTMGRP_IPV4_IFADDR;
   sa.nl_pid = getpid();
   int bind_result = bind(netlink_fd, (struct sockaddr*)&sa, sizeof(sa));
-  SB_DCHECK(bind_result == 0);
+  SB_DCHECK_EQ(bind_result, 0);
 
   char buf[8192];
   struct iovec iov;
@@ -62,7 +67,7 @@ bool GetOnlineStatus(bool* is_online_ptr, int netlink_fd) {
   status = recvmsg(netlink_fd, &msg, MSG_DONTWAIT);
   bool has_message = false;
   while (status >= 0) {
-    SB_DCHECK(msg.msg_namelen == sizeof(sa));
+    SB_DCHECK_EQ(msg.msg_namelen, sizeof(sa));
 
     struct nlmsghdr* header;
 
@@ -70,8 +75,8 @@ bool GetOnlineStatus(bool* is_online_ptr, int netlink_fd) {
       int len = header->nlmsg_len;
       int l = len - sizeof(*header);
 
-      SB_DCHECK(l >= 0);
-      SB_DCHECK(len <= status);
+      SB_DCHECK_GE(l, 0);
+      SB_DCHECK_LE(len, status);
 
       switch (header->nlmsg_type) {
         case RTM_DELADDR:
@@ -96,34 +101,36 @@ bool GetOnlineStatus(bool* is_online_ptr, int netlink_fd) {
 
 }  // namespace
 
+class NotifierThread : public starboard::Thread {
+ public:
+  explicit NotifierThread(NetworkNotifier* notifier)
+      : starboard::Thread(
+            "NetworkNotifier",
+            starboard::ThreadOptions().SetPriority(kSbThreadPriorityLow)),
+        notifier_(notifier) {}
+
+  void Run() override { NetworkNotifier::NotifierThreadEntry(notifier_); }
+
+ private:
+  NetworkNotifier* notifier_;
+};
+
 bool NetworkNotifier::Initialize() {
-  SB_DCHECK(notifier_thread_ == 0);
+  SB_CHECK(!notifier_thread_);
 
-  pthread_attr_t attributes;
-  int result = pthread_attr_init(&attributes);
-  if (result != 0) {
-    return false;
-  }
-
-  pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
-  pthread_create(&notifier_thread_, &attributes,
-                 &NetworkNotifier::NotifierThreadEntry, this);
-  pthread_attr_destroy(&attributes);
-
-  SB_DCHECK(notifier_thread_ != 0);
+  notifier_thread_ = std::make_unique<NotifierThread>(this);
+  notifier_thread_->Start();
   return true;
 }
 
 void* NetworkNotifier::NotifierThreadEntry(void* context) {
-  pthread_setname_np(pthread_self(), "NetworkNotifier");
-  starboard::shared::pthread::ThreadSetPriority(kSbThreadPriorityLow);
   auto* notifier = static_cast<NetworkNotifier*>(context);
   int netlink_fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
   bool is_online;
   do {
     if (GetOnlineStatus(&is_online, netlink_fd)) {
       notifier->set_online(is_online);
-      auto* application = starboard::shared::starboard::Application::Get();
+      auto* application = starboard::Application::Get();
       if (is_online) {
         application->InjectOsNetworkConnectedEvent();
       } else {
@@ -134,6 +141,14 @@ void* NetworkNotifier::NotifierThreadEntry(void* context) {
   } while (1);
 
   return nullptr;
+}
+
+bool NetworkNotifier::is_online() const {
+  return is_online_;
+}
+
+void NetworkNotifier::set_online(bool is_online) {
+  is_online_ = is_online;
 }
 
 bool SbSystemNetworkIsDisconnected() {

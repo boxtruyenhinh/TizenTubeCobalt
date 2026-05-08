@@ -15,15 +15,16 @@
 #ifndef STARBOARD_NPLB_FILE_HELPERS_H_
 #define STARBOARD_NPLB_FILE_HELPERS_H_
 
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <string>
 #include <vector>
 
-#include "starboard/file.h"
-
-namespace starboard {
 namespace nplb {
+
+constexpr mode_t kUserRwx = S_IRUSR | S_IWUSR | S_IXUSR;
+constexpr mode_t kUserRw = S_IRUSR | S_IWUSR;
 
 // Gets the temporary directory in which ScopedRandomFile places its files.
 std::string GetTempDir();
@@ -39,6 +40,32 @@ std::vector<std::string> GetFileTestsDirectoryPaths();
 
 // Gets the expected content in a static data test file.
 std::string GetTestFileExpectedContent(const std::string& path);
+
+bool RemoveFileOrDirectoryRecursively(const std::string& path);
+
+bool FileExists(const char* path);
+
+bool DirectoryExists(const char* path);
+
+// Creates a random directory, and deletes it and its contents when the instance
+// falls out of scope.
+class ScopedTempDir {
+ public:
+  ScopedTempDir();
+  ~ScopedTempDir();
+
+  ScopedTempDir(const ScopedTempDir&) = delete;
+  ScopedTempDir& operator=(const ScopedTempDir&) = delete;
+
+  // Returns the path to the created directory.
+  const std::string& path() const { return path_; }
+
+  // Returns whether the directory was successfully created.
+  bool IsValid() const { return !path_.empty(); }
+
+ private:
+  std::string path_;
+};
 
 // Creates a random file of the given length, and deletes it when the instance
 // falls out of scope.
@@ -110,6 +137,5 @@ class ScopedRandomFile {
 };
 
 }  // namespace nplb
-}  // namespace starboard
 
 #endif  // STARBOARD_NPLB_FILE_HELPERS_H_

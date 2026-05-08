@@ -28,7 +28,7 @@ fr_CA{
             "dollar bélizéen",
         }
         CAD{
-            "$ CA",
+            "$",
             "dollar canadien",
         }
         CLP{
@@ -86,10 +86,6 @@ fr_CA{
         KRW{
             "KRW",
             "won sud-coréen",
-        }
-        LAK{
-            "LAK",
-            "kip laotien",
         }
         LBP{
             "LBP",
@@ -214,10 +210,6 @@ fr_CA{
         IRR{
             one{"rial iranien"}
             other{"rials iraniens"}
-        }
-        LAK{
-            one{"kip laotien"}
-            other{"kips laotiens"}
         }
         OMR{
             one{"rial omanais"}

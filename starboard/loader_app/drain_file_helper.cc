@@ -18,10 +18,10 @@
 #include <unistd.h>
 
 #include "starboard/common/file.h"
+#include "starboard/configuration_constants.h"
 #include "starboard/loader_app/drain_file.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace loader_app {
 
 ScopedDrainFile::ScopedDrainFile(const std::string& dir,
@@ -40,8 +40,9 @@ ScopedDrainFile::ScopedDrainFile(const std::string& dir,
 }
 
 ScopedDrainFile::~ScopedDrainFile() {
-  if (!Exists())
+  if (!Exists()) {
     return;
+  }
   EXPECT_TRUE(!unlink(path_.c_str()));
 }
 
@@ -65,4 +66,3 @@ void ScopedDrainFile::CreateFile() {
 }
 
 }  // namespace loader_app
-}  // namespace starboard

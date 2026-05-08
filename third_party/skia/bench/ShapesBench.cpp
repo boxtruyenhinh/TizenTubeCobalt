@@ -10,12 +10,14 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkString.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "tools/flags/CommandLineFlags.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <functional>
+
+using namespace skia_private;
 
 #define ENABLE_COMMAND_LINE_SHAPES_BENCH 0
 
@@ -130,7 +132,7 @@ private:
 
         return fName.c_str();
     }
-    SkIPoint onGetSize() override { return SkIPoint::Make(kBenchWidth, kBenchHeight); }
+    SkISize onGetSize() override { return SkISize::Make(kBenchWidth, kBenchHeight); }
 
     void onDelayedSetup() override {
         SkScalar w = SkIntToScalar(fShapesSize.width());
@@ -220,10 +222,8 @@ private:
         }
     }
 
-    enum {
-        kBenchWidth = 1000,
-        kBenchHeight = 1000
-    };
+    static constexpr int kBenchWidth = 1000;
+    static constexpr int kBenchHeight = 1000;
 
     struct ShapeInfo {
         SkMatrix   fMatrix;
@@ -243,7 +243,7 @@ private:
     SkRRect               fInnerRect;
     SkRRect               fInnerOval;
     SkRRect               fInnerRRect;
-    SkTArray<ShapeInfo>   fShapes;
+    TArray<ShapeInfo>   fShapes;
 
 
     using INHERITED = Benchmark;

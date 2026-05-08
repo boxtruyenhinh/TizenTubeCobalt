@@ -7,10 +7,10 @@
 
 #include "include/core/SkPicture.h"
 #include "include/core/SkStream.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkFontDescriptor.h"
-#include "src/core/SkPictureCommon.h"
 #include "src/core/SkPictureData.h"
+#include "src/core/SkPicturePriv.h"
 #include "tools/flags/CommandLineFlags.h"
 
 static DEFINE_string2(input, i, "", "skp on which to report");
@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
     CommandLineFlags::SetUsage("Prints information about an skp file");
     CommandLineFlags::Parse(argc, argv);
 
-    if (FLAGS_input.count() != 1) {
+    if (FLAGS_input.size() != 1) {
         if (!FLAGS_quiet) {
             SkDebugf("Missing input file\n");
         }
@@ -54,12 +54,12 @@ int main(int argc, char** argv) {
 
     SkPictInfo info;
     if (!SkPicture_StreamIsSKP(&stream, &info)) {
-        SkDebugf("Unsupported version %d\n", info.getVersion());
+        SkDebugf("Unsupported version %u\n", info.getVersion());
         return kNotAnSKP;
     }
 
     if (FLAGS_version && !FLAGS_quiet) {
-        SkDebugf("Version: %d\n", info.getVersion());
+        SkDebugf("Version: %u\n", info.getVersion());
     }
     if (FLAGS_cullRect && !FLAGS_quiet) {
         SkDebugf("Cull Rect: %f,%f,%f,%f\n",
@@ -103,17 +103,17 @@ int main(int argc, char** argv) {
         switch (tag) {
         case SK_PICT_READER_TAG:
             if (FLAGS_tags && !FLAGS_quiet) {
-                SkDebugf("SK_PICT_READER_TAG %d\n", chunkSize);
+                SkDebugf("SK_PICT_READER_TAG %u\n", chunkSize);
             }
             break;
         case SK_PICT_FACTORY_TAG:
             if (FLAGS_tags && !FLAGS_quiet) {
-                SkDebugf("SK_PICT_FACTORY_TAG %d\n", chunkSize);
+                SkDebugf("SK_PICT_FACTORY_TAG %u\n", chunkSize);
             }
             break;
         case SK_PICT_TYPEFACE_TAG: {
             if (FLAGS_tags && !FLAGS_quiet) {
-                SkDebugf("SK_PICT_TYPEFACE_TAG %d\n", chunkSize);
+                SkDebugf("SK_PICT_TYPEFACE_TAG %u\n", chunkSize);
             }
 
             const int count = SkToInt(chunkSize);
@@ -133,19 +133,18 @@ int main(int argc, char** argv) {
         }
         case SK_PICT_PICTURE_TAG:
             if (FLAGS_tags && !FLAGS_quiet) {
-                SkDebugf("SK_PICT_PICTURE_TAG %d\n", chunkSize);
+                SkDebugf("SK_PICT_PICTURE_TAG %u\n", chunkSize);
                 SkDebugf("Exiting early due to format limitations\n");
             }
             return kSuccess;       // TODO: need to store size in bytes
-            break;
         case SK_PICT_BUFFER_SIZE_TAG:
             if (FLAGS_tags && !FLAGS_quiet) {
-                SkDebugf("SK_PICT_BUFFER_SIZE_TAG %d\n", chunkSize);
+                SkDebugf("SK_PICT_BUFFER_SIZE_TAG %u\n", chunkSize);
             }
             break;
         default:
             if (!FLAGS_quiet) {
-                SkDebugf("Unknown tag %d\n", chunkSize);
+                SkDebugf("Unknown tag %u\n", chunkSize);
             }
             return kInvalidTag;
         }

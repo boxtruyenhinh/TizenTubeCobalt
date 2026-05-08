@@ -8,20 +8,40 @@
 #include "src/codec/SkJpegCodec.h"
 
 #include "include/codec/SkCodec.h"
+#include "include/codec/SkJpegDecoder.h"
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkData.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPixmap.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkColorData.h"
-#include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
+#include "include/core/SkYUVAInfo.h"
+#include "include/private/base/SkAlign.h"
+#include "include/private/base/SkTemplates.h"
+#include "modules/skcms/skcms.h"
 #include "src/codec/SkCodecPriv.h"
+#include "src/codec/SkJpegConstants.h"
 #include "src/codec/SkJpegDecoderMgr.h"
+#include "src/codec/SkJpegMetadataDecoderImpl.h"
+#include "src/codec/SkJpegPriv.h"
 #include "src/codec/SkParseEncodedOrigin.h"
+#include "src/codec/SkSwizzler.h"
 
-// stdio is needed for libjpeg-turbo
-#include <stdio.h>
-#include "src/codec/SkJpegUtility.h"
+#ifdef SK_CODEC_DECODES_JPEG_GAINMAPS
+#include "include/private/SkGainmapInfo.h"
+#endif  // SK_CODEC_DECODES_JPEG_GAINMAPS
 
-#ifdef SK_CODEC_DECODES_JPEG
+#include <array>
+#include <csetjmp>
+#include <cstring>
+#include <utility>
+
+using namespace skia_private;
+
+class SkSampler;
+struct SkGainmapInfo;
 
 // This warning triggers false postives way too often in here.
 #if defined(__GNUC__) && !defined(__clang__)
@@ -29,127 +49,35 @@
 #endif
 
 extern "C" {
-    #include "jerror.h"
-    #include "jpeglib.h"
+    #include "jpeglib.h"  // NO_G3_REWRITE
 }
 
 bool SkJpegCodec::IsJpeg(const void* buffer, size_t bytesRead) {
-    constexpr uint8_t jpegSig[] = { 0xFF, 0xD8, 0xFF };
-    return bytesRead >= 3 && !memcmp(buffer, jpegSig, sizeof(jpegSig));
+    return bytesRead >= sizeof(kJpegSig) && !memcmp(buffer, kJpegSig, sizeof(kJpegSig));
 }
 
-const uint32_t kExifHeaderSize = 14;
-const uint32_t kExifMarker = JPEG_APP0 + 1;
-
-static bool is_orientation_marker(jpeg_marker_struct* marker, SkEncodedOrigin* orientation) {
-    if (kExifMarker != marker->marker || marker->data_length < kExifHeaderSize) {
-        return false;
+SkJpegMarkerList get_sk_marker_list(jpeg_decompress_struct* dinfo) {
+    SkJpegMarkerList markerList;
+    for (auto* marker = dinfo->marker_list; marker; marker = marker->next) {
+        markerList.emplace_back(marker->marker,
+                                SkData::MakeWithoutCopy(marker->data, marker->data_length));
     }
-
-    constexpr uint8_t kExifSig[] { 'E', 'x', 'i', 'f', '\0' };
-    if (0 != memcmp(marker->data, kExifSig, sizeof(kExifSig))) {
-        return false;
-    }
-
-    // Account for 'E', 'x', 'i', 'f', '\0', '<fill byte>'.
-    constexpr size_t kOffset = 6;
-    return SkParseEncodedOrigin(marker->data + kOffset, marker->data_length - kOffset,
-            orientation);
+    return markerList;
 }
 
-static SkEncodedOrigin get_exif_orientation(jpeg_decompress_struct* dinfo) {
-    SkEncodedOrigin orientation;
-    for (jpeg_marker_struct* marker = dinfo->marker_list; marker; marker = marker->next) {
-        if (is_orientation_marker(marker, &orientation)) {
-            return orientation;
-        }
+static SkEncodedOrigin get_exif_orientation(sk_sp<SkData> exifData) {
+    SkEncodedOrigin origin = kDefault_SkEncodedOrigin;
+    if (exifData && SkParseEncodedOrigin(exifData->bytes(), exifData->size(), &origin)) {
+        return origin;
     }
-
     return kDefault_SkEncodedOrigin;
 }
 
-static bool is_icc_marker(jpeg_marker_struct* marker) {
-    if (kICCMarker != marker->marker || marker->data_length < kICCMarkerHeaderSize) {
-        return false;
-    }
-
-    return !memcmp(marker->data, kICCSig, sizeof(kICCSig));
-}
-
-/*
- * ICC profiles may be stored using a sequence of multiple markers.  We obtain the ICC profile
- * in two steps:
- *     (1) Discover all ICC profile markers and verify that they are numbered properly.
- *     (2) Copy the data from each marker into a contiguous ICC profile.
- */
-static std::unique_ptr<SkEncodedInfo::ICCProfile> read_color_profile(jpeg_decompress_struct* dinfo)
-{
-    // Note that 256 will be enough storage space since each markerIndex is stored in 8-bits.
-    jpeg_marker_struct* markerSequence[256];
-    memset(markerSequence, 0, sizeof(markerSequence));
-    uint8_t numMarkers = 0;
-    size_t totalBytes = 0;
-
-    // Discover any ICC markers and verify that they are numbered properly.
-    for (jpeg_marker_struct* marker = dinfo->marker_list; marker; marker = marker->next) {
-        if (is_icc_marker(marker)) {
-            // Verify that numMarkers is valid and consistent.
-            if (0 == numMarkers) {
-                numMarkers = marker->data[13];
-                if (0 == numMarkers) {
-                    SkCodecPrintf("ICC Profile Error: numMarkers must be greater than zero.\n");
-                    return nullptr;
-                }
-            } else if (numMarkers != marker->data[13]) {
-                SkCodecPrintf("ICC Profile Error: numMarkers must be consistent.\n");
-                return nullptr;
-            }
-
-            // Verify that the markerIndex is valid and unique.  Note that zero is not
-            // a valid index.
-            uint8_t markerIndex = marker->data[12];
-            if (markerIndex == 0 || markerIndex > numMarkers) {
-                SkCodecPrintf("ICC Profile Error: markerIndex is invalid.\n");
-                return nullptr;
-            }
-            if (markerSequence[markerIndex]) {
-                SkCodecPrintf("ICC Profile Error: Duplicate value of markerIndex.\n");
-                return nullptr;
-            }
-            markerSequence[markerIndex] = marker;
-            SkASSERT(marker->data_length >= kICCMarkerHeaderSize);
-            totalBytes += marker->data_length - kICCMarkerHeaderSize;
-        }
-    }
-
-    if (0 == totalBytes) {
-        // No non-empty ICC profile markers were found.
-        return nullptr;
-    }
-
-    // Combine the ICC marker data into a contiguous profile.
-    sk_sp<SkData> iccData = SkData::MakeUninitialized(totalBytes);
-    void* dst = iccData->writable_data();
-    for (uint32_t i = 1; i <= numMarkers; i++) {
-        jpeg_marker_struct* marker = markerSequence[i];
-        if (!marker) {
-            SkCodecPrintf("ICC Profile Error: Missing marker %d of %d.\n", i, numMarkers);
-            return nullptr;
-        }
-
-        void* src = SkTAddOffset<void>(marker->data, kICCMarkerHeaderSize);
-        size_t bytes = marker->data_length - kICCMarkerHeaderSize;
-        memcpy(dst, src, bytes);
-        dst = SkTAddOffset<void>(dst, bytes);
-    }
-
-    return SkEncodedInfo::ICCProfile::Make(std::move(iccData));
-}
-
-SkCodec::Result SkJpegCodec::ReadHeader(SkStream* stream, SkCodec** codecOut,
+SkCodec::Result SkJpegCodec::ReadHeader(
+        SkStream* stream,
+        SkCodec** codecOut,
         JpegDecoderMgr** decoderMgrOut,
         std::unique_ptr<SkEncodedInfo::ICCProfile> defaultColorProfile) {
-
     // Create a JpegDecoderMgr to own all of the decompress information
     std::unique_ptr<JpegDecoderMgr> decoderMgr(new JpegDecoderMgr(stream));
 
@@ -169,10 +97,11 @@ SkCodec::Result SkJpegCodec::ReadHeader(SkStream* stream, SkCodec** codecOut,
     if (codecOut) {
         jpeg_save_markers(dinfo, kExifMarker, 0xFFFF);
         jpeg_save_markers(dinfo, kICCMarker, 0xFFFF);
+        jpeg_save_markers(dinfo, kMpfMarker, 0xFFFF);
     }
 
     // Read the jpeg header
-    switch (jpeg_read_header(dinfo, true)) {
+    switch (jpeg_read_header(dinfo, TRUE)) {
         case JPEG_HEADER_OK:
             break;
         case JPEG_SUSPENDED:
@@ -188,8 +117,16 @@ SkCodec::Result SkJpegCodec::ReadHeader(SkStream* stream, SkCodec** codecOut,
             return kInvalidInput;
         }
 
-        SkEncodedOrigin orientation = get_exif_orientation(dinfo);
-        auto profile = read_color_profile(dinfo);
+        auto metadataDecoder =
+                std::make_unique<SkJpegMetadataDecoderImpl>(get_sk_marker_list(dinfo));
+
+        SkEncodedOrigin orientation =
+                get_exif_orientation(metadataDecoder->getExifMetadata(/*copyData=*/false));
+
+        std::unique_ptr<SkEncodedInfo::ICCProfile> profile;
+        if (auto iccProfileData = metadataDecoder->getICCProfileData(/*copyData=*/true)) {
+            profile = SkEncodedInfo::ICCProfile::Make(std::move(iccProfileData));
+        }
         if (profile) {
             auto type = profile->profile()->data_color_space;
             switch (decoderMgr->dinfo()->jpeg_color_space) {
@@ -221,8 +158,10 @@ SkCodec::Result SkJpegCodec::ReadHeader(SkStream* stream, SkCodec** codecOut,
                                                  color, SkEncodedInfo::kOpaque_Alpha, 8,
                                                  std::move(profile));
 
-        SkJpegCodec* codec = new SkJpegCodec(std::move(info), std::unique_ptr<SkStream>(stream),
-                                             decoderMgr.release(), orientation);
+        SkJpegCodec* codec = new SkJpegCodec(std::move(info),
+                                             std::unique_ptr<SkStream>(stream),
+                                             decoderMgr.release(),
+                                             orientation);
         *codecOut = codec;
     } else {
         SkASSERT(nullptr != decoderMgrOut);
@@ -238,6 +177,11 @@ std::unique_ptr<SkCodec> SkJpegCodec::MakeFromStream(std::unique_ptr<SkStream> s
 
 std::unique_ptr<SkCodec> SkJpegCodec::MakeFromStream(std::unique_ptr<SkStream> stream,
         Result* result, std::unique_ptr<SkEncodedInfo::ICCProfile> defaultColorProfile) {
+    SkASSERT(result);
+    if (!stream) {
+        *result = SkCodec::kInvalidInput;
+        return nullptr;
+    }
     SkCodec* codec = nullptr;
     *result = ReadHeader(stream.get(), &codec, nullptr, std::move(defaultColorProfile));
     if (kSuccess == *result) {
@@ -249,15 +193,14 @@ std::unique_ptr<SkCodec> SkJpegCodec::MakeFromStream(std::unique_ptr<SkStream> s
     return nullptr;
 }
 
-SkJpegCodec::SkJpegCodec(SkEncodedInfo&& info, std::unique_ptr<SkStream> stream,
-                         JpegDecoderMgr* decoderMgr, SkEncodedOrigin origin)
-    : INHERITED(std::move(info), skcms_PixelFormat_RGBA_8888, std::move(stream), origin)
-    , fDecoderMgr(decoderMgr)
-    , fReadyState(decoderMgr->dinfo()->global_state)
-    , fSwizzleSrcRow(nullptr)
-    , fColorXformSrcRow(nullptr)
-    , fSwizzlerSubset(SkIRect::MakeEmpty())
-{}
+SkJpegCodec::SkJpegCodec(SkEncodedInfo&& info,
+                         std::unique_ptr<SkStream> stream,
+                         JpegDecoderMgr* decoderMgr,
+                         SkEncodedOrigin origin)
+        : INHERITED(std::move(info), skcms_PixelFormat_RGBA_8888, std::move(stream), origin)
+        , fDecoderMgr(decoderMgr)
+        , fReadyState(decoderMgr->dinfo()->global_state) {}
+SkJpegCodec::~SkJpegCodec() = default;
 
 /*
  * Return the row bytes of a particular image type and width
@@ -308,16 +251,19 @@ SkISize SkJpegCodec::onGetScaledDimensions(float desiredScale) const {
         num = 1;
     }
 
-    // Set up a fake decompress struct in order to use libjpeg to calculate output dimensions
+    // Set up a fake decompress struct in order to use libjpeg to calculate output dimensions.
+    // This isn't conventional use of libjpeg-turbo but initializing the decompress struct with
+    // jpeg_create_decompress allows for less violation of the API regardless of the version.
     jpeg_decompress_struct dinfo;
-    sk_bzero(&dinfo, sizeof(dinfo));
+    jpeg_create_decompress(&dinfo);
     dinfo.image_width = this->dimensions().width();
     dinfo.image_height = this->dimensions().height();
     dinfo.global_state = fReadyState;
     calc_output_dimensions(&dinfo, num, denom);
+    SkISize outputDimensions = SkISize::Make(dinfo.output_width, dinfo.output_height);
+    jpeg_destroy_decompress(&dinfo);
 
-    // Return the calculated output dimensions for the given scale
-    return SkISize::Make(dinfo.output_width, dinfo.output_height);
+    return outputDimensions;
 }
 
 bool SkJpegCodec::onRewind() {
@@ -384,6 +330,8 @@ bool SkJpegCodec::conversionSupported(const SkImageInfo& dstInfo, bool srcIsOpaq
                 fDecoderMgr->dinfo()->out_color_space = JCS_GRAYSCALE;
             }
             break;
+        case kBGRA_10101010_XR_SkColorType:
+        case kBGR_101010x_XR_SkColorType:
         case kRGBA_F16_SkColorType:
             SkASSERT(needsColorXform);
             fDecoderMgr->dinfo()->out_color_space = JCS_EXT_RGBA;
@@ -415,9 +363,11 @@ bool SkJpegCodec::onDimensionsSupported(const SkISize& size) {
     const unsigned int dstHeight = size.height();
 
     // Set up a fake decompress struct in order to use libjpeg to calculate output dimensions
+    // This isn't conventional use of libjpeg-turbo but initializing the decompress struct with
+    // jpeg_create_decompress allows for less violation of the API regardless of the version.
     // FIXME: Why is this necessary?
     jpeg_decompress_struct dinfo;
-    sk_bzero(&dinfo, sizeof(dinfo));
+    jpeg_create_decompress(&dinfo);
     dinfo.image_width = this->dimensions().width();
     dinfo.image_height = this->dimensions().height();
     dinfo.global_state = fReadyState;
@@ -430,6 +380,7 @@ bool SkJpegCodec::onDimensionsSupported(const SkISize& size) {
 
         // Return a failure if we have tried all of the possible scales
         if (1 == num || dstWidth > dinfo.output_width || dstHeight > dinfo.output_height) {
+            jpeg_destroy_decompress(&dinfo);
             return false;
         }
 
@@ -437,18 +388,20 @@ bool SkJpegCodec::onDimensionsSupported(const SkISize& size) {
         num -= 1;
         calc_output_dimensions(&dinfo, num, denom);
     }
+    jpeg_destroy_decompress(&dinfo);
 
     fDecoderMgr->dinfo()->scale_num = num;
     fDecoderMgr->dinfo()->scale_denom = denom;
     return true;
 }
 
-int SkJpegCodec::readRows(const SkImageInfo& dstInfo, void* dst, size_t rowBytes, int count,
-                          const Options& opts) {
+SkCodec::Result SkJpegCodec::readRows(const SkImageInfo& dstInfo, void* dst, size_t rowBytes, int count,
+                          const Options& opts, int* rowsDecoded) {
     // Set the jump location for libjpeg-turbo errors
     skjpeg_error_mgr::AutoPushJmpBuf jmp(fDecoderMgr->errorMgr());
     if (setjmp(jmp)) {
-        return 0;
+        *rowsDecoded = 0;
+        return kInvalidInput;
     }
 
     // When fSwizzleSrcRow is non-null, it means that we need to swizzle.  In this case,
@@ -484,7 +437,8 @@ int SkJpegCodec::readRows(const SkImageInfo& dstInfo, void* dst, size_t rowBytes
     for (int y = 0; y < count; y++) {
         uint32_t lines = jpeg_read_scanlines(fDecoderMgr->dinfo(), &decodeDst, 1);
         if (0 == lines) {
-            return y;
+            *rowsDecoded = y;
+            return kSuccess;
         }
 
         if (fSwizzler) {
@@ -500,7 +454,8 @@ int SkJpegCodec::readRows(const SkImageInfo& dstInfo, void* dst, size_t rowBytes
         swizzleDst = SkTAddOffset<uint32_t>(swizzleDst, swizzleDstRowBytes);
     }
 
-    return count;
+    *rowsDecoded = count;
+    return kSuccess;
 }
 
 /*
@@ -541,7 +496,11 @@ SkCodec::Result SkJpegCodec::onGetPixels(const SkImageInfo& dstInfo,
         return fDecoderMgr->returnFailure("setjmp", kInvalidInput);
     }
 
-    if (!jpeg_start_decompress(dinfo)) {
+    const bool isProgressive = dinfo->progressive_mode;
+    if (isProgressive) {
+       dinfo->buffered_image = TRUE;
+       jpeg_start_decompress(dinfo);
+    } else if (!jpeg_start_decompress(dinfo)) {
         return fDecoderMgr->returnFailure("startDecompress", kInvalidInput);
     }
 
@@ -558,11 +517,49 @@ SkCodec::Result SkJpegCodec::onGetPixels(const SkImageInfo& dstInfo,
         return kInternalError;
     }
 
-    int rows = this->readRows(dstInfo, dst, dstRowBytes, dstInfo.height(), options);
-    if (rows < dstInfo.height()) {
-        *rowsDecoded = rows;
-        return fDecoderMgr->returnFailure("Incomplete image data", kIncompleteInput);
-    }
+    if (isProgressive) {
+      // Keep consuming input until we can't anymore, and only output/read scanlines
+      // if there is at least one valid output.
+      int last_scan_completed = 0;
+      while (!jpeg_input_complete(dinfo)) {
+        // Call the progress monitor hook if present, to prevent decoder from hanging.
+        if (dinfo->progress) {
+           dinfo->progress->progress_monitor((j_common_ptr)dinfo);
+        }
+        const int res = jpeg_consume_input(dinfo);
+        if (res == JPEG_SUSPENDED) {
+           break;
+        }
+        if (res == JPEG_SCAN_COMPLETED) {
+           last_scan_completed = dinfo->input_scan_number;
+        }
+      }
+      if (last_scan_completed >  0) {
+        jpeg_start_output(dinfo, last_scan_completed);
+        int rows = 0;
+         SkCodec::Result readResult = this->readRows(dstInfo, dst, dstRowBytes,
+                                                     dstInfo.height(), options, &rows);
+         // Checks if scan was called too many times to not stall the decoder.
+         jpeg_finish_output(dinfo);
+         if (readResult != kSuccess) {
+            return fDecoderMgr->returnFailure("readRows", readResult);
+         }
+         if (rows < dstInfo.height()) {
+             *rowsDecoded = rows;
+             return fDecoderMgr->returnFailure("Incomplete image data", kIncompleteInput);
+         }
+      } else {
+           return fDecoderMgr->returnFailure("Incomplete image data", kIncompleteInput);
+      }
+    } else {
+      // Baseline image
+      int rows = 0;
+      this->readRows(dstInfo, dst, dstRowBytes, dstInfo.height(), options, &rows);
+      if (rows < dstInfo.height()) {
+          *rowsDecoded = rows;
+          return fDecoderMgr->returnFailure("Incomplete image data", kIncompleteInput);
+      }
+  }
 
     return kSuccess;
 }
@@ -725,7 +722,8 @@ SkCodec::Result SkJpegCodec::onStartScanlineDecode(const SkImageInfo& dstInfo,
 }
 
 int SkJpegCodec::onGetScanlines(void* dst, int count, size_t dstRowBytes) {
-    int rows = this->readRows(this->dstInfo(), dst, dstRowBytes, count, this->options());
+    int rows = 0;
+    this->readRows(this->dstInfo(), dst, dstRowBytes, count, this->options(), &rows);
     if (rows < count) {
         // This allows us to skip calling jpeg_finish_decompress().
         fDecoderMgr->dinfo()->output_scanline = this->dstInfo().height();
@@ -939,7 +937,7 @@ SkCodec::Result SkJpegCodec::onGetYUVAPlanes(const SkYUVAPixmaps& yuvaPixmaps) {
         // this requirement using an extra row buffer.
         // FIXME: Should SkCodec have an extra memory buffer that can be shared among
         //        all of the implementations that use temporary/garbage memory?
-        SkAutoTMalloc<JSAMPLE> extraRow(planes[0].rowBytes());
+        AutoTMalloc<JSAMPLE> extraRow(planes[0].rowBytes());
         for (int i = remainingRows; i < numYRowsPerBlock; i++) {
             rowptrs[i] = extraRow.get();
         }
@@ -959,43 +957,67 @@ SkCodec::Result SkJpegCodec::onGetYUVAPlanes(const SkYUVAPixmaps& yuvaPixmaps) {
     return kSuccess;
 }
 
-// This function is declared in SkJpegInfo.h, used by SkPDF.
-bool SkGetJpegInfo(const void* data, size_t len,
-                   SkISize* size,
-                   SkEncodedInfo::Color* colorType,
-                   SkEncodedOrigin* orientation) {
-    if (!SkJpegCodec::IsJpeg(data, len)) {
+bool SkJpegCodec::onGetGainmapCodec(SkGainmapInfo* info, std::unique_ptr<SkCodec>* gainmapCodec) {
+    std::unique_ptr<SkStream> stream;
+    if (!this->onGetGainmapInfo(info, &stream)) {
         return false;
     }
-
-    SkMemoryStream stream(data, len);
-    JpegDecoderMgr decoderMgr(&stream);
-    // libjpeg errors will be caught and reported here
-    skjpeg_error_mgr::AutoPushJmpBuf jmp(decoderMgr.errorMgr());
-    if (setjmp(jmp)) {
-        return false;
-    }
-    decoderMgr.init();
-    jpeg_decompress_struct* dinfo = decoderMgr.dinfo();
-    jpeg_save_markers(dinfo, kExifMarker, 0xFFFF);
-    jpeg_save_markers(dinfo, kICCMarker, 0xFFFF);
-    if (JPEG_HEADER_OK != jpeg_read_header(dinfo, true)) {
-        return false;
-    }
-    SkEncodedInfo::Color encodedColorType;
-    if (!decoderMgr.getEncodedColor(&encodedColorType)) {
-        return false;  // Unable to interpret the color channels as colors.
-    }
-    if (colorType) {
-        *colorType = encodedColorType;
-    }
-    if (orientation) {
-        *orientation = get_exif_orientation(dinfo);
-    }
-    if (size) {
-        *size = {SkToS32(dinfo->image_width), SkToS32(dinfo->image_height)};
+    if (gainmapCodec) {
+        Result result;
+        *gainmapCodec = MakeFromStream(std::move(stream), &result);
+        if (!*gainmapCodec) {
+            return false;
+        }
     }
     return true;
 }
 
-#endif // SK_CODEC_DECODES_JPEG
+bool SkJpegCodec::onGetGainmapInfo(SkGainmapInfo* info,
+                                   std::unique_ptr<SkStream>* gainmapImageStream) {
+#ifdef SK_CODEC_DECODES_JPEG_GAINMAPS
+    sk_sp<SkData> gainmap_data;
+    SkGainmapInfo gainmap_info;
+
+    auto metadataDecoder =
+            std::make_unique<SkJpegMetadataDecoderImpl>(get_sk_marker_list(fDecoderMgr->dinfo()));
+    if (!metadataDecoder->findGainmapImage(
+                fDecoderMgr->getSourceMgr(), gainmap_data, gainmap_info)) {
+        return false;
+    }
+
+    *info = gainmap_info;
+    *gainmapImageStream = SkMemoryStream::Make(gainmap_data);
+    return true;
+#else
+    return false;
+#endif  // SK_CODEC_DECODES_JPEG_GAINMAPS
+}
+
+namespace SkJpegDecoder {
+bool IsJpeg(const void* data, size_t len) {
+    return SkJpegCodec::IsJpeg(data, len);
+}
+
+std::unique_ptr<SkCodec> Decode(std::unique_ptr<SkStream> stream,
+                                SkCodec::Result* outResult,
+                                SkCodecs::DecodeContext) {
+    SkCodec::Result resultStorage;
+    if (!outResult) {
+        outResult = &resultStorage;
+    }
+    return SkJpegCodec::MakeFromStream(std::move(stream), outResult);
+}
+
+std::unique_ptr<SkCodec> Decode(sk_sp<SkData> data,
+                                SkCodec::Result* outResult,
+                                SkCodecs::DecodeContext) {
+    if (!data) {
+        if (outResult) {
+            *outResult = SkCodec::kInvalidInput;
+        }
+        return nullptr;
+    }
+    return Decode(SkMemoryStream::Make(std::move(data)), outResult, nullptr);
+}
+
+}  // namespace SkJpegDecoder

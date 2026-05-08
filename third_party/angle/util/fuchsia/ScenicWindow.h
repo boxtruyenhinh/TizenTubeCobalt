@@ -16,17 +16,15 @@
 
 // Disable ANGLE-specific warnings that pop up in fuchsia headers.
 ANGLE_DISABLE_DESTRUCTOR_OVERRIDE_WARNING
+ANGLE_DISABLE_SUGGEST_OVERRIDE_WARNINGS
 
-#include <fuchsia/ui/policy/cpp/fidl.h>
-#include <fuchsia/ui/scenic/cpp/fidl.h>
+#include <fuchsia/element/cpp/fidl.h>
 #include <fuchsia_egl.h>
 #include <lib/async-loop/cpp/loop.h>
-#include <lib/ui/scenic/cpp/commands.h>
-#include <lib/ui/scenic/cpp/resources.h>
-#include <lib/ui/scenic/cpp/session.h>
 #include <zircon/types.h>
 #include <string>
 
+ANGLE_REENABLE_SUGGEST_OVERRIDE_WARNINGS
 ANGLE_REENABLE_DESTRUCTOR_OVERRIDE_WARNING
 
 struct FuchsiaEGLWindowDeleter
@@ -41,38 +39,34 @@ class ANGLE_UTIL_EXPORT ScenicWindow : public OSWindow
     ~ScenicWindow() override;
 
     // OSWindow:
-    bool initialize(const std::string &name, int width, int height) override;
+    void disableErrorMessageDialog() override;
     void destroy() override;
     void resetNativeWindow() override;
     EGLNativeWindowType getNativeWindow() const override;
     EGLNativeDisplayType getNativeDisplay() const override;
     void messageLoop() override;
     void setMousePosition(int x, int y) override;
+    bool setOrientation(int width, int height) override;
     bool setPosition(int x, int y) override;
     bool resize(int width, int height) override;
     void setVisible(bool isVisible) override;
     void signalTestEvent() override;
 
-    // FIDL callbacks:
-    void OnScenicEvents(std::vector<fuchsia::ui::scenic::Event> events);
-    void OnScenicError(zx_status_t status);
+    // Presents the window to Scenic.
+    //
+    // We need to do this once per EGL window surface after adding the
+    // surface's image pipe as a child of our window.
+    void present();
 
   private:
-    // Default message loop.
-    async::Loop *mLoop;
+    bool initializeImpl(const std::string &name, int width, int height) override;
+    void updateViewSize();
+
+    // ScenicWindow async loop.
+    async::Loop *const mLoop;
 
     // System services.
-    zx::channel mServiceRoot;
-    fuchsia::ui::scenic::ScenicPtr mScenic;
-    fuchsia::ui::policy::PresenterPtr mPresenter;
-
-    // Scenic session & resources.
-    scenic::Session mScenicSession;
-    scenic::ShapeNode mShape;
-    scenic::Material mMaterial;
-
-    // Scenic view.
-    std::unique_ptr<scenic::View> mView;
+    fuchsia::element::GraphicalPresenterPtr mPresenter;
 
     // EGL native window.
     std::unique_ptr<fuchsia_egl_window, FuchsiaEGLWindowDeleter> mFuchsiaEGLWindow;

@@ -9,33 +9,41 @@
 #include <sys/time.h>
 #include <unistd.h>
 #endif
-#if V8_OS_MACOSX
+
+#if V8_OS_DARWIN
 #include <mach/mach.h>
 #include <mach/mach_time.h>
 #include <pthread.h>
 #endif
-#if V8_OS_STARBOARD
-#include <sys/time.h>
-#endif  // V8_OS_STARBOARD
+
+#if V8_OS_FUCHSIA
+#include <threads.h>
+#include <zircon/syscalls.h>
+#include <zircon/threads.h>
+#endif
 
 #include <cstring>
 #include <ostream>
 
 #if V8_OS_WIN
+#include <windows.h>
+
+// This has to come after windows.h.
+#include <mmsystem.h>  // For timeGetTime().
+
+#include <atomic>
+
 #include "src/base/lazy-instance.h"
-#include "src/base/win32-headers.h"
 #endif
 #include "src/base/cpu.h"
 #include "src/base/logging.h"
+#include "src/base/platform/mutex.h"
 #include "src/base/platform/platform.h"
 
-#if V8_OS_STARBOARD
-#include "starboard/common/time.h"
-#endif
 
 namespace {
 
-#if V8_OS_MACOSX
+#if V8_OS_DARWIN
 int64_t ComputeThreadTicks() {
   mach_msg_type_number_t thread_info_count = THREAD_BASIC_INFO_COUNT;
   thread_basic_info_data_t thread_info_data;
@@ -64,6 +72,15 @@ int64_t ComputeThreadTicks() {
              thread_info_data.system_time.microseconds);
   return micros;
 }
+#elif V8_OS_FUCHSIA
+V8_INLINE int64_t GetFuchsiaThreadTicks() {
+  zx_info_thread_stats_t info;
+  zx_status_t status = zx_object_get_info(thrd_get_zx_handle(thrd_current()),
+                                          ZX_INFO_THREAD_STATS, &info,
+                                          sizeof(info), nullptr, nullptr);
+  CHECK_EQ(status, ZX_OK);
+  return info.total_runtime / v8::base::Time::kNanosecondsPerMicrosecond;
+}
 #elif V8_OS_POSIX
 // Helper function to get results from clock_gettime() and convert to a
 // microsecond timebase. Minimum requirement is MONOTONIC_CLOCK to be supported
@@ -71,20 +88,23 @@ int64_t ComputeThreadTicks() {
 // _POSIX_MONOTONIC_CLOCK to -1.
 V8_INLINE int64_t ClockNow(clockid_t clk_id) {
 #if (defined(_POSIX_MONOTONIC_CLOCK) && _POSIX_MONOTONIC_CLOCK >= 0) || \
-  defined(V8_OS_BSD) || defined(V8_OS_ANDROID)
-// On AIX clock_gettime for CLOCK_THREAD_CPUTIME_ID outputs time with
-// resolution of 10ms. thread_cputime API provides the time in ns
+    defined(V8_OS_BSD) || defined(V8_OS_ANDROID) || defined(V8_OS_ZOS)
 #if defined(V8_OS_AIX)
-  thread_cputime_t tc;
+  // On AIX clock_gettime for CLOCK_THREAD_CPUTIME_ID outputs time with
+  // resolution of 10ms. thread_cputime API provides the time in ns.
   if (clk_id == CLOCK_THREAD_CPUTIME_ID) {
 #if defined(__PASE__)  // CLOCK_THREAD_CPUTIME_ID clock not supported on IBMi
     return 0;
-#endif
+#else
+    thread_cputime_t tc;
     if (thread_cputime(-1, &tc) != 0) {
       UNREACHABLE();
     }
+    return (tc.stime / v8::base::Time::kNanosecondsPerMicrosecond)
+           + (tc.utime / v8::base::Time::kNanosecondsPerMicrosecond);
+#endif  // defined(__PASE__)
   }
-#endif
+#endif  // defined(V8_OS_AIX)
   struct timespec ts;
   if (clock_gettime(clk_id, &ts) != 0) {
     UNREACHABLE();
@@ -97,38 +117,44 @@ V8_INLINE int64_t ClockNow(clockid_t clk_id) {
       1;
   CHECK_GT(kSecondsLimit, ts.tv_sec);
   int64_t result = int64_t{ts.tv_sec} * v8::base::Time::kMicrosecondsPerSecond;
-#if defined(V8_OS_AIX)
-  if (clk_id == CLOCK_THREAD_CPUTIME_ID) {
-    result += (tc.stime / v8::base::Time::kNanosecondsPerMicrosecond);
-  } else {
-    result += (ts.tv_nsec / v8::base::Time::kNanosecondsPerMicrosecond);
-  }
-#else
   result += (ts.tv_nsec / v8::base::Time::kNanosecondsPerMicrosecond);
-#endif
   return result;
 #else  // Monotonic clock not supported.
   return 0;
 #endif
 }
 
-V8_INLINE bool IsHighResolutionTimer(clockid_t clk_id) {
-  // Limit duration of timer resolution measurement to 100 ms. If we cannot
-  // measure timer resoltuion within this time, we assume a low resolution
-  // timer.
-  int64_t end =
-      ClockNow(clk_id) + 100 * v8::base::Time::kMicrosecondsPerMillisecond;
-  int64_t start, delta;
-  do {
-    start = ClockNow(clk_id);
-    // Loop until we can detect that the clock has changed. Non-HighRes timers
-    // will increment in chunks, i.e. 15ms. By spinning until we see a clock
-    // change, we detect the minimum time between measurements.
-    do {
-      delta = ClockNow(clk_id) - start;
-    } while (delta == 0);
-  } while (delta > 1 && start < end);
-  return delta <= 1;
+V8_INLINE int64_t NanosecondsNow() {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return int64_t{ts.tv_sec} * v8::base::Time::kNanosecondsPerSecond +
+         ts.tv_nsec;
+}
+
+inline bool IsHighResolutionTimer(clockid_t clk_id) {
+  // Currently this is only needed for CLOCK_MONOTONIC. If other clocks need
+  // to be checked, care must be taken to support all platforms correctly;
+  // see ClockNow() above for precedent.
+  DCHECK_EQ(clk_id, CLOCK_MONOTONIC);
+  int64_t previous = NanosecondsNow();
+  // There should be enough attempts to make the loop run for more than one
+  // microsecond if the early return is not taken -- the elapsed time can't
+  // be measured in that situation, so we have to estimate it offline.
+  constexpr int kAttempts = 100;
+  for (int i = 0; i < kAttempts; i++) {
+    int64_t next = NanosecondsNow();
+    int64_t delta = next - previous;
+    if (delta == 0) continue;
+    // We expect most systems to take this branch on the first iteration.
+    if (delta <= v8::base::Time::kNanosecondsPerMicrosecond) {
+      return true;
+    }
+    previous = next;
+  }
+  // As of 2022, we expect that the loop above has taken at least 2 μs (on
+  // a fast desktop). If we still haven't seen a non-zero clock increment
+  // in sub-microsecond range, assume a low resolution timer.
+  return false;
 }
 
 #elif V8_OS_WIN
@@ -143,8 +169,7 @@ V8_INLINE uint64_t QPCNowRaw() {
   USE(result);
   return perf_counter_now.QuadPart;
 }
-#endif  // V8_OS_MACOSX
-
+#endif  // V8_OS_DARWIN
 
 }  // namespace
 
@@ -232,8 +257,7 @@ int64_t TimeDelta::InNanoseconds() const {
   return delta_ * Time::kNanosecondsPerMicrosecond;
 }
 
-
-#if V8_OS_MACOSX
+#if V8_OS_DARWIN
 
 TimeDelta TimeDelta::FromMachTimespec(struct mach_timespec ts) {
   DCHECK_GE(ts.tv_nsec, 0);
@@ -253,8 +277,7 @@ struct mach_timespec TimeDelta::ToMachTimespec() const {
   return ts;
 }
 
-#endif  // V8_OS_MACOSX
-
+#endif  // V8_OS_DARWIN
 
 #if V8_OS_POSIX
 
@@ -376,7 +399,7 @@ FILETIME Time::ToFiletime() const {
   return ft;
 }
 
-#elif V8_OS_POSIX || V8_OS_STARBOARD
+#elif V8_OS_POSIX
 
 Time Time::Now() {
   struct timeval tv;
@@ -456,17 +479,7 @@ struct timeval Time::ToTimeval() const {
   return tv;
 }
 
-#endif  // V8_OS_POSIX || V8_OS_STARBOARD
-
-// static
-TimeTicks TimeTicks::HighResolutionNow() {
-  // a DCHECK of TimeTicks::IsHighResolution() was removed from here
-  // as it turns out this path is used in the wild for logs and counters.
-  //
-  // TODO(hpayer) We may eventually want to split TimedHistograms based
-  // on low resolution clocks to avoid polluting metrics
-  return TimeTicks::Now();
-}
+#endif  // V8_OS_POSIX
 
 Time Time::FromJsTime(double ms_since_epoch) {
   // The epoch is a valid time, so this constructor doesn't interpret
@@ -616,15 +629,10 @@ using TimeTicksNowFunction = decltype(&TimeTicks::Now);
 TimeTicksNowFunction g_time_ticks_now_function = &InitialTimeTicksNowFunction;
 int64_t g_qpc_ticks_per_second = 0;
 
-// As of January 2015, use of <atomic> is forbidden in Chromium code. This is
-// what std::atomic_thread_fence does on Windows on all Intel architectures when
-// the memory_order argument is anything but std::memory_order_seq_cst:
-#define ATOMIC_THREAD_FENCE(memory_order) _ReadWriteBarrier();
-
 TimeDelta QPCValueToTimeDelta(LONGLONG qpc_value) {
   // Ensure that the assignment to |g_qpc_ticks_per_second|, made in
   // InitializeNowFunctionPointer(), has happened by this point.
-  ATOMIC_THREAD_FENCE(memory_order_acquire);
+  std::atomic_thread_fence(std::memory_order_acquire);
 
   DCHECK_GT(g_qpc_ticks_per_second, 0);
 
@@ -679,7 +687,7 @@ void InitializeTimeTicksNowFunctionPointer() {
   // assignment to |g_qpc_ticks_per_second| happens before the function pointers
   // are changed.
   g_qpc_ticks_per_second = ticks_per_sec.QuadPart;
-  ATOMIC_THREAD_FENCE(memory_order_release);
+  std::atomic_thread_fence(std::memory_order_release);
   g_time_ticks_now_function = now_function;
 }
 
@@ -688,7 +696,16 @@ TimeTicks InitialTimeTicksNowFunction() {
   return g_time_ticks_now_function();
 }
 
-#undef ATOMIC_THREAD_FENCE
+#if V8_HOST_ARCH_ARM64
+// From MSDN, FILETIME "Contains a 64-bit value representing the number of
+// 100-nanosecond intervals since January 1, 1601 (UTC)."
+int64_t FileTimeToMicroseconds(const FILETIME& ft) {
+  // Need to bit_cast to fix alignment, then divide by 10 to convert
+  // 100-nanoseconds to microseconds. This only works on little-endian
+  // machines.
+  return bit_cast<int64_t, FILETIME>(ft) / 10;
+}
+#endif
 
 }  // namespace
 
@@ -711,7 +728,7 @@ bool TimeTicks::IsHighResolution() {
 
 TimeTicks TimeTicks::Now() {
   int64_t ticks;
-#if V8_OS_MACOSX
+#if V8_OS_DARWIN
   static struct mach_timebase_info info;
   if (info.denom == 0) {
     kern_return_t result = mach_timebase_info(&info);
@@ -722,23 +739,25 @@ TimeTicks TimeTicks::Now() {
            info.numer / info.denom);
 #elif V8_OS_SOLARIS
   ticks = (gethrtime() / Time::kNanosecondsPerMicrosecond);
+#elif V8_OS_FUCHSIA
+  ticks = zx_clock_get_monotonic() / Time::kNanosecondsPerMicrosecond;
 #elif V8_OS_POSIX
   ticks = ClockNow(CLOCK_MONOTONIC);
-#elif V8_OS_STARBOARD
-  ticks = starboard::CurrentMonotonicTime();
 #else
-#error platform does not implement TimeTicks::HighResolutionNow.
-#endif  // V8_OS_MACOSX
+#error platform does not implement TimeTicks::Now.
+#endif  // V8_OS_DARWIN
   // Make sure we never return 0 here.
   return TimeTicks(ticks + 1);
 }
 
 // static
 bool TimeTicks::IsHighResolution() {
-#if V8_OS_MACOSX
+#if V8_OS_DARWIN
+  return true;
+#elif V8_OS_FUCHSIA
   return true;
 #elif V8_OS_POSIX
-  static bool is_high_resolution = IsHighResolutionTimer(CLOCK_MONOTONIC);
+  static const bool is_high_resolution = IsHighResolutionTimer(CLOCK_MONOTONIC);
   return is_high_resolution;
 #else
   return true;
@@ -749,10 +768,12 @@ bool TimeTicks::IsHighResolution() {
 
 
 bool ThreadTicks::IsSupported() {
-#if V8_OS_STARBOARD
-  return starboard::CurrentMonotonicThreadTime() != 0;
-#elif(defined(_POSIX_THREAD_CPUTIME) && (_POSIX_THREAD_CPUTIME >= 0)) || \
-    defined(V8_OS_MACOSX) || defined(V8_OS_ANDROID) || defined(V8_OS_SOLARIS)
+#if defined(__PASE__)
+  // Thread CPU time accounting is unavailable in PASE
+  return false;
+#elif (defined(_POSIX_THREAD_CPUTIME) && (_POSIX_THREAD_CPUTIME >= 0)) || \
+    defined(V8_OS_DARWIN) || defined(V8_OS_ANDROID) ||                    \
+    defined(V8_OS_SOLARIS) || defined(V8_OS_ZOS)
   return true;
 #elif defined(V8_OS_WIN)
   return IsSupportedWin();
@@ -763,15 +784,12 @@ bool ThreadTicks::IsSupported() {
 
 
 ThreadTicks ThreadTicks::Now() {
-#if V8_OS_STARBOARD
-  int64_t now = starboard::CurrentMonotonicThreadTime();
-  if (now != 0)
-    return ThreadTicks(now);
-  UNREACHABLE();
-#elif V8_OS_MACOSX
+#if V8_OS_DARWIN
   return ThreadTicks(ComputeThreadTicks());
-#elif(defined(_POSIX_THREAD_CPUTIME) && (_POSIX_THREAD_CPUTIME >= 0)) || \
-  defined(V8_OS_ANDROID)
+#elif V8_OS_FUCHSIA
+  return ThreadTicks(GetFuchsiaThreadTicks());
+#elif (defined(_POSIX_THREAD_CPUTIME) && (_POSIX_THREAD_CPUTIME >= 0)) || \
+    defined(V8_OS_ANDROID) || defined(V8_OS_ZOS)
   return ThreadTicks(ClockNow(CLOCK_THREAD_CPUTIME_ID));
 #elif V8_OS_SOLARIS
   return ThreadTicks(gethrvtime() / Time::kNanosecondsPerMicrosecond);
@@ -787,6 +805,20 @@ ThreadTicks ThreadTicks::Now() {
 ThreadTicks ThreadTicks::GetForThread(const HANDLE& thread_handle) {
   DCHECK(IsSupported());
 
+#if V8_HOST_ARCH_ARM64
+  // QueryThreadCycleTime versus TSCTicksPerSecond doesn't have much relation to
+  // actual elapsed time on Windows on Arm, because QueryThreadCycleTime is
+  // backed by the actual number of CPU cycles executed, rather than a
+  // constant-rate timer like Intel. To work around this, use GetThreadTimes
+  // (which isn't as accurate but is meaningful as a measure of elapsed
+  // per-thread time).
+  FILETIME creation_time, exit_time, kernel_time, user_time;
+  ::GetThreadTimes(thread_handle, &creation_time, &exit_time, &kernel_time,
+                   &user_time);
+
+  int64_t us = FileTimeToMicroseconds(user_time);
+  return ThreadTicks(us);
+#else
   // Get the number of TSC ticks used by the current thread.
   ULONG64 thread_cycle_time = 0;
   ::QueryThreadCycleTime(thread_handle, &thread_cycle_time);
@@ -800,6 +832,7 @@ ThreadTicks ThreadTicks::GetForThread(const HANDLE& thread_handle) {
   double thread_time_seconds = thread_cycle_time / tsc_ticks_per_second;
   return ThreadTicks(
       static_cast<int64_t>(thread_time_seconds * Time::kMicrosecondsPerSecond));
+#endif
 }
 
 // static
@@ -810,16 +843,12 @@ bool ThreadTicks::IsSupportedWin() {
 
 // static
 void ThreadTicks::WaitUntilInitializedWin() {
-  while (TSCTicksPerSecond() == 0)
-    ::Sleep(10);
+#ifndef V8_HOST_ARCH_ARM64
+  while (TSCTicksPerSecond() == 0) ::Sleep(10);
+#endif
 }
 
-#ifdef V8_HOST_ARCH_ARM64
-#define ReadCycleCounter() _ReadStatusReg(ARM64_PMCCNTR_EL0)
-#else
-#define ReadCycleCounter() __rdtsc()
-#endif
-
+#ifndef V8_HOST_ARCH_ARM64
 double ThreadTicks::TSCTicksPerSecond() {
   DCHECK(IsSupported());
 
@@ -840,12 +869,12 @@ double ThreadTicks::TSCTicksPerSecond() {
 
   // The first time that this function is called, make an initial reading of the
   // TSC and the performance counter.
-  static const uint64_t tsc_initial = ReadCycleCounter();
+  static const uint64_t tsc_initial = __rdtsc();
   static const uint64_t perf_counter_initial = QPCNowRaw();
 
-  // Make a another reading of the TSC and the performance counter every time
-  // that this function is called.
-  uint64_t tsc_now = ReadCycleCounter();
+  // Make another reading of the TSC and the performance counter every time
+  // this function is called.
+  uint64_t tsc_now = __rdtsc();
   uint64_t perf_counter_now = QPCNowRaw();
 
   // Reset the thread priority.
@@ -878,7 +907,7 @@ double ThreadTicks::TSCTicksPerSecond() {
 
   return tsc_ticks_per_second;
 }
-#undef ReadCycleCounter
+#endif  // !defined(V8_HOST_ARCH_ARM64)
 #endif  // V8_OS_WIN
 
 }  // namespace base

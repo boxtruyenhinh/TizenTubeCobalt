@@ -19,7 +19,10 @@
 
 #include "base/base_export.h"
 #include "base/message_loop/message_pump.h"
+#include "base/message_loop/watchable_io_message_pump_posix.h"
+#include "base/run_loop.h"
 #include "base/synchronization/lock.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/time/time.h"
 #include "starboard/event.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -37,10 +40,25 @@ namespace base {
 // Starboard message pump as a MessageLoop. That would typically be for the
 // entire lifetime of the application, and in that case, the MessageLoop would
 // traditionally be deleted in the kSbEventStop handler.
-class BASE_EXPORT MessagePumpUIStarboard : public MessagePump {
+class BASE_EXPORT MessagePumpUIStarboard : public MessagePump, public WatchableIOMessagePumpPosix {
  public:
+
   MessagePumpUIStarboard();
-  virtual ~MessagePumpUIStarboard() { Quit(); }
+  virtual ~MessagePumpUIStarboard() {
+    // 1. Ensure the pump stops processing new tasks.
+    Quit();
+    // 2. Ensure any pending Starboard event callbacks are cancelled, since the
+    //    pump is being destroyed.
+    CancelAll();
+    // 3. It is critical to call AfterRun() here if a nested RunLoop was still
+    //    active when the pump was destroyed. Failing to do so leaves the RunLoop
+    //    registered in the SequenceManager's active_run_loops_ stack, which
+    //    causes a fatal DCHECK crash during SequenceManager teardown.
+    if (run_loop_) {
+      run_loop_->AfterRun();
+      run_loop_ = nullptr;
+    }
+  }
 
   MessagePumpUIStarboard(const MessagePumpUIStarboard&) = delete;
   MessagePumpUIStarboard& operator=(const MessagePumpUIStarboard&) = delete;
@@ -80,14 +98,28 @@ class BASE_EXPORT MessagePumpUIStarboard : public MessagePump {
   // Cancel delayed workhorse that assumes |outstanding_events_lock_| is locked.
   void CancelDelayedLocked();
 
-  // If the delegate has been removed, Quit() has been called.
-  bool should_quit() const { return delegate_ == nullptr; }
+  // Maintain a RunLoop attached to the starboard thread.
+  std::unique_ptr<RunLoop> run_loop_;
 
   // The MessagePump::Delegate configured in Start().
   Delegate* delegate_;
 
+  bool should_quit() const { return should_quit_; }
+
+  // Flag to support nested RunLoops cleanly. By using
+  // `should_quit_`, we can safely use `base::AutoReset` in `Run()` to support
+  // re-entrant (nested) invocations of the message pump without corrupting
+  // the outer loop's state.
+  bool should_quit_ = false;
+
   // Lock protecting outstanding scheduled callback events.
   base::Lock outstanding_events_lock_;
+
+  // Event to wake up the message pump from a blocking wait during nested
+  // loops.
+  base::WaitableEvent wakeup_event_{
+      base::WaitableEvent::ResetPolicy::AUTOMATIC,
+      base::WaitableEvent::InitialState::NOT_SIGNALED};
 
   // The set of outstanding scheduled callback events for immediate work.
   absl::optional<SbEventId> outstanding_event_;

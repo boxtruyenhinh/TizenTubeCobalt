@@ -3,8 +3,14 @@
 
 #include "src/pdf/SkPDFGraphicStackState.h"
 
+#include "include/core/SkClipOp.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPathTypes.h"
+#include "include/core/SkRect.h"
 #include "include/core/SkStream.h"
 #include "include/pathops/SkPathOps.h"
+#include "include/private/base/SkAssert.h"
 #include "src/pdf/SkPDFUtils.h"
 #include "src/utils/SkClipStackUtils.h"
 
@@ -55,9 +61,7 @@ static bool is_rect(const SkClipStack& clipStack, const SkRect& bounds, SkRect* 
 static bool is_complex_clip(const SkClipStack& stack) {
     SkClipStack::Iter iter(stack, SkClipStack::Iter::kBottom_IterStart);
     while (const SkClipStack::Element* element = iter.next()) {
-        if (element->isReplaceOp() ||
-            (element->getOp() != SkClipOp::kDifference &&
-             element->getOp() != SkClipOp::kIntersect)) {
+        if (element->isReplaceOp()) {
             return true;
         }
     }
@@ -77,7 +81,6 @@ static void apply_clip(const SkClipStack& stack, const SkRect& outerBounds, F fn
         switch (element->getOp()) {
             case SkClipOp::kDifference: op = kDifference_SkPathOp; break;
             case SkClipOp::kIntersect:  op = kIntersect_SkPathOp;  break;
-            default: SkASSERT(false); return;
         }
         if (op == kDifference_SkPathOp  ||
             operand.isInverseFillType() ||
@@ -189,16 +192,13 @@ void SkPDFGraphicStackState::updateDrawingState(const SkPDFGraphicStackState::En
             SkPDFUtils::ApplyPattern(state.fShaderIndex, fContentStream);
             currentEntry()->fShaderIndex = state.fShaderIndex;
         }
-    } else {
-        if (state.fColor != currentEntry()->fColor ||
-                currentEntry()->fShaderIndex >= 0) {
-            emit_pdf_color(state.fColor, fContentStream);
-            fContentStream->writeText("RG ");
-            emit_pdf_color(state.fColor, fContentStream);
-            fContentStream->writeText("rg\n");
-            currentEntry()->fColor = state.fColor;
-            currentEntry()->fShaderIndex = -1;
-        }
+    } else if (state.fColor != currentEntry()->fColor || currentEntry()->fShaderIndex >= 0) {
+        emit_pdf_color(state.fColor, fContentStream);
+        fContentStream->writeText("RG ");
+        emit_pdf_color(state.fColor, fContentStream);
+        fContentStream->writeText("rg\n");
+        currentEntry()->fColor = state.fColor;
+        currentEntry()->fShaderIndex = -1;
     }
 
     if (state.fGraphicStateIndex != currentEntry()->fGraphicStateIndex) {

@@ -20,13 +20,6 @@
 #ifndef __UPOSIXDEFS_H__
 #define __UPOSIXDEFS_H__
 
-#if defined(STARBOARD)
-#include "starboard/configuration.h"
-#if SB_HAS(SYS_TYPES_H)
-#include <sys/types.h>
-#endif  // SB_HAS(SYS_TYPES_H)
-#endif  // defined(STARBOARD)
-
 /*
  * Define _XOPEN_SOURCE for access to POSIX functions.
  *
@@ -40,7 +33,7 @@
  */
 #ifdef _XOPEN_SOURCE
     /* Use the predefined value. */
-#else
+#elif !defined(ICU_IS_IN_FUCHSIA) || !defined(__APPLE__)
     /*
      * Version 6.0:
      * The Open Group Base Specifications Issue 6 (IEEE Std 1003.1, 2004 Edition)

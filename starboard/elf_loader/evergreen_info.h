@@ -29,8 +29,8 @@
 #ifndef NATIVE_TARGET_BUILD
 #define IS_EVERGREEN_ADDRESS(address, evergreen_info)                    \
   (evergreen_info.base_address != 0 &&                                   \
-   reinterpret_cast<uintptr_t>(address) >= evergreen_info.base_address && \
-   (reinterpret_cast<uintptr_t>(address) - evergreen_info.base_address) < \
+   reinterpret_cast<uint64_t>(address) >= evergreen_info.base_address && \
+   (reinterpret_cast<uint64_t>(address) - evergreen_info.base_address) < \
        evergreen_info.load_size)
 
 #ifdef __cplusplus
@@ -57,7 +57,8 @@ typedef struct EvergreenInfo {
   size_t phdr_table_num;
 
   // Contents of the build id.
-  char build_id[EVERGREEN_BUILD_ID_MAX_SIZE];
+  // TODO: b/413105301 - Consider changing to std::array or std::vector.
+  uint8_t build_id[EVERGREEN_BUILD_ID_MAX_SIZE];
 
   // Length of the build id.
   size_t build_id_length;

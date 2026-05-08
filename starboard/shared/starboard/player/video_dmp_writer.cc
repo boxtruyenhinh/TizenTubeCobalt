@@ -18,21 +18,18 @@
 #include <unistd.h>
 
 #include <map>
+#include <mutex>
 #include <sstream>
 #include <string>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/file.h"
 #include "starboard/common/log.h"
-#include "starboard/common/mutex.h"
 #include "starboard/common/once.h"
 #include "starboard/common/string.h"
 #include "starboard/shared/starboard/application.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace video_dmp {
 
 namespace {
 
@@ -46,31 +43,31 @@ class PlayerToWriterMap {
             "dump_video_data")) {}
   bool dump_video_data() const { return dump_video_data_; }
   void Register(SbPlayer player) {
-    ScopedLock scoped_lock(mutex_);
+    std::lock_guard scoped_lock(mutex_);
     SB_DCHECK(map_.find(player) == map_.end());
     map_[player] = new VideoDmpWriter;
   }
   void Unregister(SbPlayer player) {
-    ScopedLock scoped_lock(mutex_);
+    std::lock_guard scoped_lock(mutex_);
     auto iter = map_.find(player);
     SB_DCHECK(iter != map_.end());
     delete iter->second;
     map_.erase(iter);
   }
   VideoDmpWriter* Get(SbPlayer player) {
-    ScopedLock scoped_lock(mutex_);
+    std::lock_guard scoped_lock(mutex_);
     auto iter = map_.find(player);
     SB_DCHECK(iter != map_.end());
     return iter->second;
   }
 
  private:
-  Mutex mutex_;
+  std::mutex mutex_;
   bool dump_video_data_;
   std::map<SbPlayer, VideoDmpWriter*> map_;
 };
 
-SB_ONCE_INITIALIZE_FUNCTION(PlayerToWriterMap, GetOrCreatePlayerToWriterMap);
+SB_ONCE_INITIALIZE_FUNCTION(PlayerToWriterMap, GetOrCreatePlayerToWriterMap)
 
 }  // namespace
 
@@ -144,7 +141,7 @@ void VideoDmpWriter::DumpConfigs(
   Write(write_cb_, audio_codec);
   if (audio_codec != kSbMediaAudioCodecNone) {
     SB_DCHECK(audio_stream_info);
-    Write(write_cb_, audio_codec, media::AudioStreamInfo(*audio_stream_info));
+    Write(write_cb_, audio_codec, AudioStreamInfo(*audio_stream_info));
   }
 
   Write(write_cb_, kRecordTypeVideoConfig);
@@ -162,7 +159,7 @@ void VideoDmpWriter::DumpAccessUnit(
   if (sample_type == kSbMediaTypeAudio) {
     Write(write_cb_, kRecordTypeAudioAccessUnit);
   } else {
-    SB_DCHECK(sample_type == kSbMediaTypeVideo);
+    SB_DCHECK_EQ(sample_type, kSbMediaTypeVideo);
     Write(write_cb_, kRecordTypeVideoAccessUnit);
   }
 
@@ -183,7 +180,7 @@ void VideoDmpWriter::DumpAccessUnit(
     Write(write_cb_, input_buffer->audio_stream_info().codec,
           input_buffer->audio_stream_info());
   } else {
-    SB_DCHECK(sample_type == kSbMediaTypeVideo);
+    SB_DCHECK_EQ(sample_type, kSbMediaTypeVideo);
     Write(write_cb_, input_buffer->video_stream_info().codec,
           input_buffer->video_sample_info());
   }
@@ -195,8 +192,4 @@ int VideoDmpWriter::WriteToFile(const void* buffer, int size) {
   return result;
 }
 
-}  // namespace video_dmp
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

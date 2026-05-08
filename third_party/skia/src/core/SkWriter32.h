@@ -9,19 +9,27 @@
 #define SkWriter32_DEFINED
 
 #include "include/core/SkData.h"
-#include "include/core/SkMatrix.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkPoint3.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkRegion.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkNoncopyable.h"
-#include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkAlign.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkNoncopyable.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
+
+#include <cstdint>
+#include <cstring>
+
+class SkMatrix;
+struct SkSamplingOptions;
 
 class SkWriter32 : SkNoncopyable {
 public:
@@ -148,6 +156,8 @@ public:
         rgn.writeToMemory(this->reserve(size));
     }
 
+    void writeSampling(const SkSamplingOptions& sampling);
+
     // write count bytes (must be a multiple of 4)
     void writeMul4(const void* values, size_t size) {
         this->write(values, size);
@@ -247,7 +257,7 @@ private:
     size_t fCapacity;                  // Number of bytes we can write to fData.
     size_t fUsed;                      // Number of bytes written.
     void* fExternal;                   // Unmanaged memory block.
-    SkAutoTMalloc<uint8_t> fInternal;  // Managed memory block.
+    skia_private::AutoTMalloc<uint8_t> fInternal;  // Managed memory block.
 };
 
 /**

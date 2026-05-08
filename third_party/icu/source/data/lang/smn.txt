@@ -293,7 +293,6 @@ smn{
         ro{"romaniakielâ"}
         rof{"rombo"}
         rom{"roomaankielâ"}
-        root{"ruotâs"}
         ru{"ruošâkielâ"}
         rup{"aromaniakielâ"}
         rw{"ruandakielâ"}
@@ -398,14 +397,13 @@ smn{
         zxx{"ij kielâlâš siskáldâs"}
         zza{"zazakielâ"}
     }
+    Languages%short{
+        en_GB{"eŋgâlâskielâ (OK)"}
+        en_US{"eŋgâlâskielâ (USA)"}
+    }
     codePatterns{
         language{"kielâ: {0}"}
         script{"čäällimvuáhádâh: {0}"}
         territory{"kuávlu: {0}"}
-    }
-    localeDisplayPattern{
-        keyTypePattern{"{0}: {1}"}
-        pattern{"{0} ({1})"}
-        separator{"{0}, {1}"}
     }
 }

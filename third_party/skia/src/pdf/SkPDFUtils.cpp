@@ -5,20 +5,34 @@
  * found in the LICENSE file.
  */
 
-#include "src/pdf/SkPDFUtils.h"
-
 #include "include/core/SkBitmap.h"
-#include "include/core/SkData.h"
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPathTypes.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkSize.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
-#include "include/private/SkFixed.h"
+#include "include/docs/SkPDFDocument.h"
+#include "include/private/base/SkFixed.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkPoint_impl.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkPathPriv.h"
 #include "src/image/SkImage_Base.h"
 #include "src/pdf/SkPDFResourceDict.h"
 #include "src/pdf/SkPDFTypes.h"
+#include "src/pdf/SkPDFUtils.h"
 
-#include <cmath>
+#include <algorithm>
+#include <ctime>
+#include <utility>
+
+#if defined(SK_BUILD_FOR_WIN)
+#include "src/base/SkLeanWindows.h"
+#endif
 
 const char* SkPDFUtils::BlendModeName(SkBlendMode mode) {
     // PDF32000.book section 11.3.5 "Blend Mode"
@@ -279,7 +293,7 @@ static constexpr int int_pow(int base, unsigned exp, int acc = 1) {
 }
 
 
-size_t SkPDFUtils::ColorToDecimalF(float value, char result[kFloatColorDecimalCount + 2]) {
+size_t SkPDFUtils::ColorToDecimalF(float value, char (&result)[kFloatColorDecimalCount + 2]) {
     static constexpr int kFactor = int_pow(10, kFloatColorDecimalCount);
     int x = sk_float_round2int(value * kFactor);
     if (x >= kFactor || x <= 0) {  // clamp to 0-1
@@ -345,43 +359,6 @@ bool SkPDFUtils::ToBitmap(const SkImage* img, SkBitmap* dst) {
     return false;
 }
 
-#ifdef SK_PDF_BASE85_BINARY
-void SkPDFUtils::Base85Encode(std::unique_ptr<SkStreamAsset> stream, SkDynamicMemoryWStream* dst) {
-    SkASSERT(dst);
-    SkASSERT(stream);
-    dst->writeText("\n");
-    int column = 0;
-    while (true) {
-        uint8_t src[4] = {0, 0, 0, 0};
-        size_t count = stream->read(src, 4);
-        SkASSERT(count < 5);
-        if (0 == count) {
-            dst->writeText("~>\n");
-            return;
-        }
-        uint32_t v = ((uint32_t)src[0] << 24) | ((uint32_t)src[1] << 16) |
-                     ((uint32_t)src[2] <<  8) | src[3];
-        if (v == 0 && count == 4) {
-            dst->writeText("z");
-            column += 1;
-        } else {
-            char buffer[5];
-            for (int n = 4; n > 0; --n) {
-                buffer[n] = (v % 85) + '!';
-                v /= 85;
-            }
-            buffer[0] = v + '!';
-            dst->write(buffer, count + 1);
-            column += count + 1;
-        }
-        if (column > 74) {
-            dst->writeText("\n");
-            column = 0;
-        }
-    }
-}
-#endif //  SK_PDF_BASE85_BINARY
-
 void SkPDFUtils::AppendTransform(const SkMatrix& matrix, SkWStream* content) {
     SkScalar values[6];
     if (!matrix.asAffine(values)) {
@@ -393,3 +370,41 @@ void SkPDFUtils::AppendTransform(const SkMatrix& matrix, SkWStream* content) {
     }
     content->writeText("cm\n");
 }
+
+
+#if defined(SK_BUILD_FOR_WIN)
+
+void SkPDFUtils::GetDateTime(SkPDF::DateTime* dt) {
+    if (dt) {
+        SYSTEMTIME st;
+        GetSystemTime(&st);
+        dt->fTimeZoneMinutes = 0;
+        dt->fYear       = st.wYear;
+        dt->fMonth      = SkToU8(st.wMonth);
+        dt->fDayOfWeek  = SkToU8(st.wDayOfWeek);
+        dt->fDay        = SkToU8(st.wDay);
+        dt->fHour       = SkToU8(st.wHour);
+        dt->fMinute     = SkToU8(st.wMinute);
+        dt->fSecond     = SkToU8(st.wSecond);
+    }
+}
+
+#else // SK_BUILD_FOR_WIN
+
+void SkPDFUtils::GetDateTime(SkPDF::DateTime* dt) {
+    if (dt) {
+        time_t m_time;
+        time(&m_time);
+        struct tm tstruct;
+        gmtime_r(&m_time, &tstruct);
+        dt->fTimeZoneMinutes = 0;
+        dt->fYear       = tstruct.tm_year + 1900;
+        dt->fMonth      = SkToU8(tstruct.tm_mon + 1);
+        dt->fDayOfWeek  = SkToU8(tstruct.tm_wday);
+        dt->fDay        = SkToU8(tstruct.tm_mday);
+        dt->fHour       = SkToU8(tstruct.tm_hour);
+        dt->fMinute     = SkToU8(tstruct.tm_min);
+        dt->fSecond     = SkToU8(tstruct.tm_sec);
+    }
+}
+#endif // SK_BUILD_FOR_WIN

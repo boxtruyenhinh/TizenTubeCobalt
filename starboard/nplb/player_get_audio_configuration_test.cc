@@ -15,23 +15,18 @@
 #include <vector>
 
 #include "starboard/nplb/player_test_fixture.h"
-#include "starboard/string.h"
 #include "starboard/testing/fake_graphics_context_provider.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "starboard/nplb/testcase_helpers.h"
-
-#if SB_API_VERSION >= 15
 
 bool operator==(const SbMediaAudioConfiguration& left,
                 const SbMediaAudioConfiguration& right) {
   return memcmp(&left, &right, sizeof(SbMediaAudioConfiguration)) == 0;
 }
 
-namespace starboard {
 namespace nplb {
 namespace {
 
-using ::starboard::testing::FakeGraphicsContextProvider;
+using ::starboard::FakeGraphicsContextProvider;
 using ::testing::ValuesIn;
 
 typedef SbPlayerTestFixture::GroupedSamples GroupedSamples;
@@ -39,6 +34,8 @@ typedef SbPlayerTestFixture::GroupedSamples GroupedSamples;
 class SbPlayerGetAudioConfigurationTest
     : public ::testing::TestWithParam<SbPlayerTestConfig> {
  public:
+  void SetUp() override { SkipTestIfNotSupported(GetParam()); }
+
   void ReadAudioConfigurations(
       const SbPlayerTestFixture& player_fixture,
       std::vector<SbMediaAudioConfiguration>* configurations) const {
@@ -156,11 +153,6 @@ TEST_P(SbPlayerGetAudioConfigurationTest, SunnyDay) {
 }
 
 TEST_P(SbPlayerGetAudioConfigurationTest, NoInput) {
-  // TODO(b/380031306): Skip test case(s) not applicable to Android.
-  if (GetRuntimePlatform() == PlatformType::kPlatformTypeAndroid) {
-    GTEST_SKIP() << "Not applicable on Android";
-  }
-
   SbPlayerTestFixture player_fixture(GetParam(),
                                      &fake_graphics_context_provider_);
   if (HasFatalFailure()) {
@@ -273,13 +265,10 @@ TEST_P(SbPlayerGetAudioConfigurationTest, MultipleSeeks) {
   ASSERT_EQ(configs_after_presenting, configs_after_end);
 }
 
-INSTANTIATE_TEST_CASE_P(SbPlayerGetAudioConfigurationTests,
-                        SbPlayerGetAudioConfigurationTest,
-                        ValuesIn(GetSupportedSbPlayerTestConfigs()),
-                        GetSbPlayerTestConfigName);
+INSTANTIATE_TEST_SUITE_P(SbPlayerGetAudioConfigurationTests,
+                         SbPlayerGetAudioConfigurationTest,
+                         ValuesIn(GetAllPlayerTestConfigs()),
+                         GetSbPlayerTestConfigName);
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard
-
-#endif  // SB_API_VERSION >= 15

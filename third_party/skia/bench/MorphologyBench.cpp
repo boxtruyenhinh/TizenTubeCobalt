@@ -11,7 +11,7 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkString.h"
 #include "include/effects/SkImageFilters.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 
 #define SMALL   SkIntToScalar(2)
 #define REAL    1.5f
@@ -33,13 +33,12 @@ class MorphologyBench : public Benchmark {
     SkString       fName;
 
 public:
-    MorphologyBench(SkScalar rad, MorphologyType style)
-         {
+    MorphologyBench(SkScalar rad, MorphologyType style) {
         fRadius = rad;
         fStyle = style;
         const char* name = rad > 0 ? gStyleName[style] : "none";
         if (SkScalarFraction(rad) != 0) {
-            fName.printf("morph_%.2f_%s", SkScalarToFloat(rad), name);
+            fName.printf("morph_%.2f_%s", rad, name);
         } else {
             fName.printf("morph_%d_%s", SkScalarRoundToInt(rad), name);
         }

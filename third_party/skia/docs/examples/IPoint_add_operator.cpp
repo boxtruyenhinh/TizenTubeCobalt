@@ -1,7 +1,6 @@
 // Copyright 2019 Google LLC.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 #include "tools/fiddle/examples.h"
-// HASH=63f4cba971c6d8434595906f865b5a29
 REG_FIDDLE(IPoint_add_operator, 256, 128, false, 0) {
 void draw(SkCanvas* canvas) {
     auto draw_lines = [=](const SkIPoint pts[], size_t count, SkPaint& paint) -> void {
@@ -17,7 +16,7 @@ void draw(SkCanvas* canvas) {
     paint.setAntiAlias(true);
     paint.setStyle(SkPaint::kStroke_Style);
     canvas->scale(30, 15);
-    draw_lines(points, SK_ARRAY_COUNT(points), paint);
+    draw_lines(points, std::size(points), paint);
     SkIPoint mod = {4, 1};
     for (auto& point : points) {
         point = point + mod;
@@ -25,6 +24,6 @@ void draw(SkCanvas* canvas) {
         mod.fY += 1;
     }
     paint.setColor(SK_ColorRED);
-    draw_lines(points, SK_ARRAY_COUNT(points), paint);
+    draw_lines(points, std::size(points), paint);
 }
 }  // END FIDDLE

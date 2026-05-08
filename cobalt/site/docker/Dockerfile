@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG FROM_IMAGE
-FROM ${FROM_IMAGE:-marketplace.gcr.io/google/debian11:latest}
+ARG BASE_IMAGE_SHA=sha256:be15f84c44c4ee68b4f187128f0278df1b0f424c04fb5f08b098967d5b896388
+
+FROM marketplace.gcr.io/google/debian12@${BASE_IMAGE_SHA}
 
 RUN apt update -qqy \
     && apt install -qqy --no-install-recommends \
@@ -22,6 +23,7 @@ RUN apt update -qqy \
         doxygen \
         git \
         python3 \
+        pkg-config \
         unzip \
     && apt-get clean autoclean \
     && apt-get autoremove -y --purge \
@@ -32,7 +34,7 @@ RUN apt update -qqy \
 ENV IS_DOCKER=1
 
 # Set python path for gn.
-ENV PYTHONPATH=/code
+ENV PYTHONPATH=/workspace/src
 
 # Mark the source directory safe.
 RUN git config --global --add safe.directory /code
@@ -63,4 +65,7 @@ RUN mkdir /project_out_dir \
 # Once the directory has been created we can switch to the new user.
 USER ${USER:-defaultuser}
 
-CMD /code/cobalt/site/scripts/generate_site.py
+ENV PATH "/workspace/tools/depot_tools:${PATH}"
+WORKDIR /workspace/src
+
+CMD ["python3", "cobalt/site/scripts/generate_site.py"]

@@ -1,175 +1,141 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
-default_stages: [commit]
+default_stages: [pre-commit]
 
 default_language_version:
     python: python3
 
 files: |
     (?x)^(
-        (
-            .github|
-            cobalt|
-            docker|
-            internal|
-            precommit_hooks|
-            starboard|
-            tools/metrics/actions/cobalt|
-            tools/metrics/histograms/metadata/cobalt|
-            tools/testing|
-        )/
-        | ^[^/]+$  # files in the root
-    )
+        (.*/)?cobalt/.*|
+        (.*/)?starboard/.*|
+        .agent/.*|
+        .github/.*|
+        .pre-commit-config.yaml|
+        .pylintrc|
+        docker-compose.yaml|
+    )$
 exclude: |
     (?x)^(
         (
-            internal/kokoro/third-party|
-            internal/starboard/shared/glimp/include|
-            internal/starboard/shared/playstation/glimp/shaders|
             starboard/contrib/RDK|
+            starboard/contrib/rdk|
         )/
-        |
-        .*_pb2\.py$ |
-        .*\.pb\.cc$ |
-        .*\.pb\.h$ |
-        .*\.patch$ |
-        .*Proto.java$|
-        .*\.sig$
     )
 
 repos:
+-   repo: https://github.com/google/keep-sorted
+    rev: ac58172d1655aa47a6f806e56ff0f269d6dbe637  # v0.8.0
+    hooks:
+    -   id: keep-sorted
 -   repo: https://cobalt.googlesource.com/pre-commit-hooks
-    rev: e1668fe86af3810fbca72b8653fe478e66a0afdc  # v3.2.0
+    rev: v5.0.0
     hooks:
     -   id: check-case-conflict
-    -   id: end-of-file-fixer
-    -   id: trailing-whitespace
-    -   id: mixed-line-ending
+    -   id: check-json
+    -   id: check-merge-conflict
     -   id: check-xml
-
+        exclude: |
+            (?x)^(
+                cobalt/shell/android/javatests/AndroidManifest.xml
+            )
+    -   id: check-yaml
+    -   id: end-of-file-fixer
+    -   id: mixed-line-ending
+    -   id: trailing-whitespace
+-   repo: https://github.com/rhysd/actionlint
+    rev: 03d0035246f3e81f36aed592ffb4bebf33a03106
+    hooks:
+    -   id: actionlint
+        files: ^.github/workflows
 -   repo: local
     hooks:
-    -   id: sync-keyboxes
-        name: sync-keyboxes
-        entry: python ./precommit_hooks/sync_keyboxes_wrapper.py
-        language: python
-        stages: [post-checkout]
-        always_run: true
+    -   id: chromium-pre-commit
+        name: Chromium presubmit bridge
+        entry: ./third_party/depot_tools/vpython3 --vpython-spec=./third_party/depot_tools/.vpython3 ./cobalt/precommit/run_chromium_presubmits.py
+        language: system
+        types: [file]
+        exclude: |
+            (?x)^(
+                (.*/)?cobalt/.*|
+                (.*/)?starboard/.*|
+            )
+        files: ^.*$ # Apply to all file paths
     -   id: clang-format
         name: clang-format
         entry: clang-format
         language: python
         types: [c++]
-        exclude_types: [objective-c++]
         args: [-i, -style=file]
-        additional_dependencies: ['clang-format']
+        exclude: |
+            (?x)(
+                ^cobalt/shell/app/resource.h$|
+                ^starboard/shared/uikit/accessibility_extension.cc$|
+                ^starboard/shared/uikit/player_configuration.cc$
+            )
+        additional_dependencies: ['clang-format==21.1.0']
     -   id: cpplint
         name: cpplint
         entry: cpplint
-        language: system
+        language: python
         types: [c++]
-        args: [--verbose=4, --quiet]
+        args: [--verbose=5, --quiet]
         exclude: |
             (?x)(
                 ^cobalt/bindings/(templates|generated)/|
-                ^starboard/shared/uikit/.*\.h$
+                ^cobalt/common/features/starboard_features_initialization.cc$|
+                ^cobalt/shell/app/resource.h$|
+                ^starboard/shared/uikit/.*\.h$|
+                ^starboard/shared/starboard/starboard_feature_test.cc$|
+                ^starboard/shared/starboard/link_receiver.cc$
             )
+        additional_dependencies: ['cpplint==2.0.2']
     -   id: yapf
         name: yapf
-        description: Run yapf (the python formatter) in-place on changed files.
         entry: yapf
-        language: system
+        language: python
         types: [python]
         args: [-i, -vv]
+        additional_dependencies: ['yapf==0.40.2']
     -   id: pylint
         name: pylint
         entry: pylint
-        language: system
+        language: python
         types: [python]
         args: [-d W0201]
+        additional_dependencies: ['pylint==3.3.1']
+    -   id: python3-compatibility-check
+        name: Python 3 Compatibility Check
+        entry: python3 ./cobalt/precommit/python3_check.py
+        language: python
+        types: [python]
     -   id: google-java-format
         name: google-java-format
-        entry: python ./precommit_hooks/google_java_format_wrapper.py
+        entry: python3 ./cobalt/precommit/google_java_format_wrapper.py
         language: python
         types: [java]
         args: [-i]
-    -   id: gcheckstyle
-        name: Lint Java With gcheckstyle
-        entry: python ./precommit_hooks/gcheckstyle_wrapper.py
-        language: python
-        types: [java]
-        verbose: true
-    -   id: check-copyright-year
-        name: check copyright year
-        entry: python ./precommit_hooks/check_copyright_year.py
-        language: python
-        types: [file, text]
-        stages: []
+        # (TODO:b/454687024) Re-enable. Temporarily disabled post m138 merge
+        # due to unintended update of java code formatting rules
         exclude: |
             (?x)^(
-                .pylintrc$|
-                .pre-commit-config.yaml$|
-                cobalt/base/unicode/|
-                cobalt/demos/content/|
-                cobalt/layout_tests/testdata/|
-                cobalt/math/|
-                cobalt/media/|
-                cobalt/streams/|
-                cobalt/webdriver/screencast/|
-                cobalt/websocket/|
-                components/crx_file/|
-                content/|
-                internal/starboard/shared/glimp/|
-                starboard/contrib/RDK/|
-                nb/|
-                starboard/content/fonts/LICENSES.txt |
-                starboard/android/apk/gradlew|
-                starboard/android/apk/app/src/main/java/dev/cobalt/media/MediaDrmBridge.java$|
-                starboard/shared/starboard/player/filter/decoded_audio_queue.cc$|
-                starboard/shared/starboard/player/filter/decoded_audio_queue.h$|
-                starboard/shared/starboard/player/testdata/licences/|
-                starboard/shared/starboard/player/filter/wsola_internal.cc$
-                starboard/contrib/rdk/src/third_party/starboard/rdk/|
+                starboard/|
+                cobalt/
             )
-        exclude_types: [markdown]
-        verbose: true
-    -   id: check-if-starboard-interface-changed
-        name: check if starboard interface changed
-        entry: python ./precommit_hooks/warn_that_starboard_interface_changed_wrapper.py
+    -   id: gcheckstyle
+        name: gcheckstyle
+        entry: python3 ./cobalt/precommit/gcheckstyle_wrapper.py
         language: python
-        files: '^starboard/[^/]+\.h$'
-        stages: [push]
-    -   id: download-resources
-        name: download resources
-        entry: python ./download_resources.py
-        language: python
-        stages: [post-checkout]
-        always_run: true
-    -   id: test-download-from-gcs-helper
-        name: test download from gcs helper
-        entry: python
-        language: python
-        pass_filenames: false
-        always_run: true
-        stages: [push]
-        args: [-m, unittest, tools/download_from_gcs_test.py]
-    -   id: test-python3-compatibility
-        name: Test Python 3 Compatibility
-        description: Checks that scripts can be run in Python 3
-        entry: python precommit_hooks/python3_check.py
-        language: python
-        types: [python]
-        verbose: true
-    -   id: check-bug-in-commit-message
-        name: Check Bug In Commit Message
-        description: Checks for a tracking bug in a commit message
-        entry: python precommit_hooks/check_bug_in_description_wrapper.py
-        language: python
-        stages: [push]
-        always_run: true
-        pass_filenames: false
+        exclude: |
+            (?x)^(
+                starboard/android/apk/app/src/main/java/dev/cobalt/storage/StorageProto.java|
+                cobalt/android/apk/app/src/org/chromium/content_shell/Util.java|
+                cobalt/android/apk/app/src/org/chromium/content_shell/Shell.java|
+                cobalt/android/apk/app/src/org/chromium/content_shell/ShellManager.java
+            )
+        types: [java]
     -   id: gn-format
-        name: GN format
+        name: gn-format
         entry: gn format
         language: system
         files: '.*\.gni?$'

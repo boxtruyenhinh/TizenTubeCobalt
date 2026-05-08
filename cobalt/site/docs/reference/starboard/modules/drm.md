@@ -385,7 +385,7 @@ system, or when the drm system implementation fails to retrieve the metrics.
 #### Declaration
 
 ```
-const void* SbDrmGetMetrics(SbDrmSystem drm_system, int *size)
+const void * SbDrmGetMetrics(SbDrmSystem drm_system, int *size)
 ```
 
 ### SbDrmIsServerCertificateUpdatable
@@ -410,7 +410,7 @@ Indicates whether `drm_system` is a valid SbDrmSystem.
 #### Declaration
 
 ```
-static bool SbDrmSystemIsValid(SbDrmSystem drm)
+bool SbDrmSystemIsValid(SbDrmSystem drm)
 ```
 
 ### SbDrmTicketIsValid
@@ -420,7 +420,7 @@ Indicates whether `ticket` is a valid ticket.
 #### Declaration
 
 ```
-static bool SbDrmTicketIsValid(int ticket)
+bool SbDrmTicketIsValid(int ticket)
 ```
 
 ### SbDrmUpdateServerCertificate

@@ -1,4 +1,4 @@
-// Copyright 2023 The Cobalt Authors. All Rights Reserved.
+// Copyright 2025 The Cobalt Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,22 +14,20 @@
 
 #include "cobalt/browser/metrics/cobalt_metrics_log_uploader.h"
 
-#include <memory>
-
 #include "base/base64url.h"
+#include "base/functional/bind.h"
 #include "base/logging.h"
-#include "cobalt/base/event_dispatcher.h"
-#include "cobalt/base/on_metric_upload_event.h"
-#include "cobalt/h5vcc/h5vcc_metric_type.h"
+#include "cobalt/browser/h5vcc_metrics/public/mojom/h5vcc_metrics.mojom.h"
 #include "components/metrics/log_decoder.h"
 #include "components/metrics/metrics_log_uploader.h"
+#include "mojo/public/cpp/bindings/remote.h"
 #include "third_party/metrics_proto/chrome_user_metrics_extension.pb.h"
 #include "third_party/metrics_proto/cobalt_uma_event.pb.h"
 #include "third_party/metrics_proto/reporting_info.pb.h"
 
 namespace cobalt {
-namespace browser {
-namespace metrics {
+
+using browser::metrics::CobaltUMAEvent;
 
 // Helper method to create a trimmed down and sanitized version of the UMA
 // proto for Cobalt
@@ -43,53 +41,54 @@ void PopulateCobaltUmaEvent(
   cobalt_proto.mutable_reporting_info()->CopyFrom(reporting_info_proto);
 }
 
-CobaltMetricsLogUploader::CobaltMetricsLogUploader(
-    ::metrics::MetricsLogUploader::MetricServiceType service_type,
-    const ::metrics::MetricsLogUploader::UploadCallback& on_upload_complete)
-    : service_type_(service_type), on_upload_complete_(on_upload_complete) {}
-
 void CobaltMetricsLogUploader::UploadLog(
-    const std::string& compressed_log_data, const std::string& log_hash,
-    const ::metrics::ReportingInfo& reporting_info) {
-  if (service_type_ == ::metrics::MetricsLogUploader::UMA) {
-    if (event_dispatcher_ != nullptr) {
-      std::string uncompressed_serialized_proto;
-      ::metrics::DecodeLogData(compressed_log_data,
-                               &uncompressed_serialized_proto);
+    const std::string& compressed_log_data,
+    const metrics::LogMetadata& log_metadata,
+    const std::string& log_hash,
+    const std::string& log_signature,
+    const metrics::ReportingInfo& reporting_info) {
+  // Always run the upload complete callback as a success. Arguments to callback
+  // don't matter much here as we're not really doing anything but forwarding to
+  // the H5vcc API.
+  base::ScopedClosureRunner closure(
+      base::BindOnce(on_upload_complete_, /*status*/ 200, /* error_code */ 0,
+                     /*was_https*/ true, false, ""));
 
-      ::metrics::ChromeUserMetricsExtension uma_event;
-      uma_event.ParseFromString(uncompressed_serialized_proto);
-      CobaltUMAEvent cobalt_uma_event;
-      PopulateCobaltUmaEvent(uma_event, reporting_info, cobalt_uma_event);
-      LOG(INFO) << "Publishing Cobalt metrics upload event. Type: "
-                << h5vcc::H5vccMetricType::kH5vccMetricTypeCobaltUma;
-      std::string base64_encoded_proto;
-      // Base64 encode the payload as web client's can't consume it without
-      // corrupting the data (see b/293431381). Also, use a URL/web safe
-      // encoding so it can be safely included in any web network request.
-      base::Base64UrlEncode(cobalt_uma_event.SerializeAsString(),
-                            base::Base64UrlEncodePolicy::INCLUDE_PADDING,
-                            &base64_encoded_proto);
-
-      event_dispatcher_->DispatchEvent(
-          std::unique_ptr<base::Event>(new base::OnMetricUploadEvent(
-              h5vcc::H5vccMetricType::kH5vccMetricTypeCobaltUma,
-              base64_encoded_proto)));
-    }
+  if (!metrics_listener_.is_bound()) {
+    return;
   }
 
-  // Arguments to callback don't matter much here as we're not really doing
-  // anything but forwarding to the H5vcc API. Run(http response code, net
-  // code, and was https).
-  on_upload_complete_.Run(/*status*/ 200, /* error_code */ 0,
-                          /*was_https*/ true);
+  // For now, we only support UMA.
+  if (service_type_ != ::metrics::MetricsLogUploader::MetricServiceType::UMA) {
+    return;
+  }
+
+  std::string uncompressed_serialized_proto;
+  ::metrics::DecodeLogData(compressed_log_data, &uncompressed_serialized_proto);
+  ::metrics::ChromeUserMetricsExtension uma_event;
+  uma_event.ParseFromString(uncompressed_serialized_proto);
+  CobaltUMAEvent cobalt_uma_event;
+  PopulateCobaltUmaEvent(uma_event, reporting_info, cobalt_uma_event);
+  std::string base64_encoded_proto;
+  // Base64 encode the payload as web client's can't consume it without
+  // corrupting the data (see b/293431381). Also, use a URL/web safe
+  // encoding so it can be safely included in any web network request.
+  base::Base64UrlEncode(cobalt_uma_event.SerializeAsString(),
+                        base::Base64UrlEncodePolicy::INCLUDE_PADDING,
+                        &base64_encoded_proto);
+  DLOG(INFO) << "UMA Payload uploading! Hash: " << log_hash;
+  metrics_listener_->OnMetrics(
+      h5vcc_metrics::mojom::H5vccMetricType::kCobaltUma, base64_encoded_proto);
 }
 
-void CobaltMetricsLogUploader::SetEventDispatcher(
-    const base::EventDispatcher* event_dispatcher) {
-  event_dispatcher_ = event_dispatcher;
+void CobaltMetricsLogUploader::SetMetricsListener(
+    ::mojo::PendingRemote<::h5vcc_metrics::mojom::MetricsListener> listener) {
+  metrics_listener_.Bind(std::move(listener));
+  metrics_listener_.set_disconnect_handler(base::BindOnce(
+      &CobaltMetricsLogUploader::OnCloseConnection, GetWeakPtr()));
 }
 
-}  // namespace metrics
-}  // namespace browser
+void CobaltMetricsLogUploader::OnCloseConnection() {
+  metrics_listener_.reset();
+}
 }  // namespace cobalt

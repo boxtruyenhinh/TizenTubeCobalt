@@ -8,19 +8,26 @@
 #ifndef SkSGText_DEFINED
 #define SkSGText_DEFINED
 
-#include "modules/sksg/include/SkSGGeometryNode.h"
-
 #include "include/core/SkFont.h"
+#include "include/core/SkFontTypes.h"
+#include "include/core/SkPath.h"
 #include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkString.h"
-#include "include/core/SkTextBlob.h"
 #include "include/utils/SkTextUtils.h"
+#include "modules/sksg/include/SkSGGeometryNode.h"
+#include "modules/sksg/include/SkSGNode.h"
 
 class SkCanvas;
+class SkMatrix;
 class SkPaint;
+class SkTextBlob;
 class SkTypeface;
 
 namespace sksg {
+class InvalidationController;
 
 /**
  * Concrete Geometry node, wrapping a (shaped) SkTextBlob.
@@ -70,33 +77,6 @@ private:
     using INHERITED = GeometryNode;
 };
 
-/**
- * Concrete Geometry node, wrapping an external SkTextBlob.
- */
-class TextBlob final : public GeometryNode {
-public:
-    static sk_sp<TextBlob> Make(sk_sp<SkTextBlob> = nullptr);
-    ~TextBlob() override;
-
-    SG_ATTRIBUTE(Blob    , sk_sp<SkTextBlob>, fBlob    )
-    SG_ATTRIBUTE(Position, SkPoint          , fPosition)
-
-protected:
-    void onClip(SkCanvas*, bool antiAlias) const override;
-    void onDraw(SkCanvas*, const SkPaint&) const override;
-    bool onContains(const SkPoint&)        const override;
-
-    SkRect onRevalidate(InvalidationController*, const SkMatrix&) override;
-    SkPath onAsPath() const override;
-
-private:
-    explicit TextBlob(sk_sp<SkTextBlob>);
-
-    sk_sp<SkTextBlob> fBlob;
-    SkPoint           fPosition = SkPoint::Make(0, 0);
-
-    using INHERITED = GeometryNode;
-};
 } // namespace sksg
 
 #endif // SkSGText_DEFINED

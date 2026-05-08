@@ -15,9 +15,15 @@ const ASSEMBLE_INTERFACE_GL_ES = `/*
  * be overwritten.
  */
 
-#include "include/gpu/gl/GrGLAssembleHelpers.h"
-#include "include/gpu/gl/GrGLAssembleInterface.h"
-#include "src/gpu/gl/GrGLUtil.h"
+#include "include/core/SkRefCnt.h"
+#include "include/gpu/ganesh/gl/GrGLAssembleHelpers.h"
+#include "include/gpu/ganesh/gl/GrGLAssembleInterface.h"
+#include "include/gpu/ganesh/gl/GrGLExtensions.h"
+#include "include/gpu/ganesh/gl/GrGLFunctions.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
+#include "include/gpu/ganesh/gl/GrGLTypes.h"
+#include "src/gpu/ganesh/gl/GrGLDefines.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
 
 #define GET_PROC(F) functions->f##F = (GrGL##F##Fn*)get(ctx, "gl" #F)
 #define GET_PROC_SUFFIX(F, S) functions->f##F = (GrGL##F##Fn*)get(ctx, "gl" #F #S)
@@ -76,7 +82,7 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLESInterface(void *ctx, GrGLGetProc
     interface->fStandard = kGLES_GrGLStandard;
     interface->fExtensions.swap(&extensions);
 
-    return std::move(interface);
+    return interface;
 }
 #endif
 `
@@ -92,9 +98,15 @@ const ASSEMBLE_INTERFACE_GL = `/*
  * be overwritten.
  */
 
-#include "include/gpu/gl/GrGLAssembleHelpers.h"
-#include "include/gpu/gl/GrGLAssembleInterface.h"
-#include "src/gpu/gl/GrGLUtil.h"
+#include "include/core/SkRefCnt.h"
+#include "include/gpu/ganesh/gl/GrGLAssembleHelpers.h"
+#include "include/gpu/ganesh/gl/GrGLAssembleInterface.h"
+#include "include/gpu/ganesh/gl/GrGLExtensions.h"
+#include "include/gpu/ganesh/gl/GrGLFunctions.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
+#include "include/gpu/ganesh/gl/GrGLTypes.h"
+#include "src/gpu/ganesh/gl/GrGLDefines.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
 
 #define GET_PROC(F) functions->f##F = (GrGL##F##Fn*)get(ctx, "gl" #F)
 #define GET_PROC_SUFFIX(F, S) functions->f##F = (GrGL##F##Fn*)get(ctx, "gl" #F #S)
@@ -143,7 +155,7 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLInterface(void *ctx, GrGLGetProc g
     interface->fStandard = kGL_GrGLStandard;
     interface->fExtensions.swap(&extensions);
 
-    return std::move(interface);
+    return interface;
 }
 #endif
 `
@@ -158,16 +170,18 @@ const ASSEMBLE_INTERFACE_WEBGL = `/*
  * Make edits to tools/gpu/gl/interface/templates.go or they will
  * be overwritten.
  */
+#include "include/core/SkRefCnt.h"
+#include "include/gpu/ganesh/gl/GrGLAssembleInterface.h"
 
-#include "include/gpu/gl/GrGLAssembleHelpers.h"
-#include "include/gpu/gl/GrGLAssembleInterface.h"
-#include "src/gpu/gl/GrGLUtil.h"
-
-#if SK_DISABLE_WEBGL_INTERFACE || !defined(SK_USE_WEBGL)
+#if SK_DISABLE_WEBGL_INTERFACE || !defined(__EMSCRIPTEN__)
+struct GrGLInterface;
 sk_sp<const GrGLInterface> GrGLMakeAssembledWebGLInterface(void *ctx, GrGLGetProc get) {
     return nullptr;
 }
 #else
+
+#include "include/gpu/ganesh/gl/GrGLAssembleHelpers.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
 
 // Located https://github.com/emscripten-core/emscripten/tree/7ba7700902c46734987585409502f3c63beb650f/system/include/webgl
 #include <webgl/webgl1.h>
@@ -178,30 +192,15 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledWebGLInterface(void *ctx, GrGLGetPro
 #define GET_PROC(F) functions->f##F = emscripten_gl##F
 #define GET_PROC_SUFFIX(F, S) functions->f##F = emscripten_gl##F##S
 
-// Adapter from standard GL signature to emscripten.
-void emscripten_glWaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout) {
-    uint32_t timeoutLo = timeout;
-    uint32_t timeoutHi = timeout >> 32;
-    emscripten_glWaitSync(sync, flags, timeoutLo, timeoutHi);
-}
-
-// Adapter from standard GL signature to emscripten.
-GLenum emscripten_glClientWaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout) {
-    uint32_t timeoutLo = timeout;
-    uint32_t timeoutHi = timeout >> 32;
-    return emscripten_glClientWaitSync(sync, flags, timeoutLo, timeoutHi);
-}
-
 sk_sp<const GrGLInterface> GrGLMakeAssembledWebGLInterface(void *ctx, GrGLGetProc get) {
-    const char* verStr = reinterpret_cast<const char*>(emscripten_glGetString(GR_GL_VERSION));
+    const char* verStr = reinterpret_cast<const char*>(glGetString(GR_GL_VERSION));
     GrGLVersion glVer = GrGLGetVersionFromString(verStr);
     if (glVer < GR_GL_VER(1,0)) {
         return nullptr;
     }
 
     GrGLExtensions extensions;
-    if (!extensions.init(kWebGL_GrGLStandard, emscripten_glGetString, emscripten_glGetStringi,
-                         emscripten_glGetIntegerv)) {
+    if (!extensions.init(kWebGL_GrGLStandard, glGetString, glGetStringi, glGetIntegerv)) {
         return nullptr;
     }
 
@@ -215,7 +214,7 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledWebGLInterface(void *ctx, GrGLGetPro
     interface->fStandard = kWebGL_GrGLStandard;
     interface->fExtensions.swap(&extensions);
 
-    return std::move(interface);
+    return interface;
 }
 #endif
 `
@@ -231,11 +230,14 @@ const VALIDATE_INTERFACE = `/*
  * be overwritten.
  */
 
-#include "include/gpu/gl/GrGLExtensions.h"
-#include "include/gpu/gl/GrGLInterface.h"
-#include "src/gpu/gl/GrGLUtil.h"
-
-#include <stdio.h>
+#include "include/gpu/ganesh/gl/GrGLConfig.h"
+#include "include/gpu/ganesh/gl/GrGLExtensions.h"
+#include "include/gpu/ganesh/gl/GrGLFunctions.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
+#include "include/gpu/ganesh/gl/GrGLTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "src/gpu/ganesh/gl/GrGLDefines.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
 
 GrGLInterface::GrGLInterface() {
     fStandard = kNone_GrGLStandard;
@@ -313,11 +315,11 @@ bool GrGLInterface::validate() const {
     return true;
 }
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
 
 void GrGLInterface::abandon() const {
     const_cast<GrGLInterface*>(this)->fFunctions = GrGLInterface::Functions();
 }
 
-#endif // GR_TEST_UTILS
+#endif // defined(GPU_TEST_UTILS)
 `

@@ -12,13 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "starboard/player.h"
-
 #include "starboard/configuration.h"
 #include "starboard/nplb/player_creation_param_helpers.h"
+#include "starboard/player.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -56,9 +54,7 @@ TEST(SbPlayerGetPreferredOutputModeTest, AllCodecs) {
       kSbMediaAudioCodecMp3,
       kSbMediaAudioCodecFlac,
       kSbMediaAudioCodecPcm,
-#if SB_API_VERSION >= 15
       kSbMediaAudioCodecIamf,
-#endif  // SB_API_VERSION >= 15
   };
   const SbMediaVideoCodec kVideoCodecs[] = {
       kSbMediaVideoCodecNone,
@@ -70,6 +66,7 @@ TEST(SbPlayerGetPreferredOutputModeTest, AllCodecs) {
       kSbMediaVideoCodecAv1,
       kSbMediaVideoCodecVp8,
       kSbMediaVideoCodecVp9,
+      kSbMediaVideoCodecAv2,
   };
   const SbPlayerOutputMode kOutputModes[] = {
       kSbPlayerOutputModeDecodeToTexture,
@@ -91,4 +88,3 @@ TEST(SbPlayerGetPreferredOutputModeTest, AllCodecs) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

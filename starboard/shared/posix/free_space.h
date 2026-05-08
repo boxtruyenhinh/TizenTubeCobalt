@@ -16,13 +16,9 @@
 #define STARBOARD_SHARED_POSIX_FREE_SPACE_H_
 
 namespace starboard {
-namespace shared {
-namespace posix {
 
 const void* GetFreeSpaceApi();
 
-}  // namespace posix
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_POSIX_FREE_SPACE_H_

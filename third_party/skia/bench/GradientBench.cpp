@@ -7,11 +7,11 @@
 #include "bench/Benchmark.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkString.h"
 #include "include/effects/SkGradientShader.h"
+#include "src/core/SkColorPriv.h"
 
 #include "tools/ToolUtils.h"
 
@@ -217,8 +217,8 @@ protected:
         return fName.c_str();
     }
 
-    SkIPoint onGetSize() override {
-        return SkIPoint::Make(kSize, kSize);
+    SkISize onGetSize() override {
+        return SkISize::Make(kSize, kSize);
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
@@ -341,7 +341,7 @@ protected:
                 SkColorSetARGB(alpha, gray, gray, gray),
                 SK_ColorWHITE };
             paint.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr,
-                                                         SK_ARRAY_COUNT(colors),
+                                                         std::size(colors),
                                                          SkTileMode::kClamp));
             canvas->drawRect(r, paint);
         }

@@ -259,6 +259,9 @@ sr_Latn{
         "America:Chihuahua"{
             ec{"Čihuahua"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"Siudad Huarez"}
+        }
         "America:Coral_Harbour"{
             ec{"Koral Harbur"}
         }
@@ -1224,6 +1227,9 @@ sr_Latn{
         "Pacific:Johnston"{
             ec{"Džonston"}
         }
+        "Pacific:Kanton"{
+            ec{"Kanton"}
+        }
         "Pacific:Kiritimati"{
             ec{"Kiritimati"}
         }
@@ -1948,11 +1954,9 @@ sr_Latn{
             lg{"Jekaterinburg vreme"}
             ls{"Jekaterinburg, standardno vreme"}
         }
-        fallbackFormat{"{1} ({0})"}
-        gmtFormat{"GMT{0}"}
-        gmtZeroFormat{"GMT"}
-        hourFormat{"+HH:mm;-HH:mm"}
-        regionFormat{"{0}"}
+        "meta:Yukon"{
+            ls{"Jukon"}
+        }
         regionFormatDaylight{"{0}, letnje vreme"}
         regionFormatStandard{"{0}, standardno vreme"}
     }

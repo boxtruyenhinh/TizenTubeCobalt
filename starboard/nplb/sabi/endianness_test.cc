@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "starboard/types.h"
+#include <cstdint>
+
+#include "starboard/configuration.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
-namespace sabi {
+namespace nplb {
 namespace {
 
 static constexpr int32_t kCobalt21 = 0xC0BA1721;
@@ -35,5 +36,4 @@ TEST(SbSabiEndiannessTest, Endianness) {
   }
 }
 
-}  // namespace sabi
-}  // namespace starboard
+}  // namespace nplb

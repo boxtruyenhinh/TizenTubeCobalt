@@ -5,7 +5,6 @@
 //
 
 // SurfaceD3D.cpp: D3D implementation of an EGL surface
-#include <Mfobjects.h>
 
 #include "libANGLE/renderer/d3d/SurfaceD3D.h"
 
@@ -17,26 +16,10 @@
 #include "libANGLE/renderer/d3d/RenderTargetD3D.h"
 #include "libANGLE/renderer/d3d/RendererD3D.h"
 #include "libANGLE/renderer/d3d/SwapChainD3D.h"
-#include "libANGLE/renderer/d3d/d3d11/formatutils11.h"
 
 #include <EGL/eglext.h>
 #include <tchar.h>
 #include <algorithm>
-
-// A key for ID3D11DeviceChild. The value should be a bool.
-// When set and true, indicates that the NV12 texture passed
-// in eglCreatePbufferFromClientBuffer EGL_D3D_TEXTURE_ANGLE should
-// draw it's chroma component when a ShaderResourceView is created for it.
-// If absent or false, the luma component is drawn.
-//
-// The value is fetched from ID3D11DeviceChild and stored before
-// eglCreatePbufferFromClientBuffer returns.
-//
-// {3C3A43AB-C69B-46C9-AA8D-B0CFFCD4596D}
-static const GUID kCobaltNv12BindChroma = {0x3c3a43ab,
-                                           0xc69b,
-                                           0x46c9,
-                                           {0xaa, 0x8d, 0xb0, 0xcf, 0xfc, 0xd4, 0x59, 0x6d}};
 
 namespace rx
 {
@@ -66,8 +49,7 @@ SurfaceD3D::SurfaceD3D(const egl::SurfaceState &state,
       mSwapInterval(1),
       mShareHandle(0),
       mD3DTexture(nullptr),
-      mBuftype(buftype),
-      mBindChroma(false)
+      mBuftype(buftype)
 {
     if (window != nullptr && !mFixedSize)
     {
@@ -88,12 +70,10 @@ SurfaceD3D::SurfaceD3D(const egl::SurfaceState &state,
             break;
 
         case EGL_D3D_TEXTURE_ANGLE:
-        {
             mD3DTexture = static_cast<IUnknown *>(clientBuffer);
             ASSERT(mD3DTexture != nullptr);
             mD3DTexture->AddRef();
             break;
-        }
 
         default:
             break;
@@ -118,27 +98,22 @@ egl::Error SurfaceD3D::initialize(const egl::Display *display)
     {
         if (!mNativeWindow->initialize())
         {
-            return egl::EglBadSurface();
+            return egl::Error(EGL_BAD_SURFACE);
         }
     }
 
     if (mBuftype == EGL_D3D_TEXTURE_ANGLE)
     {
-        UINT out;
-        HRESULT hr = static_cast<ID3D11DeviceChild *>(mD3DTexture)
-                         ->GetPrivateData(kCobaltNv12BindChroma, &out, nullptr);
-        mBindChroma = (SUCCEEDED(hr)) && (out != 0);
-
         ANGLE_TRY(mRenderer->getD3DTextureInfo(mState.config, mD3DTexture, mState.attributes,
                                                &mFixedWidth, &mFixedHeight, nullptr, nullptr,
-                                               &mColorFormat));
+                                               &mColorFormat, nullptr));
         if (mState.attributes.contains(EGL_GL_COLORSPACE))
         {
             if (mColorFormat->id != angle::FormatID::R8G8B8A8_TYPELESS &&
                 mColorFormat->id != angle::FormatID::B8G8R8A8_TYPELESS)
             {
-                return egl::EglBadMatch()
-                       << "EGL_GL_COLORSPACE may only be specified for TYPELESS textures";
+                return egl::Error(EGL_BAD_MATCH,
+                                  "EGL_GL_COLORSPACE may only be specified for TYPELESS textures");
             }
         }
         if (mColorFormat->id == angle::FormatID::R8G8B8A8_TYPELESS)
@@ -160,28 +135,10 @@ egl::Error SurfaceD3D::initialize(const egl::Display *display)
             }
         }
         mRenderTargetFormat = mColorFormat->fboImplementationInternalFormat;
-
-        ID3D11Texture2D *d3Texture = static_cast<ID3D11Texture2D *>(mD3DTexture);
-        D3D11_TEXTURE2D_DESC texture_desc;
-        d3Texture->GetDesc(&texture_desc);
-        if (texture_desc.Format == DXGI_FORMAT_NV12)
-        {
-            // NV12 textures cannot be rendered to,
-            // so don't proceed to making a swap chain.
-            mWidth  = mFixedWidth;
-            mHeight = mFixedHeight;
-            return egl::NoError();
-        }
     }
 
     ANGLE_TRY(resetSwapChain(display));
     return egl::NoError();
-}
-
-FramebufferImpl *SurfaceD3D::createDefaultFramebuffer(const gl::Context *context,
-                                                      const gl::FramebufferState &data)
-{
-    return mRenderer->createDefaultFramebuffer(data);
 }
 
 egl::Error SurfaceD3D::bindTexImage(const gl::Context *, gl::Texture *, EGLint)
@@ -198,11 +155,17 @@ egl::Error SurfaceD3D::getSyncValues(EGLuint64KHR *ust, EGLuint64KHR *msc, EGLui
 {
     if (!mState.directComposition)
     {
-        return egl::EglBadSurface()
-               << "getSyncValues: surface requires Direct Composition to be enabled";
+        return egl::Error(EGL_BAD_SURFACE,
+                          "getSyncValues: surface requires Direct Composition to be enabled");
     }
 
     return mSwapChain->getSyncValues(ust, msc, sbc);
+}
+
+egl::Error SurfaceD3D::getMscRate(EGLint *numerator, EGLint *denominator)
+{
+    UNIMPLEMENTED();
+    return egl::Error(EGL_BAD_ACCESS);
 }
 
 egl::Error SurfaceD3D::resetSwapChain(const egl::Display *display)
@@ -219,7 +182,7 @@ egl::Error SurfaceD3D::resetSwapChain(const egl::Display *display)
         {
             ASSERT(false);
 
-            return egl::EglBadSurface() << "Could not retrieve the window dimensions";
+            return egl::Error(EGL_BAD_SURFACE, "Could not retrieve the window dimensions");
         }
 
         width  = windowRect.right - windowRect.left;
@@ -237,7 +200,7 @@ egl::Error SurfaceD3D::resetSwapChain(const egl::Display *display)
                                    mDepthStencilFormat, mOrientation, mState.config->samples);
     if (!mSwapChain)
     {
-        return egl::EglBadAlloc();
+        return egl::Error(EGL_BAD_ALLOC);
     }
 
     // This is a bit risky to pass the proxy context here, but it can happen at almost any time.
@@ -387,7 +350,7 @@ egl::Error SurfaceD3D::checkForOutOfDateSwapChain(DisplayD3D *displayD3D)
     return egl::NoError();
 }
 
-egl::Error SurfaceD3D::swap(const gl::Context *context)
+egl::Error SurfaceD3D::swap(const gl::Context *context, SurfaceSwapFeedback *feedback)
 {
     DisplayD3D *displayD3D = GetImplAs<DisplayD3D>(context->getDisplay());
     return swapRect(displayD3D, 0, 0, mWidth, mHeight);
@@ -408,7 +371,7 @@ rx::SwapChainD3D *SurfaceD3D::getSwapChain() const
     return mSwapChain;
 }
 
-void SurfaceD3D::setSwapInterval(EGLint interval)
+void SurfaceD3D::setSwapInterval(const egl::Display *display, EGLint interval)
 {
     if (mSwapInterval == interval)
     {
@@ -466,9 +429,20 @@ egl::Error SurfaceD3D::querySurfacePointerANGLE(EGLint attribute, void **value)
     return egl::NoError();
 }
 
-const angle::Format *SurfaceD3D::getD3DTextureColorFormat() const
+const angle::Format *SurfaceD3D::getClientBufferTextureColorFormat() const
 {
     return mColorFormat;
+}
+
+egl::Error SurfaceD3D::attachToFramebuffer(const gl::Context *context, gl::Framebuffer *framebuffer)
+{
+    return egl::NoError();
+}
+
+egl::Error SurfaceD3D::detachFromFramebuffer(const gl::Context *context,
+                                             gl::Framebuffer *framebuffer)
+{
+    return egl::NoError();
 }
 
 angle::Result SurfaceD3D::getAttachmentRenderTarget(const gl::Context *context,
@@ -489,15 +463,26 @@ angle::Result SurfaceD3D::getAttachmentRenderTarget(const gl::Context *context,
 }
 
 angle::Result SurfaceD3D::initializeContents(const gl::Context *context,
+                                             GLenum binding,
                                              const gl::ImageIndex &imageIndex)
 {
-    if (mState.config->renderTargetFormat != GL_NONE)
+    switch (binding)
     {
-        ANGLE_TRY(mRenderer->initRenderTarget(context, mSwapChain->getColorRenderTarget()));
-    }
-    if (mState.config->depthStencilFormat != GL_NONE)
-    {
-        ANGLE_TRY(mRenderer->initRenderTarget(context, mSwapChain->getDepthStencilRenderTarget()));
+        case GL_BACK:
+            ASSERT(mState.config->renderTargetFormat != GL_NONE);
+            ANGLE_TRY(mRenderer->initRenderTarget(context, mSwapChain->getColorRenderTarget()));
+            break;
+
+        case GL_DEPTH:
+        case GL_STENCIL:
+            ASSERT(mState.config->depthStencilFormat != GL_NONE);
+            ANGLE_TRY(
+                mRenderer->initRenderTarget(context, mSwapChain->getDepthStencilRenderTarget()));
+            break;
+
+        default:
+            UNREACHABLE();
+            break;
     }
     return angle::Result::Continue;
 }

@@ -16,21 +16,20 @@
 #define STARBOARD_ANDROID_SHARED_MEDIA_CAPABILITIES_CACHE_H_
 
 #include <jni.h>
+
 #include <atomic>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <vector>
 
-#include "starboard/android/shared/jni_env_ext.h"
-#include "starboard/common/mutex.h"
 #include "starboard/media.h"
 #include "starboard/shared/internal_only.h"
+#include "third_party/jni_zero/jni_zero.h"
 
 namespace starboard {
-namespace android {
-namespace shared {
 
 // TODO: encapsulate a common Range class.
 struct Range {
@@ -44,7 +43,8 @@ struct Range {
 
 class CodecCapability {
  public:
-  CodecCapability(JniEnvExt* env, jobject j_codec_info);
+  CodecCapability(JNIEnv* env,
+                  jni_zero::ScopedJavaLocalRef<jobject>& j_codec_info);
   virtual ~CodecCapability() {}
 
   const std::string& name() const { return name_; }
@@ -53,39 +53,56 @@ class CodecCapability {
   bool is_tunnel_mode_required() const { return is_tunnel_mode_required_; }
   bool is_tunnel_mode_supported() const { return is_tunnel_mode_supported_; }
 
+ protected:
+  CodecCapability(std::string name,
+                  bool is_secure_req,
+                  bool is_secure_sup,
+                  bool is_tunnel_req,
+                  bool is_tunnel_sup);
+
  private:
   CodecCapability(const CodecCapability&) = delete;
   CodecCapability& operator=(const CodecCapability&) = delete;
 
-  std::string name_;
-  bool is_secure_required_;
-  bool is_secure_supported_;
-  bool is_tunnel_mode_required_;
-  bool is_tunnel_mode_supported_;
+  const std::string name_;
+  const bool is_secure_required_;
+  const bool is_secure_supported_;
+  const bool is_tunnel_mode_required_;
+  const bool is_tunnel_mode_supported_;
 };
 
 class AudioCodecCapability : public CodecCapability {
  public:
-  AudioCodecCapability(JniEnvExt* env,
-                       jobject j_codec_info,
-                       jobject j_audio_capabilities);
+  AudioCodecCapability(
+      JNIEnv* env,
+      jni_zero::ScopedJavaLocalRef<jobject>& j_codec_info,
+      jni_zero::ScopedJavaLocalRef<jobject>& j_audio_capabilities);
   ~AudioCodecCapability() override {}
 
   bool IsBitrateSupported(int bitrate) const;
+
+ protected:
+  AudioCodecCapability(std::string name,
+                       bool is_secure_req,
+                       bool is_secure_sup,
+                       bool is_tunnel_req,
+                       bool is_tunnel_sup,
+                       Range supported_bitrates);
 
  private:
   AudioCodecCapability(const AudioCodecCapability&) = delete;
   AudioCodecCapability& operator=(const AudioCodecCapability&) = delete;
 
-  Range supported_bitrates_;
+  const Range supported_bitrates_;
 };
 
 class VideoCodecCapability : public CodecCapability {
  public:
-  VideoCodecCapability(JniEnvExt* env,
-                       jobject j_codec_info,
-                       jobject j_video_capabilities);
-  ~VideoCodecCapability() override;
+  VideoCodecCapability(
+      JNIEnv* env,
+      jni_zero::ScopedJavaLocalRef<jobject>& j_codec_info,
+      jni_zero::ScopedJavaLocalRef<jobject>& j_video_capabilities);
+  ~VideoCodecCapability() override {}
 
   bool is_software_decoder() const { return is_software_decoder_; }
   bool is_hdr_capable() const { return is_hdr_capable_; }
@@ -98,31 +115,74 @@ class VideoCodecCapability : public CodecCapability {
   // supportability.
   bool AreResolutionAndRateSupported(int frame_width,
                                      int frame_height,
-                                     int fps);
+                                     int fps) const;
+
+ protected:
+  VideoCodecCapability(std::string name,
+                       bool is_secure_req,
+                       bool is_secure_sup,
+                       bool is_tunnel_req,
+                       bool is_tunnel_sup,
+                       bool is_software_decoder,
+                       bool is_hdr_capable,
+                       jni_zero::ScopedJavaGlobalRef<jobject> j_video_cap,
+                       Range supported_widths,
+                       Range supported_heights,
+                       Range supported_bitrates,
+                       Range supported_frame_rates);
 
  private:
   VideoCodecCapability(const VideoCodecCapability&) = delete;
   VideoCodecCapability& operator=(const VideoCodecCapability&) = delete;
 
-  bool is_software_decoder_;
-  bool is_hdr_capable_;
-  jobject j_video_capabilities_;
-  Range supported_widths_;
-  Range supported_heights_;
-  Range supported_bitrates_;
-  Range supported_frame_rates_;
+  const bool is_software_decoder_;
+  const bool is_hdr_capable_;
+  const jni_zero::ScopedJavaGlobalRef<jobject> j_video_capabilities_;
+  const Range supported_widths_;
+  const Range supported_heights_;
+  const Range supported_bitrates_;
+  const Range supported_frame_rates_;
+};
+
+class MediaCapabilitiesProvider {
+ public:
+  virtual ~MediaCapabilitiesProvider() = default;
+  virtual bool GetIsWidevineSupported() = 0;
+  virtual bool GetIsCbcsSchemeSupported() = 0;
+  virtual std::set<SbMediaTransferId> GetSupportedHdrTypes() = 0;
+  virtual bool GetIsPassthroughSupported(SbMediaAudioCodec codec) = 0;
+  virtual bool GetAudioConfiguration(
+      int index,
+      SbMediaAudioConfiguration* configuration) = 0;
+
+  typedef std::vector<std::unique_ptr<AudioCodecCapability>>
+      AudioCodecCapabilities;
+  typedef std::vector<std::unique_ptr<VideoCodecCapability>>
+      VideoCodecCapabilities;
+  virtual void GetCodecCapabilities(
+      std::map<std::string, AudioCodecCapabilities>& audio_codec_capabilities,
+      std::map<std::string, VideoCodecCapabilities>&
+          video_codec_capabilities) = 0;
 };
 
 class MediaCapabilitiesCache {
  public:
   static MediaCapabilitiesCache* GetInstance();
 
+  ~MediaCapabilitiesCache() = default;
   bool IsWidevineSupported();
   bool IsCbcsSchemeSupported();
 
   bool IsHDRTransferCharacteristicsSupported(SbMediaTransferId transfer_id);
 
   bool IsPassthroughSupported(SbMediaAudioCodec codec);
+
+  // Some android devices support av1 up to 8k30 and 4k60. In that case, we
+  // cannot ask it to always use max supported width and height, which would
+  // lead 8k60 being used and exceed system resource limit. See b/173575800.
+  // When IsAv18kCappedAt30() returns true, the device needs extra check of
+  // video fps to prevent 8k60 is used unexpectedly.
+  bool IsAv18kCappedAt30();
 
   bool GetAudioConfiguration(int index,
                              SbMediaAudioConfiguration* configuration);
@@ -152,21 +212,32 @@ class MediaCapabilitiesCache {
 
   bool IsEnabled() const { return is_enabled_; }
   void SetCacheEnabled(bool enabled) { is_enabled_ = enabled; }
+  void SetAv1OptEnabled(bool enabled) { is_av1_opt_enabled_ = enabled; }
+  void SetSoftwareDecoderEnabled(bool enabled) {
+    is_sw_decoder_enabled_ = enabled;
+  }
   void ClearCache() { capabilities_is_dirty_ = true; }
+
+ protected:
+  MediaCapabilitiesCache(
+      std::unique_ptr<MediaCapabilitiesProvider> media_capabilities_provider);
 
  private:
   MediaCapabilitiesCache();
-  ~MediaCapabilitiesCache() {}
 
   MediaCapabilitiesCache(const MediaCapabilitiesCache&) = delete;
   MediaCapabilitiesCache& operator=(const MediaCapabilitiesCache&) = delete;
 
   void UpdateMediaCapabilities_Locked();
   void LoadAudioConfigurations_Locked();
-  void LoadCodecInfos_Locked();
+  void LoadIsAv18kCappedAt30_Locked();
 
-  Mutex mutex_;
+  std::mutex mutex_;
 
+  // Provider for abstracting data sources. This must be non-null.
+  const std::unique_ptr<MediaCapabilitiesProvider> media_capabilities_provider_;
+
+  // Cached data.
   std::set<SbMediaTransferId> supported_transfer_ids_;
   std::map<SbMediaAudioCodec, bool> passthrough_supportabilities_;
 
@@ -174,19 +245,19 @@ class MediaCapabilitiesCache {
       AudioCodecCapabilities;
   typedef std::vector<std::unique_ptr<VideoCodecCapability>>
       VideoCodecCapabilities;
-
   std::map<std::string, AudioCodecCapabilities> audio_codec_capabilities_map_;
   std::map<std::string, VideoCodecCapabilities> video_codec_capabilities_map_;
   std::vector<SbMediaAudioConfiguration> audio_configurations_;
   bool is_widevine_supported_ = false;
   bool is_cbcs_supported_ = false;
+  bool is_av1_8k_capped_at_30_ = true;
 
   std::atomic_bool is_enabled_{true};
+  std::atomic_bool is_av1_opt_enabled_{false};
+  std::atomic_bool is_sw_decoder_enabled_{true};
   std::atomic_bool capabilities_is_dirty_{true};
 };
 
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard
 
 #endif  // STARBOARD_ANDROID_SHARED_MEDIA_CAPABILITIES_CACHE_H_

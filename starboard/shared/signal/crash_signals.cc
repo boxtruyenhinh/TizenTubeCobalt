@@ -22,8 +22,6 @@
 #include "starboard/system.h"
 
 namespace starboard {
-namespace shared {
-namespace signal {
 
 namespace {
 
@@ -74,6 +72,4 @@ void UninstallCrashSignalHandlers() {
   ::signal(SIGQUIT, SIG_DFL);
 }
 
-}  // namespace signal
-}  // namespace shared
 }  // namespace starboard

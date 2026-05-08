@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import("//starboard/build/config/sanitizers.gni")
+
 config("compiler_flags") {
   cflags = []
   cflags_c = []
   cflags_cc = []
   defines = []
+  asmflags = []
   ldflags = [ "-Wl,--error-limit=0" ]
 
   if (is_debug) {
@@ -65,6 +68,21 @@ config("compiler_flags") {
 
       # Default visibility to hidden, to enable dead stripping.
       "-fvisibility=hidden",
+
+      # Do not warn about an implicit conversion from int to float
+      "-Wno-implicit-int-float-conversion",
+
+      # Do not warn about an implicit conversion from int to char16
+      "-Wno-implicit-int-conversion",
+
+      # Do not remove null pointer checks.
+      "-fno-delete-null-pointer-checks",
+
+      # Do not warn about variable length arrays
+      "-Wno-vla-cxx-extension",
+
+      "-Wno-return-type",
+      "-Wno-sometimes-uninitialized",
     ]
 
     if (is_gold) {
@@ -75,20 +93,7 @@ config("compiler_flags") {
     }
   }
 
-  if (is_clang_16) {
-    cflags += [
-      # Do not warn about an implicit conversion from int to float
-      "-Wno-implicit-int-float-conversion",
-
-      # Do not warn about an implicit conversion from int to char16
-      "-Wno-implicit-int-conversion",
-
-      # Do not remove null pointer checks.
-      "-fno-delete-null-pointer-checks",
-    ]
-  }
-
-  if (!cobalt_fastbuild && (is_debug || is_devel)) {
+  if (is_debug || is_devel) {
     cflags += [ "-g" ]
   }
 
@@ -112,7 +117,8 @@ config("compiler_flags") {
     ]
     defines += [ "ADDRESS_SANITIZER" ]
     if (asan_symbolizer_path != "") {
-      defines += [ "ASAN_SYMBOLIZER_PATH=\"${asan_symbolizer_path}\"" ]
+      defines += [ "ASAN_SYMBOLIZER_PATH=\"" +
+                   rebase_path(asan_symbolizer_path, "") + "\"" ]
     }
   } else if (use_tsan) {
     cflags += [
@@ -133,10 +139,6 @@ config("platform_configuration") {
     "pthread",
     "rt",
   ]
-
-  if (!sb_is_modular || current_toolchain != cobalt_toolchain) {
-    ldflags += [ "-static-libstdc++" ]
-  }
 
   defines += [
     # Defined to get format macro constants from <inttypes.h>.
@@ -162,35 +164,11 @@ config("platform_configuration") {
 }
 
 config("libraries") {
-  ldflags = [ "-Wl,--wrap=eglSwapBuffers" ]
   libs = [
     "X11",
     "Xcomposite",
     "Xrender",
   ]
-}
-
-config("speed") {
-  cflags = [ "-O2" ]
-
-  if (is_qa || is_gold) {
-    cflags += [
-      # Compile symbols in separate sections
-      "-ffunction-sections",
-      "-fdata-sections",
-    ]
-  }
-}
-
-config("size") {
-  cflags = [ "-Os" ]
-  if (is_qa || is_gold) {
-    cflags += [
-      # Compile symbols in separate sections
-      "-ffunction-sections",
-      "-fdata-sections",
-    ]
-  }
 }
 
 config("pedantic_warnings") {
@@ -213,11 +191,25 @@ config("no_pedantic_warnings") {
     # Do not warn for implicit type conversions that may change a value.
     "-Wno-conversion",
 
-    # shifting a negative signed value is undefined
-    "-Wno-shift-negative-value",
-
     # Width of bit-field exceeds width of its type- value will be truncated
     "-Wno-bitfield-width",
-    "-Wno-undefined-var-template",
+
+    "-Wno-implicit-fallthrough",
+    "-Wno-unused-variable",
+    "-Wno-sign-compare",
+    "-Wno-unused-but-set-variable",
+    "-Wno-unreachable-code-return",
+    "-Wno-unused-function",
+    "-Wno-missing-braces",
+
+    # ./../starboard/shared/modular/starboard_layer_posix_socket_abi_wrappers.cc:237:28:
+    # error: comparison of array 'ai_copy.ai_addr->sa_data' not equal
+    # to a null pointer is always true [-Werror,-Wtautological-pointer-compare]
+    "-Wno-tautological-pointer-compare",
+
+    #../../starboard/shared/ffmpeg/ffmpeg_video_decoder_impl.cc:512:3: error:
+    # ignoring return value of function declared with
+    # 'warn_unused_result' attribute [-Werror,-Wunused-result]
+    "-Wno-unused-result",
   ]
 }

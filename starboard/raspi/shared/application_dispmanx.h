@@ -15,6 +15,8 @@
 #ifndef STARBOARD_RASPI_SHARED_APPLICATION_DISPMANX_H_
 #define STARBOARD_RASPI_SHARED_APPLICATION_DISPMANX_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 
 #include "starboard/configuration.h"
@@ -23,28 +25,19 @@
 #include "starboard/shared/linux/dev_input/dev_input.h"
 #include "starboard/shared/starboard/application.h"
 #include "starboard/shared/starboard/queue_application.h"
-#include "starboard/types.h"
 #include "starboard/window.h"
 
 namespace starboard {
-namespace raspi {
-namespace shared {
 
 // This application engine combines the generic queue with the X11 event queue.
-class ApplicationDispmanx
-    : public ::starboard::shared::starboard::QueueApplication {
+class ApplicationDispmanx : public QueueApplication {
  public:
-#if SB_API_VERSION >= 15
   explicit ApplicationDispmanx(SbEventHandleCallback sb_event_handle_callback)
       : window_(kSbWindowInvalid), QueueApplication(sb_event_handle_callback) {}
-#else
-  ApplicationDispmanx() : window_(kSbWindowInvalid) {}
-#endif  // SB_API_VERSION >= 15
   ~ApplicationDispmanx() override {}
 
   static ApplicationDispmanx* Get() {
-    return static_cast<ApplicationDispmanx*>(
-        ::starboard::shared::starboard::Application::Get());
+    return static_cast<ApplicationDispmanx*>(Application::Get());
   }
 
   SbWindow CreateWindow(const SbWindowOptions* options);
@@ -93,11 +86,9 @@ class ApplicationDispmanx
   SbWindow window_;
 
   // The /dev/input input handler. Only set when there is an open window.
-  std::unique_ptr<::starboard::shared::dev_input::DevInput> input_;
+  std::unique_ptr<DevInput> input_;
 };
 
-}  // namespace shared
-}  // namespace raspi
 }  // namespace starboard
 
 #endif  // STARBOARD_RASPI_SHARED_APPLICATION_DISPMANX_H_

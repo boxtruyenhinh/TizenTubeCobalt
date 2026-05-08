@@ -4,6 +4,8 @@
 
 #include "quiche/quic/core/uber_received_packet_manager.h"
 
+#include <algorithm>
+
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/core/quic_utils.h"
 #include "quiche/quic/platform/api/quic_bug_tracker.h"
@@ -68,6 +70,16 @@ void UberReceivedPacketManager::DontWaitForPacketsBefore(
   received_packet_managers_[QuicUtils::GetPacketNumberSpace(
                                 decrypted_packet_level)]
       .DontWaitForPacketsBefore(least_unacked);
+}
+
+void UberReceivedPacketManager::OnImmediateAckFrame() {
+  if (!supports_multiple_packet_number_spaces_) {
+    QUIC_BUG(quic_bug_10495_4)
+        << "Received ImmediateAckFrame when multiple packet number spaces "
+           "is not supported";
+    return;
+  }
+  received_packet_managers_[APPLICATION_DATA].OnImmediateAckFrame();
 }
 
 void UberReceivedPacketManager::MaybeUpdateAckTimeout(
@@ -185,12 +197,6 @@ bool UberReceivedPacketManager::IsAckFrameEmpty(
   return received_packet_managers_[packet_number_space].IsAckFrameEmpty();
 }
 
-QuicPacketNumber UberReceivedPacketManager::peer_least_packet_awaiting_ack()
-    const {
-  QUICHE_DCHECK(!supports_multiple_packet_number_spaces_);
-  return received_packet_managers_[0].peer_least_packet_awaiting_ack();
-}
-
 size_t UberReceivedPacketManager::min_received_before_ack_decimation() const {
   return received_packet_managers_[0].min_received_before_ack_decimation();
 }
@@ -202,14 +208,14 @@ void UberReceivedPacketManager::set_min_received_before_ack_decimation(
   }
 }
 
-#if defined(USE_COBALT_CUSTOMIZATIONS)
+#if BUILDFLAG(IS_COBALT)
 void UberReceivedPacketManager::set_max_retransmittable_packets_before_ack(
     size_t new_value) {
   for (auto& received_packet_manager : received_packet_managers_) {
     received_packet_manager.set_max_retransmittable_packets_before_ack(new_value);
   }
 }
-#endif  // defined(USE_COBALT_CUSTOMIZATIONS)
+#endif
 
 void UberReceivedPacketManager::set_ack_frequency(size_t new_value) {
   for (auto& received_packet_manager : received_packet_managers_) {

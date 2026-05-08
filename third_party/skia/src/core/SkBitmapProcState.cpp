@@ -5,18 +5,24 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkImageEncoder.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkShader.h"
-#include "include/private/SkColorData.h"
-#include "include/private/SkMacros.h"
-#include "include/private/SkTPin.h"
-#include "src/core/SkBitmapCache.h"
 #include "src/core/SkBitmapProcState.h"
-#include "src/core/SkMipmap.h"
+
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkTileMode.h"
+#include "include/private/base/SkMacros.h"
+#include "include/private/base/SkTPin.h"
+#include "src/core/SkColorPriv.h"
+#include "src/core/SkMemset.h"
 #include "src/core/SkMipmapAccessor.h"
-#include "src/core/SkOpts.h"
-#include "src/core/SkResourceCache.h"
+
+#include <algorithm>
+#include <cstring>
+#include <tuple>
+
+class SkImage;
+class SkImage_Base;
 
 // One-stop-shop shader for,
 //   - nearest-neighbor sampling (_nofilter_),
@@ -89,7 +95,7 @@ static void S32_alpha_D32_nofilter_DX(const SkBitmapProcState& s,
     auto row = (const SkPMColor*)( (const char*)s.fPixmap.addr() + y * s.fPixmap.rowBytes() );
 
     if (1 == s.fPixmap.width()) {
-        sk_memset32(colors, SkAlphaMulQ(row[0], s.fAlphaScale), count);
+        SkOpts::memset32(colors, SkAlphaMulQ(row[0], s.fAlphaScale), count);
         return;
     }
 
@@ -134,7 +140,7 @@ static void S32_alpha_D32_nofilter_DXDY(const SkBitmapProcState& s,
                  y  = XY >> 16;
         SkASSERT(x < (unsigned)s.fPixmap.width ());
         SkASSERT(y < (unsigned)s.fPixmap.height());
-        *colors++ = ((const SkPMColor*)(src + y*rb))[x];
+        *colors++ = SkAlphaMulQ(((const SkPMColor*)(src + y*rb))[x], s.fAlphaScale);
     }
 }
 
@@ -184,11 +190,11 @@ bool SkBitmapProcState::init(const SkMatrix& inv, SkAlpha paintAlpha,
                              const SkSamplingOptions& sampling) {
     SkASSERT(!inv.hasPerspective());
     SkASSERT(SkOpts::S32_alpha_D32_filter_DXDY || inv.isScaleTranslate());
+    SkASSERT(!sampling.isAniso());
     SkASSERT(!sampling.useCubic);
     SkASSERT(sampling.mipmap != SkMipmapMode::kLinear);
 
     fPixmap.reset();
-    fInvMatrix = inv;
     fBilerp = false;
 
     auto* access = SkMipmapAccessor::Make(&fAlloc, (const SkImage*)fImage, inv, sampling.mipmap);
@@ -196,6 +202,7 @@ bool SkBitmapProcState::init(const SkMatrix& inv, SkAlpha paintAlpha,
         return false;
     }
     std::tie(fPixmap, fInvMatrix) = access->level();
+    fInvMatrix.preConcat(inv);
 
     fPaintAlpha = paintAlpha;
     fBilerp = sampling.filter == SkFilterMode::kLinear;
@@ -310,7 +317,7 @@ static void Clamp_S32_D32_nofilter_trans_shaderproc(const void* sIn,
     // clamp to the left
     if (ix < 0) {
         int n = std::min(-ix, count);
-        sk_memset32(colors, row[0], n);
+        SkOpts::memset32(colors, row[0], n);
         count -= n;
         if (0 == count) {
             return;
@@ -331,7 +338,7 @@ static void Clamp_S32_D32_nofilter_trans_shaderproc(const void* sIn,
     }
     SkASSERT(count > 0);
     // clamp to the right
-    sk_memset32(colors, row[maxX], count);
+    SkOpts::memset32(colors, row[maxX], count);
 }
 
 static inline int sk_int_mod(int x, int n) {
@@ -506,13 +513,13 @@ static void S32_D32_constX_shaderproc(const void* sIn,
         }
     }
 
-    sk_memset32(colors, color, count);
+    SkOpts::memset32(colors, color, count);
 }
 
 static void DoNothing_shaderproc(const void*, int x, int y,
                                  SkPMColor* colors, int count) {
     // if we get called, the matrix is too tricky, so we just draw nothing
-    sk_memset32(colors, 0, count);
+    SkOpts::memset32(colors, 0, count);
 }
 
 bool SkBitmapProcState::setupForTranslate() {

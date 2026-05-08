@@ -16,16 +16,21 @@
 #define STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_PLAYER_COMPONENTS_H_
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "build/build_config.h"
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 #include "starboard/common/ref_counted.h"
+#include "starboard/common/result.h"
 #include "starboard/decode_target.h"
 #include "starboard/drm.h"
 #include "starboard/media.h"
 #include "starboard/player.h"
 #include "starboard/shared/internal_only.h"
+#include "starboard/shared/starboard/experimental_features.h"
 #include "starboard/shared/starboard/media/media_util.h"
 #include "starboard/shared/starboard/player/filter/audio_decoder_internal.h"
 #include "starboard/shared/starboard/player/filter/audio_renderer_internal.h"
@@ -37,10 +42,8 @@
 #include "starboard/shared/starboard/player/filter/video_renderer_sink.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
+
+class JobQueue;
 
 // This class holds necessary media stack components required by
 // by |FilterBasedPlayerWorkerHandler| to function.  It owns the components, and
@@ -48,37 +51,36 @@ namespace filter {
 // object, so it is safe to cache the returned objects.
 class PlayerComponents {
  public:
-  typedef ::starboard::shared::starboard::player::filter::AudioRenderer
-      AudioRenderer;
-  typedef ::starboard::shared::starboard::player::filter::MediaTimeProvider
-      MediaTimeProvider;
-  typedef ::starboard::shared::starboard::player::filter::VideoRenderer
-      VideoRenderer;
-
   // This class creates PlayerComponents.
   class Factory {
    public:
     class CreationParameters {
      public:
-      explicit CreationParameters(
-          const media::AudioStreamInfo& audio_stream_info,
-          SbDrmSystem drm_system = kSbDrmSystemInvalid);
-      CreationParameters(const media::VideoStreamInfo& video_stream_info,
+      CreationParameters(const AudioStreamInfo& audio_stream_info,
+                         JobQueue* job_queue,
+                         SbDrmSystem drm_system = kSbDrmSystemInvalid);
+      CreationParameters(const VideoStreamInfo& video_stream_info,
                          SbPlayer player,
                          SbPlayerOutputMode output_mode,
                          int max_video_input_size,
+                         const ExperimentalFeatures& experimental_features,
+                         void* surface_view,
                          SbDecodeTargetGraphicsContextProvider*
                              decode_target_graphics_context_provider,
+                         JobQueue* job_queue,
                          SbDrmSystem drm_system = kSbDrmSystemInvalid);
-      CreationParameters(const media::AudioStreamInfo& audio_stream_info,
-                         const media::VideoStreamInfo& video_stream_info,
+      CreationParameters(const AudioStreamInfo& audio_stream_info,
+                         const VideoStreamInfo& video_stream_info,
                          SbPlayer player,
                          SbPlayerOutputMode output_mode,
                          int max_video_input_size,
+                         const ExperimentalFeatures& experimental_features,
+                         void* surface_view,
                          SbDecodeTargetGraphicsContextProvider*
                              decode_target_graphics_context_provider,
+                         JobQueue* job_queue,
                          SbDrmSystem drm_system = kSbDrmSystemInvalid);
-      CreationParameters(const CreationParameters& that);
+      CreationParameters(const CreationParameters& that) = default;
       void operator=(const CreationParameters& that) = delete;
 
       void reset_audio_codec() {
@@ -90,59 +92,68 @@ class PlayerComponents {
 
       SbMediaAudioCodec audio_codec() const { return audio_stream_info_.codec; }
 
-      const media::AudioStreamInfo& audio_stream_info() const {
-        SB_DCHECK(audio_stream_info_.codec != kSbMediaAudioCodecNone);
+      const AudioStreamInfo& audio_stream_info() const {
+        SB_DCHECK_NE(audio_stream_info_.codec, kSbMediaAudioCodecNone);
         return audio_stream_info_;
       }
 
       SbMediaVideoCodec video_codec() const { return video_stream_info_.codec; }
 
       const std::string& audio_mime() const {
-        SB_DCHECK(audio_stream_info_.codec != kSbMediaAudioCodecNone);
+        SB_DCHECK_NE(audio_stream_info_.codec, kSbMediaAudioCodecNone);
         return audio_stream_info_.mime;
       }
 
-      const media::VideoStreamInfo& video_stream_info() const {
-        SB_DCHECK(video_stream_info_.codec != kSbMediaVideoCodecNone);
+      const VideoStreamInfo& video_stream_info() const {
+        SB_DCHECK_NE(video_stream_info_.codec, kSbMediaVideoCodecNone);
         return video_stream_info_;
       }
 
       const std::string& video_mime() const {
-        SB_DCHECK(video_stream_info_.codec != kSbMediaVideoCodecNone);
+        SB_DCHECK_NE(video_stream_info_.codec, kSbMediaVideoCodecNone);
         return video_stream_info_.mime;
       }
 
       const std::string& max_video_capabilities() const {
-        SB_DCHECK(video_stream_info_.codec != kSbMediaVideoCodecNone);
+        SB_DCHECK_NE(video_stream_info_.codec, kSbMediaVideoCodecNone);
         return video_stream_info_.max_video_capabilities;
       }
 
       SbPlayer player() const { return player_; }
       SbPlayerOutputMode output_mode() const { return output_mode_; }
       int max_video_input_size() const { return max_video_input_size_; }
+      const ExperimentalFeatures& experimental_features() const {
+        return experimental_features_;
+      }
+      void* surface_view() const { return surface_view_; }
       SbDecodeTargetGraphicsContextProvider*
       decode_target_graphics_context_provider() const {
-        SB_DCHECK(video_stream_info_.codec != kSbMediaVideoCodecNone);
+        SB_DCHECK_NE(video_stream_info_.codec, kSbMediaVideoCodecNone);
         return decode_target_graphics_context_provider_;
       }
+
+      JobQueue* job_queue() const { return job_queue_; }
 
       SbDrmSystem drm_system() const { return drm_system_; }
 
      private:
       // |audio_stream_info_.codec| can be set to kSbMediaAudioCodecNone for
       // audioless video.
-      media::AudioStreamInfo audio_stream_info_;
+      AudioStreamInfo audio_stream_info_;
 
       // The following members are only used by the video stream, and only need
       // to be set when |video_stream_info_.codec| isn't kSbMediaVideoCodecNone.
       // |video_stream_info_.codec| can be set to kSbMediaVideoCodecNone for
       // audio only video.
-      media::VideoStreamInfo video_stream_info_;
+      VideoStreamInfo video_stream_info_;
       SbPlayer player_ = kSbPlayerInvalid;
       SbPlayerOutputMode output_mode_ = kSbPlayerOutputModeInvalid;
       int max_video_input_size_ = 0;
+      const ExperimentalFeatures experimental_features_;
+      void* surface_view_;
       SbDecodeTargetGraphicsContextProvider*
           decode_target_graphics_context_provider_ = nullptr;
+      JobQueue* const job_queue_;
 
       // The following member are used by both the audio stream and the video
       // stream, when they are encrypted.
@@ -162,44 +173,40 @@ class PlayerComponents {
                                     SbMediaVideoCodec codec,
                                     SbDrmSystem drm_system);
 
-    virtual std::unique_ptr<PlayerComponents> CreateComponents(
-        const CreationParameters& creation_parameters,
-        std::string* error_message);
+    virtual NonNullResult<std::unique_ptr<PlayerComponents>> CreateComponents(
+        const CreationParameters& creation_parameters);
 
-#if COBALT_BUILD_TYPE_GOLD
+    struct AudioComponents {
+      std::unique_ptr<AudioDecoder> decoder;
+      std::unique_ptr<AudioRendererSink> renderer_sink;
+    };
+    struct VideoComponents {
+      std::unique_ptr<VideoDecoder> decoder;
+      std::unique_ptr<VideoRenderAlgorithm> render_algorithm;
+      scoped_refptr<VideoRendererSink> renderer_sink;
+    };
+    struct MediaComponents {
+      AudioComponents audio;
+      VideoComponents video;
+    };
+
+#if BUILDFLAG(COBALT_IS_RELEASE_BUILD)
    private:
-#endif  // COBALT_BUILD_TYPE_GOLD
+#endif  // BUILDFLAG(COBALT_IS_RELEASE_BUILD)
 
     // Note that the following function is exposed in non-Gold build to allow
     // unit tests to run.
-    virtual bool CreateSubComponents(
-        const CreationParameters& creation_parameters,
-        std::unique_ptr<AudioDecoder>* audio_decoder,
-        std::unique_ptr<AudioRendererSink>* audio_renderer_sink,
-        std::unique_ptr<VideoDecoder>* video_decoder,
-        std::unique_ptr<VideoRenderAlgorithm>* video_render_algorithm,
-        scoped_refptr<VideoRendererSink>* video_renderer_sink,
-        std::string* error_message) = 0;
+    virtual Result<MediaComponents> CreateSubComponents(
+        const CreationParameters& creation_parameters) = 0;
 
    protected:
     Factory() {}
 
-    void CreateStubAudioComponents(
-        const CreationParameters& creation_parameters,
-        std::unique_ptr<AudioDecoder>* audio_decoder,
-        std::unique_ptr<AudioRendererSink>* audio_renderer_sink);
+    AudioComponents CreateStubAudioComponents(
+        const CreationParameters& creation_parameters);
 
-    void CreateStubVideoComponents(
-        const CreationParameters& creation_parameters,
-        std::unique_ptr<VideoDecoder>* video_decoder,
-        std::unique_ptr<VideoRenderAlgorithm>* video_render_algorithm,
-        scoped_refptr<VideoRendererSink>* video_renderer_sink);
-
-    // Check AudioRenderer ctor for more details on the parameters.
-    virtual void GetAudioRendererParams(
-        const CreationParameters& creation_parameters,
-        int* max_cached_frames,
-        int* min_frames_per_append) const;
+    VideoComponents CreateStubVideoComponents(
+        const CreationParameters& creation_parameters);
 
    private:
     Factory(const Factory&) = delete;
@@ -218,10 +225,6 @@ class PlayerComponents {
   void operator=(const PlayerComponents&) = delete;
 };
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_PLAYER_COMPONENTS_H_

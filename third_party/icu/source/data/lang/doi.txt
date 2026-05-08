@@ -8,7 +8,6 @@ doi{
         de_CH{"स्विस हाई जर्मन"}
         doi{"डोगरी"}
         en{"अंगरेजी"}
-        en_AU{"आस्ट्रेलियाई अंगरेजी"}
         en_CA{"कैनेडियन अंगरेजी"}
         en_GB{"ब्रिटिश अंगरेजी"}
         en_US{"अमरीकी अंगरेजी"}
@@ -72,10 +71,5 @@ doi{
         language{"भाशा: {0}"}
         script{"लिपि: {0}"}
         territory{"खेत्तर: {0}"}
-    }
-    localeDisplayPattern{
-        keyTypePattern{"{0}: {1}"}
-        pattern{"{0} ({1})"}
-        separator{"{0}, {1}"}
     }
 }

@@ -25,13 +25,7 @@ egl::Error SurfaceNULL::initialize(const egl::Display *display)
     return egl::NoError();
 }
 
-FramebufferImpl *SurfaceNULL::createDefaultFramebuffer(const gl::Context *context,
-                                                       const gl::FramebufferState &state)
-{
-    return new FramebufferNULL(state);
-}
-
-egl::Error SurfaceNULL::swap(const gl::Context *context)
+egl::Error SurfaceNULL::swap(const gl::Context *context, SurfaceSwapFeedback *feedback)
 {
     return egl::NoError();
 }
@@ -66,10 +60,16 @@ egl::Error SurfaceNULL::releaseTexImage(const gl::Context *context, EGLint buffe
 egl::Error SurfaceNULL::getSyncValues(EGLuint64KHR *ust, EGLuint64KHR *msc, EGLuint64KHR *sbc)
 {
     UNIMPLEMENTED();
-    return egl::EglBadAccess();
+    return egl::Error(EGL_BAD_ACCESS);
 }
 
-void SurfaceNULL::setSwapInterval(EGLint interval) {}
+egl::Error SurfaceNULL::getMscRate(EGLint *numerator, EGLint *denominator)
+{
+    UNIMPLEMENTED();
+    return egl::Error(EGL_BAD_ACCESS);
+}
+
+void SurfaceNULL::setSwapInterval(const egl::Display *display, EGLint interval) {}
 
 EGLint SurfaceNULL::getWidth() const
 {
@@ -94,9 +94,22 @@ EGLint SurfaceNULL::getSwapBehavior() const
 }
 
 angle::Result SurfaceNULL::initializeContents(const gl::Context *context,
+                                              GLenum binding,
                                               const gl::ImageIndex &imageIndex)
 {
     return angle::Result::Continue;
+}
+
+egl::Error SurfaceNULL::attachToFramebuffer(const gl::Context *context,
+                                            gl::Framebuffer *framebuffer)
+{
+    return egl::NoError();
+}
+
+egl::Error SurfaceNULL::detachFromFramebuffer(const gl::Context *context,
+                                              gl::Framebuffer *framebuffer)
+{
+    return egl::NoError();
 }
 
 }  // namespace rx

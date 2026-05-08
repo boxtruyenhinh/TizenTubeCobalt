@@ -15,23 +15,15 @@
 #ifndef STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_MOCK_AUDIO_DECODER_H_
 #define STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_MOCK_AUDIO_DECODER_H_
 
-#include "starboard/shared/starboard/player/filter/audio_decoder_internal.h"
-
-#include "testing/gmock/include/gmock/gmock.h"
-
 #include "starboard/common/ref_counted.h"
 #include "starboard/media.h"
 #include "starboard/shared/internal_only.h"
 #include "starboard/shared/starboard/player/decoded_audio_internal.h"
+#include "starboard/shared/starboard/player/filter/audio_decoder_internal.h"
 #include "starboard/shared/starboard/player/input_buffer_internal.h"
-#include "starboard/types.h"
+#include "testing/gmock/include/gmock/gmock.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
-namespace testing {
 
 class MockAudioDecoder : public AudioDecoder {
  public:
@@ -46,11 +38,6 @@ class MockAudioDecoder : public AudioDecoder {
   MOCK_METHOD0(Reset, void());
 };
 
-}  // namespace testing
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_MOCK_AUDIO_DECODER_H_

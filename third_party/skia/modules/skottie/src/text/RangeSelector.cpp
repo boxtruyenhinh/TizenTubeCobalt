@@ -4,17 +4,23 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "modules/skottie/src/text/RangeSelector.h"
 
 #include "include/core/SkCubicMap.h"
-#include "include/private/SkTPin.h"
+#include "include/core/SkPoint.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTo.h"
+#include "modules/jsonreader/SkJSONReader.h"
+#include "modules/skottie/include/Skottie.h"
 #include "modules/skottie/src/SkottieJson.h"
-#include "modules/skottie/src/SkottieValue.h"
+#include "modules/skottie/src/SkottiePriv.h"
 #include "modules/skottie/src/animator/Animator.h"
 
 #include <algorithm>
-#include <cmath>
+#include <limits>
+#include <vector>
 
 namespace skottie {
 namespace internal {
@@ -28,7 +34,7 @@ T ParseEnum(const TArray& arr, const skjson::Value& jenum,
 
     const auto idx = ParseDefault<int>(jenum, 1);
 
-    if (idx > 0 && SkToSizeT(idx) <= SK_ARRAY_COUNT(arr)) {
+    if (idx > 0 && SkToSizeT(idx) <= std::size(arr)) {
         return arr[idx - 1];
     }
 
@@ -39,7 +45,7 @@ T ParseEnum(const TArray& arr, const skjson::Value& jenum,
                       "Ignoring unknown range selector %s '%d'", warn_name, idx);
     }
 
-    static_assert(SK_ARRAY_COUNT(arr) > 0, "");
+    SkASSERT(std::size(arr) > 0);
     return arr[0];
 }
 
@@ -363,7 +369,7 @@ void RangeSelector::modulateCoverage(const TextAnimator::DomainMaps& maps,
     auto          r0 = std::get<0>(range),
                  len = std::max(std::get<1>(range) - r0, std::numeric_limits<float>::epsilon());
 
-    SkASSERT(static_cast<size_t>(fShape) < SK_ARRAY_COUNT(gShapeInfo));
+    SkASSERT(static_cast<size_t>(fShape) < std::size(gShapeInfo));
     ShapeGenerator gen(gShapeInfo[static_cast<size_t>(fShape)], ease_lo, ease_hi);
 
     if (fShape == Shape::kSquare) {

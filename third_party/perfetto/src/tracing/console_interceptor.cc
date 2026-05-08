@@ -33,7 +33,7 @@
 #include "protos/perfetto/common/interceptor_descriptor.gen.h"
 #include "protos/perfetto/config/data_source_config.gen.h"
 #include "protos/perfetto/config/interceptor_config.gen.h"
-#include "protos/perfetto/config/interceptors/console_config.pbzero.h"
+#include "protos/perfetto/config/interceptors/console_config.gen.h"
 #include "protos/perfetto/trace/interned_data/interned_data.pbzero.h"
 #include "protos/perfetto/trace/trace_packet.pbzero.h"
 #include "protos/perfetto/trace/trace_packet_defaults.pbzero.h"
@@ -42,9 +42,6 @@
 #include "protos/perfetto/trace/track_event/track_descriptor.pbzero.h"
 #include "protos/perfetto/trace/track_event/track_event.pbzero.h"
 
-#if defined(STARBOARD)
-#include "starboard/common/log.h"
-#endif
 namespace perfetto {
 
 // sRGB color.
@@ -273,18 +270,18 @@ void ConsoleInterceptor::OnSetup(const SetupArgs& args) {
   if (g_output_fd_for_testing)
     fd = g_output_fd_for_testing;
 #if !PERFETTO_BUILDFLAG(PERFETTO_OS_WIN) && \
-    !PERFETTO_BUILDFLAG(PERFETTO_OS_WASM) && !defined(STARBOARD)
+    !PERFETTO_BUILDFLAG(PERFETTO_OS_WASM)
   bool use_colors = isatty(fd);
 #else
   bool use_colors = false;
 #endif
-  protos::pbzero::ConsoleConfig::Decoder config(
-      args.config.interceptor_config().console_config_raw());
+  const protos::gen::ConsoleConfig& config =
+      args.config.interceptor_config().console_config();
   if (config.has_enable_colors())
     use_colors = config.enable_colors();
-  if (config.output() == protos::pbzero::ConsoleConfig::OUTPUT_STDOUT) {
+  if (config.output() == protos::gen::ConsoleConfig::OUTPUT_STDOUT) {
     fd = STDOUT_FILENO;
-  } else if (config.output() == protos::pbzero::ConsoleConfig::OUTPUT_STDERR) {
+  } else if (config.output() == protos::gen::ConsoleConfig::OUTPUT_STDERR) {
     fd = STDERR_FILENO;
   }
   fd_ = fd;
@@ -332,12 +329,7 @@ void ConsoleInterceptor::Printf(InterceptorContext& context,
   if (remaining <= 0 || written > remaining) {
     FILE* output = (tls.fd == STDOUT_FILENO) ? stdout : stderr;
     if (g_output_fd_for_testing) {
-#if defined(STARBOARD)
-      SB_NOTIMPLEMENTED();
-      output = nullptr;
-#else
       output = fdopen(dup(g_output_fd_for_testing), "w");
-#endif
     }
     Flush(context);
     va_list args;

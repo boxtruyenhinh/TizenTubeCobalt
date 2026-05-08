@@ -1,20 +1,15 @@
 [
   {
     "cmd": [
-      "python",
-      "-u",
-      "import os\nprint(os.environ.get('SWARMING_BOT_ID', ''))\n"
+      "python3",
+      "RECIPE_MODULE[skia::vars]/resources/get_env_var.py",
+      "SWARMING_BOT_ID"
     ],
-    "name": "get swarming bot id",
-    "~followup_annotations": [
-      "@@@STEP_LOG_LINE@python.inline@import os@@@",
-      "@@@STEP_LOG_LINE@python.inline@print(os.environ.get('SWARMING_BOT_ID', ''))@@@",
-      "@@@STEP_LOG_END@python.inline@@@"
-    ]
+    "name": "get swarming bot id"
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -46,7 +41,7 @@
       "cp",
       "-Z",
       "[START_DIR]/[SWARM_OUT_DIR]/dm.json",
-      "gs://skia-infra-gm/trybot/dm-json-v1/2012/05/14/12/1234_7/Test-Android-Clang-Pixel2XL-Some-GPU-arm64-Debug-All/1337000001/dm.json"
+      "gs://skia-infra-gm/trybot/dm-json-v1/2012/05/14/12/1234_7/Test-Android12-Clang-Pixel5-GPU-Adreno620-arm64-Release-All-Android_Vulkan/1337000001/dm.json"
     ],
     "name": "upload dm.json"
   },

@@ -21,10 +21,6 @@
 #include "starboard/shared/starboard/player/input_buffer_internal.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 class VideoRenderer {
  public:
@@ -43,6 +39,7 @@ class VideoRenderer {
 
   // |seek_to_time| is microseconds.
   virtual void Seek(int64_t seek_to_time) = 0;
+  virtual void SetPlaybackRate(double playback_rate) = 0;
 
   virtual bool IsEndOfStreamWritten() const = 0;
   virtual bool CanAcceptMoreData() const = 0;
@@ -52,10 +49,6 @@ class VideoRenderer {
   virtual SbDecodeTarget GetCurrentDecodeTarget() = 0;
 };
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_VIDEO_RENDERER_INTERNAL_H_

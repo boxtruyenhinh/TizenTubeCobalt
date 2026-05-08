@@ -30,8 +30,6 @@ namespace {
 }  // namespace wvoec_mock
 
 namespace starboard {
-namespace shared {
-namespace widevine {
 
 std::string GetWidevineKeyboxHash() {
   // Note: not a cryptographic hash.
@@ -43,6 +41,4 @@ std::string GetWidevineKeyboxHash() {
   return ss.str();
 }
 
-}  // namespace widevine
-}  // namespace shared
 }  // namespace starboard

@@ -8,8 +8,8 @@
 #ifndef GLTestContext_DEFINED
 #define GLTestContext_DEFINED
 
-#include "include/gpu/gl/GrGLInterface.h"
-#include "src/gpu/gl/GrGLUtil.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
 #include "tools/gpu/TestContext.h"
 
 namespace sk_gpu_test {
@@ -41,9 +41,6 @@ public:
     virtual GrGLuint eglImageToExternalTexture(GrEGLImage) const { return 0; }
 
     void testAbandon() override;
-
-    /** Wait until all GPU work is finished. */
-    void finish() override;
 
     void overrideVersion(const char* version, const char* shadingLanguageVersion);
 
@@ -89,10 +86,6 @@ private:
 
     /** The same as fOriginalGLInterface unless the version has been overridden. */
     sk_sp<const GrGLInterface> fGLInterface;
-
-#ifndef SK_GL
-    bool fWasInitialized = false;
-#endif
 
     using INHERITED = TestContext;
 };

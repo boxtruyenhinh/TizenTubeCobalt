@@ -10,8 +10,16 @@
 #include "include/codec/SkCodec.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImageGenerator.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkYUVAPixmaps.h"
 
+#include <cstddef>
+#include <memory>
 #include <optional>
+
+enum SkAlphaType : int;
+struct SkImageInfo;
 
 class SkCodecImageGenerator : public SkImageGenerator {
 public:
@@ -22,7 +30,8 @@ public:
     static std::unique_ptr<SkImageGenerator> MakeFromEncodedCodec(
             sk_sp<SkData>, std::optional<SkAlphaType> = std::nullopt);
 
-    static std::unique_ptr<SkImageGenerator> MakeFromCodec(std::unique_ptr<SkCodec>);
+    static std::unique_ptr<SkImageGenerator> MakeFromCodec(
+            std::unique_ptr<SkCodec>, std::optional<SkAlphaType> = std::nullopt);
 
     /**
      * Return a size that approximately supports the desired scale factor. The codec may not be able
@@ -110,11 +119,9 @@ private:
     /*
      * Takes ownership of codec
      */
-    SkCodecImageGenerator(std::unique_ptr<SkCodec>, sk_sp<SkData>, std::optional<SkAlphaType>);
+    SkCodecImageGenerator(std::unique_ptr<SkCodec>, std::optional<SkAlphaType>);
 
     std::unique_ptr<SkCodec> fCodec;
-    sk_sp<SkData> fData;
-
-    using INHERITED = SkImageGenerator;
+    sk_sp<SkData> fCachedData = nullptr;
 };
 #endif  // SkCodecImageGenerator_DEFINED

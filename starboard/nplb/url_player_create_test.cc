@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <vector>
+
 #include "starboard/decode_target.h"
 #include "starboard/player.h"
 
@@ -22,7 +24,6 @@
 #include "starboard/window.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -162,4 +163,3 @@ TEST(SbPlayerUrlTest, MultiPlayer) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

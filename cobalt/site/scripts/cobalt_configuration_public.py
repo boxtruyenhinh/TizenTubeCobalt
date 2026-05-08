@@ -145,9 +145,7 @@ def main(source_dir, output_dir=None):
       if last_thing_was_a_header:
         section_headers[section] = comment
       last_thing_was_a_header = False
-      comment = ''
-      if comment[-8:] != '<br><br>':
-        comment += '<br><br>'
+      comment += '<br><br>'
 
   if output_dir:
     site_path = environment.get_site_dir(output_dir)

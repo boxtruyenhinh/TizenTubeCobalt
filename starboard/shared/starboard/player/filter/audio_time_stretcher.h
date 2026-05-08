@@ -41,13 +41,8 @@
 #include "starboard/shared/internal_only.h"
 #include "starboard/shared/starboard/player/decoded_audio_internal.h"
 #include "starboard/shared/starboard/player/filter/decoded_audio_queue.h"
-#include "starboard/types.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 class AudioTimeStretcher {
  public:
@@ -223,10 +218,6 @@ class AudioTimeStretcher {
   void operator=(const AudioTimeStretcher&) = delete;
 };
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_AUDIO_TIME_STRETCHER_H_

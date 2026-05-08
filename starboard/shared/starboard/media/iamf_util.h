@@ -16,14 +16,15 @@
 #define STARBOARD_SHARED_STARBOARD_MEDIA_IAMF_UTIL_H_
 
 #include <limits>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "starboard/common/log.h"
+#include "starboard/common/result.h"
+#include "starboard/shared/internal_only.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace media {
 
 enum IamfSubstreamCodec {
   kIamfSubstreamCodecUnknown,
@@ -44,18 +45,29 @@ constexpr uint32_t kIamfProfileMax = 255;
 // Always check is_valid() before calling the getter functions.
 class IamfMimeUtil {
  public:
+  struct IamfProfileInfo {
+    uint8_t primary_profile;
+    uint8_t additional_profile;
+  };
+
   explicit IamfMimeUtil(const std::string& mime_type);
+
+  // Parses IAMF Config OBUs for the primary and additional profiles,
+  // based on IAMF specification v1.0.0-errata.
+  // https://aomediacodec.github.io/iamf/v1.1.0.html#codecsparameter.
+  static Result<IamfProfileInfo> ParseIamfSequenceHeaderObu(
+      const std::vector<uint8_t>& data);
 
   bool is_valid() const {
     return primary_profile_ <= kIamfProfileMax &&
            additional_profile_ <= kIamfProfileMax &&
            substream_codec_ != kIamfSubstreamCodecUnknown;
   }
-  int primary_profile() const {
+  uint32_t primary_profile() const {
     SB_DCHECK(is_valid());
     return primary_profile_;
   }
-  int additional_profile() const {
+  uint32_t additional_profile() const {
     SB_DCHECK(is_valid());
     return additional_profile_;
   }
@@ -65,14 +77,11 @@ class IamfMimeUtil {
   }
 
  private:
-  int primary_profile_ = std::numeric_limits<uint32_t>::max();
-  int additional_profile_ = std::numeric_limits<uint32_t>::max();
+  uint32_t primary_profile_ = std::numeric_limits<uint32_t>::max();
+  uint32_t additional_profile_ = std::numeric_limits<uint32_t>::max();
   IamfSubstreamCodec substream_codec_ = kIamfSubstreamCodecUnknown;
 };
 
-}  // namespace media
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_MEDIA_IAMF_UTIL_H_

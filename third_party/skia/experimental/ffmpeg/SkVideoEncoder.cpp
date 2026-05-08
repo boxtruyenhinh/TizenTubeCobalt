@@ -8,7 +8,7 @@
 #include "experimental/ffmpeg/SkVideoEncoder.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkImage.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
 
 extern "C" {
 #include "libswscale/swscale.h"
@@ -82,7 +82,7 @@ static bool check_err(int err, const int silentList[] = nullptr) {
     return true;
 }
 
-static int sk_write_packet(void* ctx, uint8_t* buffer, int size) {
+static int sk_write_packet(void* ctx, const uint8_t* buffer, int size) {
     SkRandomAccessWStream* stream = (SkRandomAccessWStream*)ctx;
     stream->write(buffer, size);
     return size;
@@ -163,12 +163,12 @@ bool SkVideoEncoder::init(int fps) {
     SkASSERT(fFormatCtx);
     fFormatCtx->pb = fStreamCtx;
 
-    AVOutputFormat *output_format = fFormatCtx->oformat;
+    const auto* output_format = fFormatCtx->oformat;
 
     if (output_format->video_codec == AV_CODEC_ID_NONE) {
         return false;
     }
-    AVCodec* codec = avcodec_find_encoder(output_format->video_codec);
+    const auto* codec = avcodec_find_encoder(output_format->video_codec);
     SkASSERT(codec);
 
     fStream = avformat_new_stream(fFormatCtx, codec);
@@ -303,7 +303,7 @@ bool SkVideoEncoder::sendFrame(AVFrame* frame) {
 
 SkCanvas* SkVideoEncoder::beginFrame() {
     if (!fSurface) {
-        fSurface = SkSurface::MakeRaster(fInfo);
+        fSurface = SkSurfaces::Raster(fInfo);
         if (!fSurface) {
             return nullptr;
         }

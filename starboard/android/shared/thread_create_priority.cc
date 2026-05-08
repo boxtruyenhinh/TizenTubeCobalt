@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "starboard/shared/pthread/thread_create_priority.h"
+// clang-format off
+#include "starboard/thread.h"
+// clang-format on
 
 #include <sched.h>
 #include <sys/resource.h>
 
 #include "starboard/common/log.h"
-#include "starboard/thread.h"
+#include "starboard/configuration_constants.h"
 
 namespace {
 
@@ -45,11 +47,6 @@ SbThreadPriority NiceToSbPriority(int nice) {
   return kSbThreadPriorityNormal;
 }
 
-}  // namespace
-namespace starboard {
-namespace shared {
-namespace pthread {
-
 void SetNiceValue(int nice) {
   int result = setpriority(PRIO_PROCESS, 0, nice);
   if (result != 0) {
@@ -57,9 +54,12 @@ void SetNiceValue(int nice) {
   }
 }
 
-void ThreadSetPriority(SbThreadPriority priority) {
-  if (!kSbHasThreadPrioritySupport)
-    return;
+}  // namespace
+
+bool SbThreadSetPriority(SbThreadPriority priority) {
+  if (!kSbHasThreadPrioritySupport) {
+    return false;
+  }
 
   // Nice value settings are selected from looking at:
   //   https://android.googlesource.com/platform/frameworks/native/+/jb-dev/include/utils/ThreadDefs.h#35
@@ -87,14 +87,6 @@ void ThreadSetPriority(SbThreadPriority priority) {
       SB_NOTREACHED();
       break;
   }
-}
-
-}  // namespace pthread
-}  // namespace shared
-}  // namespace starboard
-
-bool SbThreadSetPriority(SbThreadPriority priority) {
-  starboard::shared::pthread::ThreadSetPriority(priority);
   return true;
 }
 

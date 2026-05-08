@@ -12,19 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "starboard/shared/starboard/player/filter/audio_resampler.h"
+
 #include <tuple>
 #include <vector>
 
 #include "starboard/common/string.h"
-#include "starboard/shared/starboard/player/filter/audio_resampler.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
-namespace testing {
 namespace {
 
 using ::testing::Combine;
@@ -187,9 +183,5 @@ INSTANTIATE_TEST_CASE_P(AudioResamplerTests,
                         GetTestConfigName);
 
 }  // namespace
-}  // namespace testing
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
+
 }  // namespace starboard

@@ -108,6 +108,9 @@ zh_Hant_HK{
         "America:Chihuahua"{
             ec{"芝娃娃"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"華雷斯城"}
+        }
         "America:Cordoba"{
             ec{"科爾多瓦"}
         }
@@ -565,9 +568,6 @@ zh_Hant_HK{
         }
         "meta:India"{
             ls{"印度時間"}
-        }
-        "meta:Indochina"{
-            ls{"中南半島時間"}
         }
         "meta:Irkutsk"{
             ld{"伊爾庫茨克夏令時間"}

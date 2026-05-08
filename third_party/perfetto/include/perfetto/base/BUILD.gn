@@ -26,11 +26,9 @@ source_set("base") {
     "status.h",
     "task_runner.h",
     "template_util.h",
+    "thread_annotations.h",
     "thread_utils.h",
     "time.h",
   ]
   public_deps = [ "../public:base" ]
-  if (is_starboard && current_toolchain != host_toolchain) {
-    deps = [ "//starboard:starboard_headers_only" ]
-  }
 }

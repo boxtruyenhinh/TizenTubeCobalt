@@ -26,6 +26,43 @@ behavior of other APIs within the bounds of their operating range.
     only if) a system has this capability will SbSystemGetTotalGPUMemory() and
     SbSystemGetUsedGPUMemory() be valid to call.
 
+### SbSystemDeviceType
+
+Enumeration of device types.
+
+#### Values
+
+*   `kSbSystemDeviceTypeBlueRayDiskPlayer`
+
+    Blue-ray Disc Player (BDP).
+*   `kSbSystemDeviceTypeGameConsole`
+
+    A relatively high-powered TV device used primarily for playing games.
+*   `kSbSystemDeviceTypeOverTheTopBox`
+
+    Over the top (OTT) devices stream content via the Internet over another type
+    of network, e.g. cable or satellite.
+*   `kSbSystemDeviceTypeSetTopBox`
+
+    Set top boxes (STBs) stream content primarily over cable or satellite. Some
+    STBs can also stream OTT content via the Internet.
+*   `kSbSystemDeviceTypeTV`
+
+    A Smart TV is a TV that can directly run applications that stream OTT
+    content via the Internet.
+*   `kSbSystemDeviceTypeDesktopPC`
+
+    Desktop PC.
+*   `kSbSystemDeviceTypeAndroidTV`
+
+    An Android TV Device.
+*   `kSbSystemDeviceTypeVideoProjector`
+
+    A wall video projector.
+*   `kSbSystemDeviceTypeUnknown`
+
+    Unknown device.
+
 ### SbSystemPathId
 
 Enumeration of special paths that the platform can define.
@@ -65,6 +102,10 @@ Enumeration of special paths that the platform can define.
     Both read and write access is required. The directory should be used only
     for storing the updates. See
     starboard/doc/evergreen/cobalt_evergreen_overview.md
+*   `kSbSystemPathFilesDirectory`
+
+    Path to the directory for permanent files. Used for cookies and
+    localStorage.
 
 ### SbSystemPlatformErrorResponse
 
@@ -264,7 +305,7 @@ the end of the struct, but never removed (only deprecated).
 #### Declaration
 
 ```
-const void* SbSystemGetExtension(const char *name)
+const void * SbSystemGetExtension(const char *name)
 ```
 
 ### SbSystemGetLastError
@@ -299,7 +340,7 @@ For more information than you probably want about POSIX locales, see: [http://pu
 #### Declaration
 
 ```
-const char* SbSystemGetLocaleId()
+const char * SbSystemGetLocaleId()
 ```
 
 ### SbSystemGetNumberOfProcessors

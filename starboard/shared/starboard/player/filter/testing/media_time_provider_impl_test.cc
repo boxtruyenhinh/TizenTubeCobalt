@@ -20,11 +20,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
-namespace testing {
 namespace {
 
 const int64_t kOneSecondInMicroseconds = 1'000'000;
@@ -41,12 +36,13 @@ using ::testing::StrictMock;
   const int64_t kEpsilon = 1000;  // 1ms
   int64_t diff = left > right ? left - right : right - left;
 
-  if (diff <= kEpsilon)
+  if (diff <= kEpsilon) {
     return ::testing::AssertionSuccess();
-  else
+  } else {
     return ::testing::AssertionFailure()
            << left << " is not almost equal to " << right
            << " with a difference of " << diff;
+  }
 }
 
 class MockMonotonicSystemTimeProvider : public MonotonicSystemTimeProvider {
@@ -84,8 +80,9 @@ class MediaTimeProviderImplTest : public ::testing::Test {
         // is passed to and owned by |media_time_provider_impl_|, so the tests
         // can adjust expectation on it.  This is safe in the context of the
         // tests.
-        media_time_provider_impl_(std::unique_ptr<MonotonicSystemTimeProvider>(
-            system_time_provider_)) {
+        media_time_provider_impl_(&job_queue_,
+                                  std::unique_ptr<MonotonicSystemTimeProvider>(
+                                      system_time_provider_)) {
     media_time_provider_impl_.SetPlaybackRate(1.0);
   }
 
@@ -277,9 +274,5 @@ TEST_F(MediaTimeProviderImplTest, Pause) {
 }
 
 }  // namespace
-}  // namespace testing
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
+
 }  // namespace starboard

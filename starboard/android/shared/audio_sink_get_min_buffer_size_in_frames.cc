@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/audio_sink.h"
+// clang-format on
 
-#include "starboard/android/shared/application_android.h"
 #include "starboard/android/shared/audio_track_audio_sink_type.h"
+#include "starboard/android/shared/runtime_resource_overlay.h"
 #include "starboard/common/log.h"
 
 int SbAudioSinkGetMinBufferSizeInFrames(int channels,
@@ -35,15 +37,16 @@ int SbAudioSinkGetMinBufferSizeInFrames(int channels,
     return -1;
   }
 
-  int min_buffer_size = starboard::android::shared::AudioTrackAudioSinkType::
-      GetMinBufferSizeInFrames(channels, sample_type, sampling_frequency_hz);
+  int min_buffer_size =
+      starboard::AudioTrackAudioSinkType::GetMinBufferSizeInFrames(
+          channels, sample_type, sampling_frequency_hz);
 
-  int overlayed_min_buffer_size =
-      starboard::android::shared::ApplicationAndroid::Get()
-          ->GetOverlayedIntValue("min_audio_sink_buffer_size_in_frames");
-  if (overlayed_min_buffer_size != 0 &&
-      overlayed_min_buffer_size > min_buffer_size) {
-    min_buffer_size = overlayed_min_buffer_size;
+  int overlaid_min_buffer_size =
+      starboard::RuntimeResourceOverlay::GetInstance()
+          ->min_audio_sink_buffer_size_in_frames();
+  if (overlaid_min_buffer_size != 0 &&
+      overlaid_min_buffer_size > min_buffer_size) {
+    min_buffer_size = overlaid_min_buffer_size;
   }
   return min_buffer_size;
 }

@@ -258,6 +258,9 @@ kn{
         "America:Chihuahua"{
             ec{"ಚಿವಾವ"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"ಸಿಯುಡಾಡ್ ವಾರೆಝ್"}
+        }
         "America:Coral_Harbour"{
             ec{"ಅಟಿಕೊಕಾನ್"}
         }
@@ -562,7 +565,7 @@ kn{
             ec{"ಸೇಂಟ್ ಲೂಸಿಯಾ"}
         }
         "America:St_Thomas"{
-            ec{"ಸೆಂಟ್ ಥಾಮಸ್"}
+            ec{"ಸೇಂಟ್ ಥಾಮಸ್"}
         }
         "America:St_Vincent"{
             ec{"ಸೇಂಟ್ ವಿನ್ಸೆಂಟ್"}
@@ -1223,6 +1226,9 @@ kn{
         "Pacific:Johnston"{
             ec{"ಜಾನ್‌ಸ್ಟನ್"}
         }
+        "Pacific:Kanton"{
+            ec{"ಕ್ಯಾಂಟನ್"}
+        }
         "Pacific:Kiritimati"{
             ec{"ಕಿರಿತಿಮತಿ"}
         }
@@ -1317,7 +1323,7 @@ kn{
         "meta:Alaska"{
             ld{"‌ಅಲಾಸ್ಕಾ ಹಗಲು ಸಮಯ"}
             lg{"ಅಲಾಸ್ಕಾ ಸಮಯ"}
-            ls{"ಅಲಸ್ಕಾ ಪ್ರಮಾಣಿತ ಸಮಯ"}
+            ls{"ಅಲಾಸ್ಕಾ ಪ್ರಮಾಣಿತ ಸಮಯ"}
         }
         "meta:Almaty"{
             ld{"ಆಲ್ಮೇಟಿ ಬೇಸಿಗೆ ಸಮಯ"}
@@ -1376,7 +1382,7 @@ kn{
         }
         "meta:Argentina"{
             ld{"ಅರ್ಜೆಂಟಿನಾ ಬೇಸಿಗೆ ಸಮಯ"}
-            lg{"ಅರ್ಜೆಂಟಿನಾ ಸಮಯ"}
+            lg{"ಅರ್ಜೆಂಟೀನಾ ಸಮಯ"}
             ls{"ಅರ್ಜೆಂಟೀನಾ ಪ್ರಮಾಣಿತ ಸಮಯ"}
         }
         "meta:Argentina_Western"{
@@ -1938,10 +1944,9 @@ kn{
             lg{"ಯೇಕಟರಿನ್‌ಬರ್ಗ್ ಸಮಯ"}
             ls{"ಯೇಕಟರಿನ್‌ಬರ್ಗ್ ಪ್ರಮಾಣಿತ ಸಮಯ"}
         }
-        fallbackFormat{"{1} ({0})"}
-        gmtFormat{"GMT{0}"}
-        gmtZeroFormat{"GMT"}
-        hourFormat{"+HH:mm;-HH:mm"}
+        "meta:Yukon"{
+            ls{"ಯುಕಾನ್ ಸಮಯ"}
+        }
         regionFormat{"{0} ಸಮಯ"}
         regionFormatDaylight{"{0} ದಿನದ ಸಮಯ"}
         regionFormatStandard{"{0} ಪ್ರಮಾಣಿತ ಸಮಯ"}

@@ -258,6 +258,9 @@ ja{
         "America:Chihuahua"{
             ec{"チワワ"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"シウダー・フアレス"}
+        }
         "America:Coral_Harbour"{
             ec{"アティコカン"}
         }
@@ -1025,7 +1028,7 @@ ja{
             ec{"カリーニングラード"}
         }
         "Europe:Kiev"{
-            ec{"キエフ"}
+            ec{"キーウ"}
         }
         "Europe:Kirov"{
             ec{"キーロフ"}
@@ -1222,6 +1225,9 @@ ja{
         }
         "Pacific:Johnston"{
             ec{"ジョンストン島"}
+        }
+        "Pacific:Kanton"{
+            ec{"カントン島"}
         }
         "Pacific:Kiritimati"{
             ec{"キリスィマスィ島"}
@@ -1943,10 +1949,10 @@ ja{
             lg{"エカテリンブルグ時間"}
             ls{"エカテリンブルグ標準時"}
         }
+        "meta:Yukon"{
+            ls{"ユーコン時間"}
+        }
         fallbackFormat{"{1}（{0}）"}
-        gmtFormat{"GMT{0}"}
-        gmtZeroFormat{"GMT"}
-        hourFormat{"+HH:mm;-HH:mm"}
         regionFormat{"{0}時間"}
         regionFormatDaylight{"{0}夏時間"}
         regionFormatStandard{"{0}標準時"}

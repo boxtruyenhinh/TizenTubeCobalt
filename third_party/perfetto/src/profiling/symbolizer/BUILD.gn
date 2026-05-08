@@ -15,7 +15,6 @@
 import("../../../gn/perfetto.gni")
 import("../../../gn/test.gni")
 
-if (!use_cobalt_customizations) {
 source_set("symbolizer") {
   public_deps = [ "../../../include/perfetto/ext/base" ]
   deps = [ "../../../gn:default_deps" ]
@@ -30,9 +29,6 @@ source_set("symbolizer") {
     "filesystem_windows.cc",
     "local_symbolizer.cc",
     "local_symbolizer.h",
-    "scoped_read_mmap.h",
-    "scoped_read_mmap_posix.cc",
-    "scoped_read_mmap_windows.cc",
     "subprocess.h",
     "subprocess_posix.cc",
     "subprocess_windows.cc",
@@ -40,9 +36,8 @@ source_set("symbolizer") {
     "symbolizer.h",
   ]
 }
-}
 
-if (enable_perfetto_trace_processor && !use_cobalt_customizations) {
+if (enable_perfetto_trace_processor) {
   source_set("symbolize_database") {
     public_deps = [
       ":symbolizer",
@@ -54,7 +49,7 @@ if (enable_perfetto_trace_processor && !use_cobalt_customizations) {
       "../../../include/perfetto/trace_processor:trace_processor",
       "../../../protos/perfetto/trace:zero",
       "../../../protos/perfetto/trace/profiling:zero",
-      "../../trace_processor/util:stack_traces_util",
+      "../../trace_processor/util:build_id",
     ]
     sources = [
       "symbolize_database.cc",
@@ -63,7 +58,6 @@ if (enable_perfetto_trace_processor && !use_cobalt_customizations) {
   }
 }
 
-if (!use_cobalt_customizations) {
 perfetto_unittest_source_set("unittests") {
   testonly = true
   deps = [
@@ -77,5 +71,4 @@ perfetto_unittest_source_set("unittests") {
     "breakpad_symbolizer_unittest.cc",
     "local_symbolizer_unittest.cc",
   ]
-}
 }

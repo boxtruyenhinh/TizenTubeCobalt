@@ -17,10 +17,11 @@
 #include <signal.h>
 #include <sys/socket.h>
 
+#include <limits>
+
 #include "starboard/common/log.h"
 #include "starboard/common/thread.h"
 #include "starboard/configuration.h"
-#include "starboard/memory.h"
 #include "starboard/shared/signal/signal_internal.h"
 #include "starboard/shared/starboard/application.h"
 #include "starboard/system.h"
@@ -30,13 +31,11 @@
 #endif  // SB_IS(EVERGREEN_COMPATIBLE) && !SB_IS(EVERGREEN_COMPATIBLE_LITE)
 
 namespace starboard {
-namespace shared {
-namespace signal {
 
 namespace {
 
 const std::initializer_list<int> kAllSignals = {SIGUSR1, SIGUSR2, SIGCONT,
-                                                SIGTSTP, SIGPWR};
+                                                SIGTSTP, SIGPWR,  SIGWINCH};
 
 int SignalMask(std::initializer_list<int> signal_ids, int action) {
   sigset_t mask;
@@ -50,13 +49,13 @@ int SignalMask(std::initializer_list<int> signal_ids, int action) {
 }
 
 void SetSignalHandler(int signal_id, SignalHandlerFunction handler) {
-  struct sigaction action = {0};
+  struct sigaction action = {};
 
   action.sa_handler = handler;
   action.sa_flags = 0;
   ::sigemptyset(&action.sa_mask);
 
-  ::sigaction(signal_id, &action, NULL);
+  ::sigaction(signal_id, &action, nullptr);
 }
 
 void Conceal(int signal_id) {
@@ -66,11 +65,18 @@ void Conceal(int signal_id) {
   SignalMask(kAllSignals, SIG_UNBLOCK);
 }
 
+void Blur(int signal_id) {
+  SignalMask(kAllSignals, SIG_BLOCK);
+  LogSignalCaught(signal_id);
+  Application::Get()->Blur(nullptr, nullptr);
+  SignalMask(kAllSignals, SIG_UNBLOCK);
+}
+
 void Focus(int signal_id) {
   SignalMask(kAllSignals, SIG_BLOCK);
   LogSignalCaught(signal_id);
   // TODO: Unfreeze or Focus based on state before frozen?
-  starboard::Application::Get()->Focus(NULL, NULL);
+  Application::Get()->Focus(nullptr, nullptr);
   SignalMask(kAllSignals, SIG_UNBLOCK);
 }
 
@@ -84,22 +90,24 @@ void Freeze(int signal_id) {
 void Stop(int signal_id) {
   SignalMask(kAllSignals, SIG_BLOCK);
   LogSignalCaught(signal_id);
-  starboard::Application::Get()->Stop(0);
+  Application::Get()->Stop(0);
   SignalMask(kAllSignals, SIG_UNBLOCK);
 }
 
 void LowMemory(int signal_id) {
   SignalMask(kAllSignals, SIG_BLOCK);
   LogSignalCaught(signal_id);
-  starboard::Application::Get()->InjectLowMemoryEvent();
+  Application::Get()->InjectLowMemoryEvent();
   SignalMask(kAllSignals, SIG_UNBLOCK);
 }
 
+#if !defined(MSG_NOSIGNAL)
 void Ignore(int signal_id) {
   LogSignalCaught(signal_id);
   SbLogRawDumpStack(1);
   SbLogFlush();
 }
+#endif
 
 }  // namespace
 
@@ -117,7 +125,7 @@ class SignalHandlerThread : public ::starboard::Thread {
 
   void Run() override {
     SignalMask(kAllSignals, SIG_UNBLOCK);
-    while (!WaitForJoin(kSbInt64Max)) {
+    while (!WaitForJoin(std::numeric_limits<int64_t>::max())) {
     }
   }
 };
@@ -146,6 +154,7 @@ void InstallSuspendSignalHandlers() {
   SignalMask(kAllSignals, SIG_BLOCK);
 
   SetSignalHandler(SIGUSR1, &Conceal);
+  SetSignalHandler(SIGWINCH, &Blur);
   SetSignalHandler(SIGUSR2, &LowMemory);
   SetSignalHandler(SIGCONT, &Focus);
   SetSignalHandler(SIGTSTP, &Freeze);
@@ -158,12 +167,11 @@ void UninstallSuspendSignalHandlers() {
   SetSignalHandler(SIGPIPE, SIG_DFL);
 #endif
   SetSignalHandler(SIGUSR1, SIG_DFL);
+  SetSignalHandler(SIGWINCH, SIG_DFL);
   SetSignalHandler(SIGUSR2, SIG_DFL);
   SetSignalHandler(SIGCONT, SIG_DFL);
   SetSignalHandler(SIGPWR, SIG_DFL);
   ConfigureSignalHandlerThread(false);
 }
 
-}  // namespace signal
-}  // namespace shared
 }  // namespace starboard

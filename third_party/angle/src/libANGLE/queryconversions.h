@@ -58,8 +58,6 @@ struct GLTypeToGLenum<GLfloat>
     static constexpr GLenum value = GL_FLOAT;
 };
 
-GLint CastMaskValue(GLuint value);
-
 template <typename QueryT, typename InternalT>
 QueryT CastFromGLintStateValue(GLenum pname, InternalT value);
 
@@ -106,6 +104,12 @@ GLint ConvertToGLint(ParamType param)
 }
 
 template <typename ParamType>
+GLfloat ConvertToGLfloat(ParamType param)
+{
+    return CastQueryValueTo<GLfloat>(GL_NONE, param);
+}
+
+template <typename ParamType>
 bool ConvertToBool(ParamType param)
 {
     return param != GL_FALSE;
@@ -119,7 +123,7 @@ GLboolean ConvertToGLBoolean(ParamType param)
 
 // The GL state query API types are: bool, int, uint, float, int64, uint64
 template <typename QueryT>
-void CastStateValues(Context *context,
+void CastStateValues(const Context *context,
                      GLenum nativeType,
                      GLenum pname,
                      unsigned int numParams,

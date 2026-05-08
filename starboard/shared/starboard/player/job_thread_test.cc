@@ -17,18 +17,17 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <condition_variable>
+#include <mutex>
 #include <vector>
 
+#include "starboard/common/log.h"
 #include "starboard/common/time.h"
 #include "starboard/shared/starboard/player/job_queue.h"
-#include "starboard/thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
 
 namespace {
 
@@ -37,13 +36,13 @@ using ::testing::ElementsAre;
 // Require at least millisecond-level precision.
 constexpr int64_t kPrecisionUsec = 1000;
 
-void ExecutePendingJobs(ScopedJobThreadPtr& job_thread) {
+void ExecutePendingJobs(JobThread* job_thread) {
   job_thread->ScheduleAndWait([]() {});
 }
 
 TEST(JobThreadTest, ScheduledJobsAreExecutedInOrder) {
   std::vector<int> values;
-  ScopedJobThreadPtr job_thread(new JobThread("JobThreadTests"));
+  auto job_thread = JobThread::Create("JobThreadTests");
   job_thread->Schedule([&]() { values.push_back(1); });
   job_thread->Schedule([&]() { values.push_back(2); });
   job_thread->Schedule([&]() { values.push_back(3); });
@@ -56,15 +55,16 @@ TEST(JobThreadTest, ScheduledJobsAreExecutedInOrder) {
   // Sleep past the last scheduled job.
   usleep(4 * kPrecisionUsec);
 
-  ExecutePendingJobs(job_thread);
+  ExecutePendingJobs(job_thread.get());
 
   EXPECT_THAT(values, ElementsAre(1, 2, 3, 4, 5, 6, 7, 8));
+  job_thread->Stop();
 }
 
 TEST(JobThreadTest, ScheduleAndWaitWaits) {
   int64_t start = CurrentMonotonicTime();
   std::atomic_bool job_1 = {false};
-  ScopedJobThreadPtr job_thread(new JobThread("JobThreadTests"));
+  auto job_thread = JobThread::Create("JobThreadTests");
   job_thread->ScheduleAndWait([&]() {
     usleep(1 * kPrecisionUsec);
     job_1 = true;
@@ -72,12 +72,13 @@ TEST(JobThreadTest, ScheduleAndWaitWaits) {
   // Verify that the job ran and that it took at least as long as it slept.
   EXPECT_TRUE(job_1);
   EXPECT_GE(CurrentMonotonicTime() - start, 1 * kPrecisionUsec);
+  job_thread->Stop();
 }
 
 TEST(JobThreadTest, ScheduledJobsShouldNotExecuteAfterGoingOutOfScope) {
   std::atomic_int counter = {0};
   {
-    ScopedJobThreadPtr job_thread(new JobThread("JobThreadTests"));
+    auto job_thread = JobThread::Create("JobThreadTests");
     std::function<void()> job = [&]() {
       counter++;
       job_thread->Schedule(job, 2 * kPrecisionUsec);
@@ -86,7 +87,8 @@ TEST(JobThreadTest, ScheduledJobsShouldNotExecuteAfterGoingOutOfScope) {
 
     // Wait for the job to run at least once and reschedule itself.
     usleep(1 * kPrecisionUsec);
-    ExecutePendingJobs(job_thread);
+    ExecutePendingJobs(job_thread.get());
+    job_thread->Stop();
   }
   int end_value = counter;
   EXPECT_GE(counter, 1);
@@ -100,7 +102,7 @@ TEST(JobThreadTest, CanceledJobsAreCanceled) {
   std::atomic_int counter_1 = {0}, counter_2 = {0};
   JobQueue::JobToken job_token_1, job_token_2;
 
-  ScopedJobThreadPtr job_thread(new JobThread("JobThreadTests"));
+  auto job_thread = JobThread::Create("JobThreadTests");
   std::function<void()> job_1 = [&]() {
     counter_1++;
     job_token_1 = job_thread->Schedule(job_1);
@@ -114,7 +116,7 @@ TEST(JobThreadTest, CanceledJobsAreCanceled) {
   job_token_2 = job_thread->Schedule(job_2);
 
   // Wait for the scheduled jobs to at least run once.
-  ExecutePendingJobs(job_thread);
+  ExecutePendingJobs(job_thread.get());
 
   // Cancel job 1 and grab the current counter values.
   job_thread->ScheduleAndWait(
@@ -124,7 +126,7 @@ TEST(JobThreadTest, CanceledJobsAreCanceled) {
 
   // Sleep and wait for pending jobs to run.
   usleep(1 * kPrecisionUsec);
-  ExecutePendingJobs(job_thread);
+  ExecutePendingJobs(job_thread.get());
 
   // Job 1 should not have run again.
   EXPECT_EQ(counter_1, checkpoint_1);
@@ -135,10 +137,11 @@ TEST(JobThreadTest, CanceledJobsAreCanceled) {
   // Cancel job 2 to avoid it scheduling itself during destruction.
   job_thread->ScheduleAndWait(
       [&]() { job_thread->RemoveJobByToken(job_token_2); });
+  job_thread->Stop();
 }
 
 TEST(JobThreadTest, QueueBelongsToCorrectThread) {
-  ScopedJobThreadPtr job_thread(new JobThread("JobThreadTests"));
+  auto job_thread = JobThread::Create("JobThreadTests");
   JobQueue job_queue;
 
   bool belongs_to_job_thread = false;
@@ -164,28 +167,40 @@ TEST(JobThreadTest, QueueBelongsToCorrectThread) {
   job_queue.RunUntilIdle();
   EXPECT_FALSE(belongs_to_job_thread);
   EXPECT_TRUE(belongs_to_main_thread);
+  job_thread->Stop();
 }
 
-TEST(JobThreadTest, ScheduleJobDuringShutdown) {
-  ScopedJobThreadPtr job_thread_ptr(new JobThread{"JobThreadTests"});
+TEST(JobThreadTest, Stop) {
+  std::mutex mutex;
+  std::condition_variable cv;
+  bool started = false;
 
-  bool job_thread_is_null = true;
+  auto job_thread = JobThread::Create("test");
 
-  job_thread_ptr->Schedule([&]() {
-    // Wait for the job_thread_ptr.reset() is started.
-    usleep(10 * kPrecisionUsec);
-    job_thread_is_null = !job_thread_ptr;
+  job_thread->Schedule([&] {
+    {
+      std::lock_guard lock(mutex);
+      started = true;
+    }
+    cv.notify_one();
+
+    usleep(5'000);
+
+    // Pending task is still running. job_thread should not be null.
+    EXPECT_NE(job_thread, nullptr);
   });
 
-  // Wait for the job to start running.
-  usleep(1 * kPrecisionUsec);
-  job_thread_ptr.reset();
+  {
+    std::unique_lock lock(mutex);
+    cv.wait(lock, [&started] { return started; });
+  }
 
-  EXPECT_FALSE(job_thread_is_null);
+  // Calling Stop() explicitly ensures the pending task completes before
+  // 'job_thread' is destroyed at the end of the scope. This ensures that the
+  // captured reference remains valid and non-null while the task is running.
+  job_thread->Stop();
 }
 
 }  // namespace
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
+
 }  // namespace starboard

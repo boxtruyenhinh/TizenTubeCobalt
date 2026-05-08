@@ -16,11 +16,9 @@
 #define STARBOARD_SHARED_STARBOARD_CRASH_HANDLER_H_
 
 namespace starboard {
-namespace common {
 
 const void* GetCrashHandlerApi();
 
-}  // namespace common
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_CRASH_HANDLER_H_

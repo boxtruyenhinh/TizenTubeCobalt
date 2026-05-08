@@ -1,7 +1,6 @@
 // Copyright 2019 Google LLC.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 #include "tools/fiddle/examples.h"
-// HASH=41638d13e40fa449ece354dde5fb1941
 REG_FIDDLE(Path_conservativelyContainsRect, 256, 140, false, 0) {
 void draw(SkCanvas* canvas) {
     SkPath path;
@@ -12,7 +11,7 @@ void draw(SkCanvas* canvas) {
       { 15, 25, 49, 115 },
       { 13, 27, 51, 113 },
     };
-    for (unsigned i = 0; i < SK_ARRAY_COUNT(tests); ++i) {
+    for (unsigned i = 0; i < std::size(tests); ++i) {
       SkPaint paint;
       paint.setColor(SK_ColorRED);
       canvas->drawPath(path, paint);

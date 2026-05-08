@@ -29,8 +29,8 @@ class MojoRenderer;
 //
 // Implementors of new media::Renderer types are encouraged to create small
 // wrapper factories that use MRF, rather than creating derived MojoRenderer
-// types, or extending MRF. See DecryptingRendererFactory and
-// MediaPlayerRendererClientFactory for examples of small wrappers around MRF.
+// types, or extending MRF. See DecryptingRendererFactory for and example of a
+// small wrapper around MRF.
 class MojoRendererFactory final : public RendererFactory {
  public:
   explicit MojoRendererFactory(
@@ -73,15 +73,19 @@ class MojoRendererFactory final : public RendererFactory {
           client_extenion_ptr,
       const scoped_refptr<base::SequencedTaskRunner>& media_task_runner,
       VideoRendererSink* video_renderer_sink);
+#endif  // defined (OS_ANDROID)
 
-  std::unique_ptr<MojoRenderer> CreateMediaPlayerRenderer(
-      mojo::PendingReceiver<mojom::MediaPlayerRendererExtension>
+#if BUILDFLAG(USE_STARBOARD_MEDIA)
+  std::unique_ptr<MojoRenderer> CreateStarboardRenderer(
+      mojo::PendingRemote<mojom::MediaLog> media_log_remote,
+      const StarboardRendererConfig& config,
+      mojo::PendingReceiver<mojom::StarboardRendererExtension>
           renderer_extension_receiver,
-      mojo::PendingRemote<mojom::MediaPlayerRendererClientExtension>
+      mojo::PendingRemote<mojom::StarboardRendererClientExtension>
           client_extension_remote,
       const scoped_refptr<base::SequencedTaskRunner>& media_task_runner,
       VideoRendererSink* video_renderer_sink);
-#endif  // defined (OS_ANDROID)
+#endif  // BUILDFLAG(USE_STARBOARD_MEDIA)
 
  private:
   // InterfaceFactory or InterfaceProvider used to create or connect to remote

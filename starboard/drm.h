@@ -20,8 +20,12 @@
 #ifndef STARBOARD_DRM_H_
 #define STARBOARD_DRM_H_
 
+#include <limits.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
 #include "starboard/export.h"
-#include "starboard/types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -220,7 +224,7 @@ typedef void (*SbDrmServerCertificateUpdatedFunc)(SbDrmSystem drm_system,
 #define kSbDrmSystemInvalid ((SbDrmSystem)NULL)
 
 // A ticket for callback invocations initiated by the DRM system.
-#define kSbDrmTicketInvalid kSbInvalidInt
+#define kSbDrmTicketInvalid INT_MIN
 
 // --- Functions -------------------------------------------------------------
 

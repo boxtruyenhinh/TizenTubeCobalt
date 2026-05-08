@@ -38,7 +38,7 @@
 bool SbAccessibilityGetTextToSpeechSettings(
     SbAccessibilityTextToSpeechSettings* out_setting) {
   if (!out_setting ||
-      !starboard::common::MemoryIsZero(
+      !starboard::MemoryIsZero(
         out_setting, sizeof(SbAccessibilityTextToSpeechSettings))) {
     return false;
   }

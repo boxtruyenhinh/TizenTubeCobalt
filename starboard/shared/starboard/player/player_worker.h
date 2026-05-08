@@ -15,27 +15,26 @@
 #ifndef STARBOARD_SHARED_STARBOARD_PLAYER_PLAYER_WORKER_H_
 #define STARBOARD_SHARED_STARBOARD_PLAYER_PLAYER_WORKER_H_
 
-#include <pthread.h>
-
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include "starboard/common/log.h"
 #include "starboard/common/ref_counted.h"
+#include "starboard/common/result.h"
 #include "starboard/media.h"
 #include "starboard/player.h"
 #include "starboard/shared/internal_only.h"
+#include "starboard/shared/starboard/experimental_features.h"
 #include "starboard/shared/starboard/player/input_buffer_internal.h"
 #include "starboard/shared/starboard/player/job_queue.h"
+#include "starboard/shared/starboard/player/job_thread.h"
 #include "starboard/window.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
 
 // This class creates a thread that executes events posted to an internally
 // created queue. This guarantees that all such events are processed on the same
@@ -62,16 +61,7 @@ class PlayerWorker {
   // All functions of this class will be called from the JobQueue thread.
   class Handler {
    public:
-    // Stores the success status of Handler operations. If |success| is false,
-    // |error_message| may be set with details of the error.
-    struct HandlerResult {
-      bool success;
-      std::string error_message;
-    };
-
     typedef PlayerWorker::Bounds Bounds;
-    typedef ::starboard::shared::starboard::player::InputBuffer InputBuffer;
-    typedef ::starboard::shared::starboard::player::InputBuffers InputBuffers;
 
     typedef std::function<
         void(int64_t media_time, int dropped_video_frames, bool is_progressing)>
@@ -85,23 +75,24 @@ class PlayerWorker {
     Handler() = default;
     virtual ~Handler() {}
 
-    // All the following functions set |HandlerResult.success| to false to
+    // All the following functions set |Result<void>.success| to false to
     // signal a fatal error. The event processing loop in PlayerWorker will
     // terminate in this case.
-    virtual HandlerResult Init(SbPlayer player,
-                               UpdateMediaInfoCB update_media_info_cb,
-                               GetPlayerStateCB get_player_state_cb,
-                               UpdatePlayerStateCB update_player_state_cb,
-                               UpdatePlayerErrorCB update_player_error_cb) = 0;
-    virtual HandlerResult Seek(int64_t seek_to_time, int ticket) = 0;
-    virtual HandlerResult WriteSamples(const InputBuffers& input_buffers,
-                                       int* samples_written) = 0;
-    virtual HandlerResult WriteEndOfStream(SbMediaType sample_type) = 0;
-    virtual HandlerResult SetPause(bool pause) = 0;
-    virtual HandlerResult SetPlaybackRate(double playback_rate) = 0;
+    virtual Result<void> Init(JobQueue* job_queue,
+                              SbPlayer player,
+                              UpdateMediaInfoCB update_media_info_cb,
+                              GetPlayerStateCB get_player_state_cb,
+                              UpdatePlayerStateCB update_player_state_cb,
+                              UpdatePlayerErrorCB update_player_error_cb) = 0;
+    virtual Result<void> Seek(int64_t seek_to_time, int ticket) = 0;
+    virtual Result<void> WriteSamples(const InputBuffers& input_buffers,
+                                      int* samples_written) = 0;
+    virtual Result<void> WriteEndOfStream(SbMediaType sample_type) = 0;
+    virtual Result<void> SetPause(bool pause) = 0;
+    virtual Result<void> SetPlaybackRate(double playback_rate) = 0;
     virtual void SetVolume(double volume) = 0;
 
-    virtual HandlerResult SetBounds(const Bounds& bounds) = 0;
+    virtual Result<void> SetBounds(const Bounds& bounds) = 0;
 
     // Once this function returns, all processing on the Handler and related
     // objects has to be stopped.  The JobQueue will be destroyed immediately
@@ -112,73 +103,15 @@ class PlayerWorker {
 
     virtual void SetMaxVideoInputSize(int max_video_input_size) = 0;
 
+    virtual void SetVideoSurfaceView(void* surface_view) = 0;
+    virtual void SetExperimentalFeatures(
+        const ExperimentalFeatures& experimental_features) = 0;
+
    private:
     Handler(const Handler&) = delete;
     Handler& operator=(const Handler&) = delete;
   };
 
-  static PlayerWorker* CreateInstance(
-      SbMediaAudioCodec audio_codec,
-      SbMediaVideoCodec video_codec,
-      std::unique_ptr<Handler> handler,
-      UpdateMediaInfoCB update_media_info_cb,
-      SbPlayerDecoderStatusFunc decoder_status_func,
-      SbPlayerStatusFunc player_status_func,
-      SbPlayerErrorFunc player_error_func,
-      SbPlayer player,
-      void* context);
-
-  ~PlayerWorker();
-
-  void Seek(int64_t seek_to_time, int ticket) {
-    job_queue_->Schedule(
-        std::bind(&PlayerWorker::DoSeek, this, seek_to_time, ticket));
-  }
-
-  void WriteSamples(InputBuffers input_buffers) {
-    job_queue_->Schedule(std::bind(&PlayerWorker::DoWriteSamples, this,
-                                   std::move(input_buffers)));
-  }
-
-  void WriteEndOfStream(SbMediaType sample_type) {
-    job_queue_->Schedule(
-        std::bind(&PlayerWorker::DoWriteEndOfStream, this, sample_type));
-  }
-
-  void SetBounds(Bounds bounds) {
-    job_queue_->Schedule(std::bind(&PlayerWorker::DoSetBounds, this, bounds));
-  }
-
-  void SetPause(bool pause) {
-    job_queue_->Schedule(std::bind(&PlayerWorker::DoSetPause, this, pause));
-  }
-
-  void SetPlaybackRate(double playback_rate) {
-    // Arbitrary values to give the playback rate a valid range.  A particular
-    // implementation may have stricter or looser requirement, or even only
-    // support several discreet values.
-    // Ideally the range of the playback rate should be determined by the audio
-    // graph but that will break the thread invariant of the handler.
-    const double kMinimumNonZeroPlaybackRate = 0.1;
-    const double kMaximumPlaybackRate = 4.0;
-    if (playback_rate > 0.0 && playback_rate < kMinimumNonZeroPlaybackRate) {
-      playback_rate = kMinimumNonZeroPlaybackRate;
-    } else if (playback_rate > kMaximumPlaybackRate) {
-      playback_rate = kMaximumPlaybackRate;
-    }
-    job_queue_->Schedule(
-        std::bind(&PlayerWorker::DoSetPlaybackRate, this, playback_rate));
-  }
-
-  void SetVolume(double volume) {
-    job_queue_->Schedule(std::bind(&PlayerWorker::DoSetVolume, this, volume));
-  }
-
-  SbDecodeTarget GetCurrentDecodeTarget() {
-    return handler_->GetCurrentDecodeTarget();
-  }
-
- private:
   PlayerWorker(SbMediaAudioCodec audio_codec,
                SbMediaVideoCodec video_codec,
                std::unique_ptr<Handler> handler,
@@ -188,20 +121,70 @@ class PlayerWorker {
                SbPlayerErrorFunc player_error_func,
                SbPlayer player,
                void* context);
+  ~PlayerWorker();
 
   PlayerWorker(const PlayerWorker&) = delete;
   PlayerWorker& operator=(const PlayerWorker&) = delete;
 
+  void Seek(int64_t seek_to_time, int ticket) {
+    job_thread_->Schedule(
+        [this, seek_to_time, ticket] { DoSeek(seek_to_time, ticket); });
+  }
+
+  void WriteSamples(InputBuffers input_buffers) {
+    job_thread_->Schedule(
+        [this, input_buffers = std::move(input_buffers)]() mutable {
+          DoWriteSamples(std::move(input_buffers));
+        });
+  }
+
+  void WriteEndOfStream(SbMediaType sample_type) {
+    job_thread_->Schedule(
+        [this, sample_type] { DoWriteEndOfStream(sample_type); });
+  }
+
+  void SetBounds(Bounds bounds) {
+    job_thread_->Schedule([this, bounds] { DoSetBounds(bounds); });
+  }
+
+  void SetPause(bool pause) {
+    job_thread_->Schedule([this, pause] { DoSetPause(pause); });
+  }
+
+  void SetPlaybackRate(double playback_rate) {
+    // Arbitrary values to give the playback rate a valid range.  A particular
+    // implementation may have stricter or looser requirement, or even only
+    // support several discrete values.
+    // Ideally the range of the playback rate should be determined by the audio
+    // graph but that will break the thread invariant of the handler.
+    const double kMinimumNonZeroPlaybackRate = 0.1;
+    const double kMaximumPlaybackRate = 4.0;
+    if (playback_rate > 0.0 && playback_rate < kMinimumNonZeroPlaybackRate) {
+      playback_rate = kMinimumNonZeroPlaybackRate;
+    } else if (playback_rate > kMaximumPlaybackRate) {
+      playback_rate = kMaximumPlaybackRate;
+    }
+    job_thread_->Schedule(
+        [this, playback_rate] { DoSetPlaybackRate(playback_rate); });
+  }
+
+  void SetVolume(double volume) {
+    job_thread_->Schedule([this, volume] { DoSetVolume(volume); });
+  }
+
+  SbDecodeTarget GetCurrentDecodeTarget() {
+    return handler_->GetCurrentDecodeTarget();
+  }
+
+ private:
   void UpdateMediaInfo(int64_t time, int dropped_video_frames, bool underflow);
 
   SbPlayerState player_state() const { return player_state_; }
   void UpdatePlayerState(SbPlayerState player_state);
   void UpdatePlayerError(SbPlayerError error,
-                         Handler::HandlerResult result,
+                         Result<void> result,
                          const std::string& message);
 
-  static void* ThreadEntryPoint(void* context);
-  void RunLoop();
   void DoInit();
   void DoSeek(int64_t seek_to_time, int ticket);
   void DoWriteSamples(InputBuffers input_buffers);
@@ -211,24 +194,25 @@ class PlayerWorker {
   void DoSetPause(bool pause);
   void DoSetPlaybackRate(double rate);
   void DoSetVolume(double volume);
-  void DoStop();
 
   void UpdateDecoderState(SbMediaType type, SbPlayerDecoderState state);
 
-  pthread_t thread_;
-  std::unique_ptr<JobQueue> job_queue_;
+  const std::unique_ptr<JobThread> job_thread_;
 
-  SbMediaAudioCodec audio_codec_;
-  SbMediaVideoCodec video_codec_;
+  const SbMediaAudioCodec audio_codec_;
+  const SbMediaVideoCodec video_codec_;
+  // While |handler_| cannot be |const| because it is reset in the destructor,
+  // it remains unchanged after construction for the rest of the object's
+  // lifetime.
   std::unique_ptr<Handler> handler_;
-  UpdateMediaInfoCB update_media_info_cb_;
+  const UpdateMediaInfoCB update_media_info_cb_;
 
-  SbPlayerDecoderStatusFunc decoder_status_func_;
-  SbPlayerStatusFunc player_status_func_;
-  SbPlayerErrorFunc player_error_func_;
+  const SbPlayerDecoderStatusFunc decoder_status_func_;
+  const SbPlayerStatusFunc player_status_func_;
+  const SbPlayerErrorFunc player_error_func_;
   std::atomic_bool error_occurred_ = {false};
-  SbPlayer player_;
-  void* context_;
+  const SbPlayer player_;
+  void* const context_;
   int ticket_;
 
   SbPlayerState player_state_;
@@ -237,9 +221,6 @@ class PlayerWorker {
   JobQueue::JobToken write_pending_sample_job_token_;
 };
 
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_PLAYER_WORKER_H_

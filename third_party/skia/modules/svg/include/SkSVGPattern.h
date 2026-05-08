@@ -8,12 +8,17 @@
 #ifndef SkSVGPattern_DEFINED
 #define SkSVGPattern_DEFINED
 
+#include "include/core/SkRefCnt.h"
+#include "include/private/base/SkAPI.h"
 #include "modules/svg/include/SkSVGHiddenContainer.h"
+#include "modules/svg/include/SkSVGNode.h"
 #include "modules/svg/include/SkSVGTypes.h"
+#include "src/base/SkTLazy.h"
 
+class SkPaint;
 class SkSVGRenderContext;
 
-class SkSVGPattern final : public SkSVGHiddenContainer {
+class SK_API SkSVGPattern final : public SkSVGHiddenContainer {
 public:
     static sk_sp<SkSVGPattern> Make() {
         return sk_sp<SkSVGPattern>(new SkSVGPattern());

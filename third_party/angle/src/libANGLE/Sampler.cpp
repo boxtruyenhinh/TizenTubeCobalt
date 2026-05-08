@@ -16,7 +16,11 @@ namespace gl
 {
 
 Sampler::Sampler(rx::GLImplFactory *factory, SamplerID id)
-    : RefCountObject(id), mState(), mDirty(true), mSampler(factory->createSampler(mState)), mLabel()
+    : RefCountObject(factory->generateSerial(), id),
+      mState(),
+      mDirty(true),
+      mSampler(factory->createSampler(mState)),
+      mLabel()
 {}
 
 Sampler::~Sampler()
@@ -32,9 +36,15 @@ void Sampler::onDestroy(const Context *context)
     }
 }
 
-void Sampler::setLabel(const Context *context, const std::string &label)
+angle::Result Sampler::setLabel(const Context *context, const std::string &label)
 {
     mLabel = label;
+
+    if (mSampler)
+    {
+        return mSampler->onLabelUpdate(context);
+    }
+    return angle::Result::Continue;
 }
 
 const std::string &Sampler::getLabel() const
@@ -172,11 +182,6 @@ void Sampler::setBorderColor(const Context *context, const ColorGeneric &color)
 const ColorGeneric &Sampler::getBorderColor() const
 {
     return mState.getBorderColor();
-}
-
-const SamplerState &Sampler::getSamplerState() const
-{
-    return mState;
 }
 
 rx::SamplerImpl *Sampler::getImplementation() const

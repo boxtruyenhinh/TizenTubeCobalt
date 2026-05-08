@@ -259,6 +259,9 @@ zh_Hant{
         "America:Chihuahua"{
             ec{"奇華華"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"華雷斯"}
+        }
         "America:Coral_Harbour"{
             ec{"阿蒂科肯"}
         }
@@ -1224,6 +1227,9 @@ zh_Hant{
         "Pacific:Johnston"{
             ec{"強斯頓"}
         }
+        "Pacific:Kanton"{
+            ec{"坎頓島"}
+        }
         "Pacific:Kiritimati"{
             ec{"基里地馬地島"}
         }
@@ -1627,7 +1633,7 @@ zh_Hant{
             ls{"印度洋時間"}
         }
         "meta:Indochina"{
-            ls{"印度支那時間"}
+            ls{"中南半島時間"}
         }
         "meta:Indonesia_Central"{
             ls{"印尼中部時間"}
@@ -1963,12 +1969,10 @@ zh_Hant{
             lg{"葉卡捷琳堡時間"}
             ls{"葉卡捷琳堡標準時間"}
         }
+        "meta:Yukon"{
+            ls{"育空地區時間"}
+        }
         fallbackFormat{"{1}（{0}）"}
-        gmtFormat{"GMT{0}"}
-        gmtZeroFormat{"GMT"}
-        hourFormat{"+HH:mm;-HH:mm"}
         regionFormat{"{0}時間"}
-        regionFormatDaylight{"{0} (+1)"}
-        regionFormatStandard{"{0} (+0)"}
     }
 }

@@ -13,7 +13,7 @@
 namespace quic {
 
 // This interface writes encoder/decoder data to peer.
-class QUIC_EXPORT_PRIVATE QpackStreamSenderDelegate {
+class QUICHE_EXPORT QpackStreamSenderDelegate {
  public:
   virtual ~QpackStreamSenderDelegate() = default;
 

@@ -9,7 +9,6 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkMatrix.h"
@@ -20,6 +19,7 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTileMode.h"
+#include "src/core/SkColorPriv.h"
 
 static sk_sp<SkImage> make_image(int firstBlackRow, int lastBlackRow) {
     static const int kWidth = 25;
@@ -46,9 +46,9 @@ public:
     FilterBugGM() { this->setBGColor(SK_ColorRED); }
 
 protected:
-    SkString onShortName() override { return SkString("filterbug"); }
+    SkString getName() const override { return SkString("filterbug"); }
 
-    SkISize onISize() override { return SkISize::Make(150, 150); }
+    SkISize getISize() override { return SkISize::Make(150, 150); }
 
     void onOnceBeforeDraw() override {
         // The top texture has 5 black rows on top and then 22 white rows on the bottom

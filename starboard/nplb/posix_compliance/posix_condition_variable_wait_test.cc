@@ -19,36 +19,15 @@
 #include "starboard/thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
-void* PosixTakeThenSignalEntryPoint(void* context) {
-  posix::TakeThenSignalContext* test_context =
-      static_cast<posix::TakeThenSignalContext*>(context);
-
-  // Don't signal the condition variable until we are asked.
-  test_context->do_signal.Take();
-
-  if (test_context->delay_after_signal > 0) {
-    usleep(test_context->delay_after_signal);
-  }
-
-  // Signal the condition variable.
-  EXPECT_EQ(pthread_mutex_lock(&test_context->mutex), 0);
-  EXPECT_TRUE(pthread_cond_signal(&test_context->condition));
-  EXPECT_EQ(pthread_mutex_unlock(&test_context->mutex), 0);
-
-  return NULL;
-}
-
 TEST(PosixConditionVariableWaitTest, SunnyDayAutoInit) {
-  posix::TakeThenSignalContext context = {posix::TestSemaphore(0),
-                                          PTHREAD_MUTEX_INITIALIZER,
-                                          PTHREAD_COND_INITIALIZER};
+  TakeThenSignalContext context = {TestSemaphore(0), PTHREAD_MUTEX_INITIALIZER,
+                                   PTHREAD_COND_INITIALIZER};
   // Start the thread.
   pthread_t thread = 0;
-  pthread_create(&thread, NULL, posix::TakeThenSignalEntryPoint, &context);
+  pthread_create(&thread, nullptr, TakeThenSignalEntryPoint, &context);
 
   EXPECT_EQ(pthread_mutex_lock(&context.mutex), 0);
 
@@ -71,11 +50,11 @@ TEST(PosixConditionVariableWaitTest, SunnyDayAutoInit) {
 
 TEST(PosixConditionVariableWaitTest, SunnyDay) {
   const int kMany = kSbMaxThreads > 64 ? 64 : kSbMaxThreads;
-  posix::WaiterContext context;
+  WaiterContext context;
 
   std::vector<pthread_t> threads(kMany);
   for (int i = 0; i < kMany; ++i) {
-    pthread_create(&threads[i], NULL, posix::WaiterEntryPoint, &context);
+    pthread_create(&threads[i], nullptr, WaiterEntryPoint, &context);
   }
 
   for (int i = 0; i < kMany; ++i) {
@@ -94,4 +73,3 @@ TEST(PosixConditionVariableWaitTest, SunnyDay) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

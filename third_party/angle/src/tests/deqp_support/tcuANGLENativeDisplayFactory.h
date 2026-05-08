@@ -21,6 +21,8 @@
 #ifndef TCU_ANGLE_WIN32_NATIVE_DISPLAY_FACTORY_H_
 #define TCU_ANGLE_WIN32_NATIVE_DISPLAY_FACTORY_H_
 
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include "egluNativeDisplay.hpp"
 #include "eglwDefs.hpp"
 #include "tcuDefs.hpp"
@@ -45,13 +47,16 @@ class ANGLENativeDisplayFactory : public eglu::NativeDisplayFactory
     ANGLENativeDisplayFactory(const std::string &name,
                               const std::string &description,
                               std::vector<eglw::EGLAttrib> platformAttributes,
-                              EventState *eventState);
+                              EventState *eventState,
+                              const EGLenum platformType = EGL_PLATFORM_ANGLE_ANGLE);
     ~ANGLENativeDisplayFactory() override;
 
     eglu::NativeDisplay *createDisplay(const eglw::EGLAttrib *attribList) const override;
 
   private:
+    eglw::EGLNativeDisplayType mNativeDisplay;
     std::vector<eglw::EGLAttrib> mPlatformAttributes;
+    EGLenum mPlatformType;
 };
 
 }  // namespace tcu

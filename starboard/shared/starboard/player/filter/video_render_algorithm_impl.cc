@@ -14,14 +14,11 @@
 
 #include "starboard/shared/starboard/player/filter/video_render_algorithm_impl.h"
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 #include "starboard/common/time.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 VideoRenderAlgorithmImpl::VideoRenderAlgorithmImpl(
     const GetRefreshRateFn& get_refresh_rate_fn)
@@ -103,7 +100,7 @@ void VideoRenderAlgorithmImpl::Render(
       auto now = CurrentMonotonicTime();
       SB_LOG(WARNING)
           << "Dropping frame @ " << frames->front()->timestamp()
-          << " microseconds, the elasped media time/system time from"
+          << " microseconds, the elapsed media time/system time from"
           << " last Render() call are "
           << media_time - media_time_of_last_render_call_ << "/"
           << now - system_time_of_last_render_call_ << " microseconds, with "
@@ -159,7 +156,7 @@ void VideoRenderAlgorithmImpl::RenderWithCadence(
   }
 
   auto refresh_rate = get_refresh_rate_fn_();
-  SB_DCHECK(refresh_rate >= 1);
+  SB_DCHECK_GE(refresh_rate, 1);
   if (refresh_rate < 1) {
     refresh_rate = 60;
   }
@@ -182,7 +179,7 @@ void VideoRenderAlgorithmImpl::RenderWithCadence(
 
     frame_rate_estimate_.Update(*frames);
     auto frame_rate = frame_rate_estimate_.frame_rate();
-    SB_DCHECK(frame_rate != VideoFrameRateEstimator::kInvalidFrameRate);
+    SB_DCHECK_NE(frame_rate, VideoFrameRateEstimator::kInvalidFrameRate);
     cadence_pattern_generator_.UpdateRefreshRateAndMaybeReset(refresh_rate);
     if (playback_rate == 0) {
       playback_rate = 1.0;
@@ -220,7 +217,7 @@ void VideoRenderAlgorithmImpl::RenderWithCadence(
       auto now = CurrentMonotonicTime();
       SB_LOG_IF(WARNING, times_logged_ < kMaxLogPerPlaybackSession)
           << "Dropping frame @ " << frames->front()->timestamp()
-          << " microseconds, the elasped media time/system time from"
+          << " microseconds, the elapsed media time/system time from"
           << " last Render() call are "
           << media_time - media_time_of_last_render_call_ << "/"
           << now - system_time_of_last_render_call_ << " microseconds, with "
@@ -236,7 +233,7 @@ void VideoRenderAlgorithmImpl::RenderWithCadence(
           << " microseconds should be displayed "
           << cadence_pattern_generator_.GetNumberOfTimesCurrentFrameDisplays()
           << " times, but is displayed " << current_frame_rendered_times_
-          << " times, the elasped media time/system time from last Render()"
+          << " times, the elapsed media time/system time from last Render()"
           << " call are " << media_time - media_time_of_last_render_call_ << "/"
           << now - system_time_of_last_render_call_ << " microseconds, the"
           << " video is at " << frame_rate_estimate_.frame_rate() << " fps,"
@@ -292,8 +289,4 @@ void VideoRenderAlgorithmImpl::RenderWithCadence(
 #endif  // SB_PLAYER_FILTER_ENABLE_STATE_CHECK
 }
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

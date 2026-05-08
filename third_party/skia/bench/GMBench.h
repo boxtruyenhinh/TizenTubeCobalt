@@ -22,13 +22,19 @@ public:
         return fGM->modifyGrContextOptions(options);
     }
 
+#if defined(SK_GRAPHITE)
+    void modifyGraphiteContextOptions(skgpu::graphite::ContextOptions* options) override {
+        fGM->modifyGraphiteContextOptions(options);
+    }
+#endif
+
 protected:
     const char* onGetName() override;
     bool isSuitableFor(Backend backend) override;
     void onPerCanvasPreDraw(SkCanvas*) override;
     void onPerCanvasPostDraw(SkCanvas*) override;
     void onDraw(int loops, SkCanvas*) override;
-    SkIPoint onGetSize() override;
+    SkISize onGetSize() override;
 
 private:
     std::unique_ptr<skiagm::GM> fGM;

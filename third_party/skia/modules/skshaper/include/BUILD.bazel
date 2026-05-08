@@ -1,23 +1,52 @@
-load("//bazel:macros.bzl", "generated_cc_atom")
+load("//bazel:skia_rules.bzl", "skia_filegroup")
 
-filegroup(
+package(
+    default_applicable_licenses = ["//:license"],
+)
+
+licenses(["notice"])
+
+skia_filegroup(
     name = "hdrs",
     srcs = [
         "SkShaper.h",
+        "SkShaper_factory.h",
+        "SkShaper_harfbuzz.h",
+        "SkShaper_skunicode.h",
+        "//modules/skshaper/utils:core_hdrs",
     ],
     visibility = ["//modules/skshaper:__pkg__"],
 )
 
-generated_cc_atom(
-    name = "SkShaper_hdr",
-    hdrs = ["SkShaper.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//include/core:SkFontMgr_hdr",
-        "//include/core:SkPoint_hdr",
-        "//include/core:SkRefCnt_hdr",
-        "//include/core:SkScalar_hdr",
-        "//include/core:SkTextBlob_hdr",
-        "//include/core:SkTypes_hdr",
+skia_filegroup(
+    name = "core_hdrs",
+    srcs = [
+        "SkShaper.h",
+        "SkShaper_factory.h",
     ],
+    visibility = ["//modules/skshaper:__pkg__"],
+)
+
+skia_filegroup(
+    name = "coretext_hdrs",
+    srcs = [
+        "SkShaper_coretext.h",
+    ],
+    visibility = ["//modules/skshaper:__pkg__"],
+)
+
+skia_filegroup(
+    name = "harfbuzz_hdrs",
+    srcs = [
+        "SkShaper_harfbuzz.h",
+    ],
+    visibility = ["//modules/skshaper:__pkg__"],
+)
+
+skia_filegroup(
+    name = "skunicode_hdrs",
+    srcs = [
+        "SkShaper_skunicode.h",
+    ],
+    visibility = ["//modules/skshaper:__pkg__"],
 )

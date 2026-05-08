@@ -13,24 +13,21 @@
 // limitations under the License.
 
 #include "starboard/android/shared/accessibility_extension.h"
+
 #include "starboard/extension/accessibility.h"
 
 namespace starboard {
-namespace android {
-namespace shared {
 
 const StarboardExtensionAccessibilityApi kAccessibilityAPI = {
     kStarboardExtensionAccessibilityName,
     1,
-    &accessibility::GetTextToSpeechSettings,
-    &accessibility::GetDisplaySettings,
-    &accessibility::GetCaptionSettings,
-    &accessibility::SetCaptionsEnabled};
+    &GetTextToSpeechSettings,
+    &GetDisplaySettings,
+    &GetCaptionSettings,
+    &SetCaptionsEnabled};
 
 const void* GetAccessibilityApi() {
   return &kAccessibilityAPI;
 }
 
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard

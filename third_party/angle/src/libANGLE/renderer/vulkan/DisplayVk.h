@@ -12,13 +12,12 @@
 
 #include "common/MemoryBuffer.h"
 #include "libANGLE/renderer/DisplayImpl.h"
+#include "libANGLE/renderer/vulkan/vk_cache_utils.h"
 #include "libANGLE/renderer/vulkan/vk_utils.h"
 
 namespace rx
 {
-class RendererVk;
-
-class DisplayVk : public DisplayImpl, public vk::Context
+class DisplayVk : public DisplayImpl, public vk::ErrorContext, public vk::GlobalOps
 {
   public:
     DisplayVk(const egl::DisplayState &state);
@@ -27,14 +26,17 @@ class DisplayVk : public DisplayImpl, public vk::Context
     egl::Error initialize(egl::Display *display) override;
     void terminate() override;
 
-    egl::Error makeCurrent(egl::Surface *drawSurface,
+    egl::Error makeCurrent(egl::Display *display,
+                           egl::Surface *drawSurface,
                            egl::Surface *readSurface,
                            gl::Context *context) override;
 
     bool testDeviceLost() override;
     egl::Error restoreLostDevice(const egl::Display *display) override;
 
-    std::string getVendorString() const override;
+    std::string getRendererDescription() override;
+    std::string getVendorString() override;
+    std::string getVersionString(bool includeFullVersion) override;
 
     DeviceImpl *createDevice() override;
 
@@ -68,42 +70,79 @@ class DisplayVk : public DisplayImpl, public vk::Context
     StreamProducerImpl *createStreamProducerD3DTexture(egl::Stream::ConsumerType consumerType,
                                                        const egl::AttributeMap &attribs) override;
 
-    EGLSyncImpl *createSync(const egl::AttributeMap &attribs) override;
+    EGLSyncImpl *createSync() override;
 
     gl::Version getMaxSupportedESVersion() const override;
     gl::Version getMaxConformantESVersion() const override;
 
+    egl::Error validateImageClientBuffer(const gl::Context *context,
+                                         EGLenum target,
+                                         EGLClientBuffer clientBuffer,
+                                         const egl::AttributeMap &attribs) const override;
+    ExternalImageSiblingImpl *createExternalImageSibling(const gl::Context *context,
+                                                         EGLenum target,
+                                                         EGLClientBuffer buffer,
+                                                         const egl::AttributeMap &attribs) override;
     virtual const char *getWSIExtension() const = 0;
     virtual const char *getWSILayer() const;
 
     // Determine if a config with given formats and sample counts is supported.  This callback may
-    // modify the config to add or remove platform specific attributes such as nativeVisualID before
-    // returning a bool to indicate if the config should be supported.
-    virtual bool checkConfigSupport(egl::Config *config) = 0;
+    // modify the config to add or remove platform specific attributes such as nativeVisualID.  If
+    // the config is not supported by the window system, it removes the EGL_WINDOW_BIT from
+    // surfaceType, which would still allow the config to be used for pbuffers.
+    virtual void checkConfigSupport(egl::Config *config) = 0;
 
-    ANGLE_NO_DISCARD bool getScratchBuffer(size_t requestedSizeBytes,
-                                           angle::MemoryBuffer **scratchBufferOut) const;
-    angle::ScratchBuffer *getScratchBuffer() const { return &mScratchBuffer; }
+    angle::ScratchBuffer *getScratchBuffer() { return &mScratchBuffer; }
 
     void handleError(VkResult result,
                      const char *file,
                      const char *function,
                      unsigned int line) override;
 
-    // TODO(jmadill): Remove this once refactor is done. http://anglebug.com/3041
-    egl::Error getEGLError(EGLint errorCode);
+    void initializeFrontendFeatures(angle::FrontendFeatures *features) const override;
 
     void populateFeatureList(angle::FeatureList *features) override;
+
+    ShareGroupImpl *createShareGroup(const egl::ShareGroupState &state) override;
+
+    bool isConfigFormatSupported(VkFormat format) const;
+    bool isSurfaceFormatColorspacePairSupported(VkSurfaceKHR surface,
+                                                VkFormat format,
+                                                VkColorSpaceKHR colorspace) const;
+
+    void lockVulkanQueue() override;
+    void unlockVulkanQueue() override;
+
+    egl::Error querySupportedCompressionRates(const egl::Config *configuration,
+                                              const egl::AttributeMap &attributes,
+                                              EGLint *rates,
+                                              EGLint rate_size,
+                                              EGLint *num_rates) const override;
+
+  protected:
+    void generateExtensions(egl::DisplayExtensions *outExtensions) const override;
 
   private:
     virtual SurfaceImpl *createWindowSurfaceVk(const egl::SurfaceState &state,
                                                EGLNativeWindowType window) = 0;
-    void generateExtensions(egl::DisplayExtensions *outExtensions) const override;
     void generateCaps(egl::Caps *outCaps) const override;
 
-    mutable angle::ScratchBuffer mScratchBuffer;
+    virtual angle::Result waitNativeImpl();
 
-    std::string mStoredErrorString;
+    bool isColorspaceSupported(VkColorSpaceKHR colorspace) const;
+    void initSupportedSurfaceFormatColorspaces();
+
+    // vk::GlobalOps
+    void putBlob(const angle::BlobCacheKey &key, const angle::MemoryBuffer &value) override;
+    bool getBlob(const angle::BlobCacheKey &key, angle::BlobCacheValue *valueOut) override;
+    std::shared_ptr<angle::WaitableEvent> postMultiThreadWorkerTask(
+        const std::shared_ptr<angle::Closure> &task) override;
+    void notifyDeviceLost() override;
+
+    angle::ScratchBuffer mScratchBuffer;
+
+    // Map of supported colorspace and associated surface format set.
+    angle::HashMap<VkColorSpaceKHR, std::unordered_set<VkFormat>> mSupportedColorspaceFormatsMap;
 };
 
 }  // namespace rx

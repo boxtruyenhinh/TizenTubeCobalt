@@ -12,19 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/shared/starboard/player/filter/audio_resampler.h"
+// clang-format on
 
 #include <deque>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 #include "starboard/configuration.h"
 #include "starboard/shared/starboard/player/filter/interleaved_sinc_resampler.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 namespace {
 
@@ -115,9 +114,7 @@ scoped_refptr<DecodedAudio> AudioResamplerImpl::WriteEndOfStream() {
 
 scoped_refptr<DecodedAudio> AudioResamplerImpl::Resample(
     scoped_refptr<DecodedAudio> audio_input) {
-  SB_DCHECK(audio_input->channels() == interleaved_resampler_.channels());
-
-  audio_inputs_.push_back(audio_input);
+  SB_DCHECK_EQ(audio_input->channels(), interleaved_resampler_.channels());
 
   // It does nothing if source sample type is float and source storage type is
   // interleaved.
@@ -127,6 +124,8 @@ scoped_refptr<DecodedAudio> AudioResamplerImpl::Resample(
         audio_input->SwitchFormatTo(kSbMediaAudioSampleTypeFloat32,
                                     kSbMediaAudioFrameStorageTypeInterleaved);
   }
+
+  audio_inputs_.push_back(audio_input);
 
   // Enqueue the input.
   int num_of_input_frames = audio_input->frames();
@@ -167,8 +166,4 @@ scoped_refptr<DecodedAudio> AudioResamplerImpl::Resample(
   return resampled_audio;
 }
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

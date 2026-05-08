@@ -20,7 +20,6 @@
 #include "starboard/common/log.h"
 #include "starboard/extension/installation_manager.h"
 #include "starboard/loader_app/installation_manager.h"
-#include "starboard/string.h"
 #include "starboard/system.h"
 
 namespace {
@@ -38,7 +37,6 @@ const CobaltExtensionInstallationManagerApi kInstallationManagerApi = {
     &ImReset,
 };
 }  // namespace
-namespace starboard {
 namespace loader_app {
 
 const void* SbSystemGetExtensionShim(const char* name) {
@@ -48,4 +46,3 @@ const void* SbSystemGetExtensionShim(const char* name) {
   return NULL;
 }
 }  // namespace loader_app
-}  // namespace starboard

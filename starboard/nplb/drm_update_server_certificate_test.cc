@@ -13,12 +13,9 @@
 // limitations under the License.
 
 #include "starboard/drm.h"
-
-#include "starboard/common/string.h"
 #include "starboard/nplb/drm_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -42,4 +39,3 @@ TEST(SbDrmUpdateServerCertificateTest, RainyDay) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

@@ -16,13 +16,9 @@
 #define STARBOARD_ANDROID_SHARED_CONFIGURATION_H_
 
 namespace starboard {
-namespace android {
-namespace shared {
 
-const void* GetConfigurationApi();
+const void* GetConfigurationApiAndroid();
 
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard
 
 #endif  // STARBOARD_ANDROID_SHARED_CONFIGURATION_H_

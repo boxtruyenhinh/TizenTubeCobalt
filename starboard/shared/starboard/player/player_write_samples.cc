@@ -12,22 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/player.h"
+// clang-format on
 
 #include "starboard/common/log.h"
 #include "starboard/shared/starboard/player/player_internal.h"
 
-#if SB_API_VERSION >= 15
 void SbPlayerWriteSamples(SbPlayer player,
                           SbMediaType sample_type,
                           const SbPlayerSampleInfo* sample_infos,
                           int number_of_sample_infos) {
-#else   // SB_API_VERSION >= 15
-void SbPlayerWriteSample2(SbPlayer player,
-                          SbMediaType sample_type,
-                          const SbPlayerSampleInfo* sample_infos,
-                          int number_of_sample_infos) {
-#endif  // SB_API_VERSION >= 15
   if (!SbPlayerIsValid(player)) {
     SB_LOG(WARNING) << "player is invalid.";
     return;

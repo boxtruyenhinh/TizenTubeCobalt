@@ -1,886 +1,418 @@
-# https://github.com/bazelbuild/bazel-skylib
-load("@bazel_skylib//lib:selects.bzl", "selects")
-load("//bazel:macros.bzl", "generated_cc_atom", "select_multi")
+load(
+    "//bazel:skia_rules.bzl",
+    "generate_cpp_files_for_headers",
+    "skia_cc_library",
+    "skia_filegroup",
+    "split_srcs_and_hdrs",
+)
 
-cc_library(
-    name = "androidcodec_srcs",
+package(
+    default_applicable_licenses = ["//:license"],
+)
+
+licenses(["notice"])
+
+PRIVATE_CODEC_HEADERS = [
+    "SkCodecPriv.h",
+    "SkColorPalette.h",
+    "SkFrameHolder.h",
+    "SkMaskSwizzler.h",
+    "SkParseEncodedOrigin.h",
+    "SkSampler.h",
+    "SkScalingCodec.h",
+    "SkSwizzler.h",
+    "SkPixmapUtilsPriv.h",
+    "//include/private:decode_srcs",
+]
+
+# We put any file that is used by more than one codec here to avoid potential issues if clients
+# depend on multiple codecs. This is not a problem for a statically linked binary, but could maybe
+# cause issues with producing a shared library (e.g. duplicate symbols showing up).
+skia_cc_library(
+    name = "any_decoder",
+    srcs = [
+        "SkCodec.cpp",
+        "SkCodecImageGenerator.cpp",
+        "SkCodecImageGenerator.h",
+        "SkColorPalette.cpp",
+        "SkEncodedInfo.cpp",
+        "SkExif.cpp",
+        "SkGainmapInfo.cpp",
+        "SkImageGenerator_FromEncoded.cpp",
+        "SkMaskSwizzler.cpp",
+        "SkParseEncodedOrigin.cpp",
+        "SkPixmapUtils.cpp",
+        "SkSampler.cpp",
+        "SkSwizzler.cpp",
+        "SkTiffUtility.cpp",
+        "SkTiffUtility.h",
+        "//include/codec:any_codec_hdrs",
+    ],
+    hdrs = PRIVATE_CODEC_HEADERS,
+    features = ["layering_check"],
+    local_defines = ["SK_DISABLE_LEGACY_INIT_DECODERS"],
+    visibility = [
+        "//experimental/rust_png:__subpackages__",
+        "//src/encode:__pkg__",
+        "//src/pdf:__pkg__",
+        "//src/ports:__pkg__",
+    ],
     deps = [
-        ":SkAndroidCodecAdapter_src",
-        ":SkAndroidCodec_src",
-        ":SkSampledCodec_src",
+        "//modules/skcms",
+        "//src/base",
+        "//src/core",
+        "//src/core:core_priv",
     ],
 )
 
-cc_library(
-    name = "bmp_srcs",
+skia_cc_library(
+    name = "codec_support",
+    # This is its own rule (with no srcs) to explicitly expose any_codec_hdrs
+    # as public in case a client does not want to use any of our codecs, but
+    # still register their own and/or make use of SkImage::DeferredFromEncodedData
+    hdrs = [
+        "//include/codec:any_codec_hdrs",
+    ],
+    visibility = [
+        "//:__pkg__",
+    ],
     deps = [
-        ":SkBmpBaseCodec_src",
-        ":SkBmpCodec_src",
-        ":SkBmpMaskCodec_src",
-        ":SkBmpRLECodec_src",
-        ":SkBmpStandardCodec_src",
-        ":SkWbmpCodec_src",
+        ":any_decoder",
     ],
 )
 
-cc_library(
-    name = "core_srcs",
+skia_cc_library(
+    name = "codec_support_priv",
+    hdrs = [
+        "SkCodecImageGenerator.h",
+        "//include/codec:any_codec_hdrs",
+    ] + PRIVATE_CODEC_HEADERS,
+    visibility = [
+        "//modules/skottie:__pkg__",
+        "//modules/skottie/src:__pkg__",
+        "//modules/skresources:__pkg__",
+        "//src/android:__pkg__",
+        "//src/pdf:__pkg__",
+        "//tools:__pkg__",
+    ],
     deps = [
-        ":SkCodecImageGenerator_src",
-        ":SkCodec_src",
-        ":SkColorTable_src",
-        ":SkMaskSwizzler_src",
-        ":SkMasks_src",
-        ":SkSampler_src",
-        ":SkSwizzler_src",
+        ":any_decoder",
     ],
 )
 
-cc_library(
-    name = "gif_srcs",
+skia_cc_library(
+    name = "android_codec",
+    srcs = [
+        "SkAndroidCodec.cpp",
+        "SkAndroidCodecAdapter.cpp",
+        "SkAndroidCodecAdapter.h",
+        "SkSampledCodec.cpp",
+        "SkSampledCodec.h",
+    ],
+    hdrs = [
+        "//include/codec:android_public_hdrs",
+        "//include/codec:any_codec_hdrs",
+    ],
+    features = ["layering_check"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        ":SkWuffsCodec_src",
+        ":any_decoder",
+        "//modules/skcms",
+        "//src/base",
+        "//src/core",
+        "//src/core:core_priv",
     ],
 )
 
-cc_library(
-    name = "jpeg_srcs",
+skia_cc_library(
+    name = "bmp_decode",
+    srcs = [
+        "SkBmpBaseCodec.cpp",
+        "SkBmpBaseCodec.h",
+        "SkBmpCodec.cpp",
+        "SkBmpCodec.h",
+        "SkBmpMaskCodec.cpp",
+        "SkBmpMaskCodec.h",
+        "SkBmpRLECodec.cpp",
+        "SkBmpRLECodec.h",
+        "SkBmpStandardCodec.cpp",
+        "SkBmpStandardCodec.h",
+    ],
+    hdrs = [
+        "//include/codec:any_codec_hdrs",
+        "//include/codec:bmp_public_hdrs",
+    ],
+    defines = ["SK_CODEC_DECODES_BMP"],
+    features = ["layering_check"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        ":SkEncodedInfo_src",
-        ":SkJpegCodec_src",
-        ":SkJpegDecoderMgr_src",
-        ":SkJpegUtility_src",
-        ":SkParseEncodedOrigin_src",
+        ":any_decoder",
+        "//modules/skcms",
+        "//src/base",
+        "//src/core",
+        "//src/core:core_priv",
     ],
 )
 
-cc_library(
-    name = "png_srcs",
+skia_cc_library(
+    name = "gif_decode",
+    srcs = [
+        "SkWuffsCodec.cpp",
+    ],
+    hdrs = [
+        "//include/codec:any_codec_hdrs",
+        "//include/codec:gif_public_hdrs",
+    ],
+    defines = ["SK_CODEC_DECODES_GIF"],
+    features = ["layering_check"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        ":SkEncodedInfo_src",
-        ":SkIcoCodec_src",
-        ":SkPngCodec_src",
+        ":any_decoder",
+        "//modules/skcms",
+        "//src/base",
+        "//src/core",
+        "//src/core:core_priv",
+        "@wuffs",
     ],
 )
 
-cc_library(
-    name = "raw_srcs",
+skia_cc_library(
+    name = "ico_decode",
+    srcs = [
+        "SkBmpCodec.h",
+        "SkIcoCodec.cpp",
+        "SkIcoCodec.h",
+    ],
+    hdrs = [
+        "//include/codec:any_codec_hdrs",
+        "//include/codec:ico_public_hdrs",
+    ],
+    defines = ["SK_CODEC_DECODES_ICO"],
+    features = ["layering_check"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        ":SkRawCodec_src",
+        "//src/base",
+        "//src/core",
+        "//src/core:core_priv",
+        "//modules/skcms",
+        ":any_decoder",
+        # icos can be either PNG or BMP
+        ":bmp_decode",
+        ":png_decode",
     ],
 )
 
-cc_library(
-    name = "webp_srcs",
+skia_filegroup(
+    name = "common_jpeg_srcs",
+    srcs = [
+        "SkJpegConstants.h",
+        "SkJpegPriv.h",
+    ],
+    visibility = ["//src/encode:__pkg__"],
+)
+
+skia_cc_library(
+    name = "jpeg_decode",
+    srcs = [
+        "SkJpegCodec.cpp",
+        "SkJpegCodec.h",
+        "SkJpegDecoderMgr.cpp",
+        "SkJpegDecoderMgr.h",
+        "SkJpegMetadataDecoderImpl.cpp",
+        "SkJpegMetadataDecoderImpl.h",
+        "SkJpegSourceMgr.cpp",
+        "SkJpegSourceMgr.h",
+        "SkJpegUtility.cpp",
+        "SkJpegUtility.h",
+        ":common_jpeg_srcs",
+        "//include/private:jpeg_decode_srcs",
+    ],
+    hdrs = [
+        "//include/codec:any_codec_hdrs",
+        "//include/codec:jpeg_public_hdrs",
+    ],
+    defines = ["SK_CODEC_DECODES_JPEG"],
+    features = ["layering_check"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        ":SkEncodedInfo_src",
-        ":SkParseEncodedOrigin_src",
-        ":SkWebpCodec_src",
+        ":any_decoder",
+        "//modules/skcms",
+        "//src/base",
+        "//src/core",
+        "//src/core:core_priv",
+        "@libjpeg_turbo",
     ],
 )
 
-selects.config_setting_group(
-    name = "needs_jpeg",
-    match_any = [
-        "//bazel/common_config_settings:raw_decode_codec",
-        "//bazel/common_config_settings:jpeg_decode_codec",
-        "//bazel/common_config_settings:jpeg_encode_codec",
+skia_cc_library(
+    name = "jpegxl_decode",
+    srcs = [
+        "SkJpegxlCodec.cpp",
+        "SkJpegxlCodec.h",
+        ":common_jpeg_srcs",
+    ],
+    hdrs = [
+        "//include/codec:any_codec_hdrs",
+        "//include/codec:jpegxl_public_hdrs",
+    ],
+    defines = ["SK_CODEC_DECODES_JPEGXL"],
+    features = ["layering_check"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":any_decoder",
+        "//modules/skcms",
+        "//src/base",
+        "//src/core",
+        "//src/core:core_priv",
+        "@libjxl",
     ],
 )
 
-cc_library(
-    name = "srcs",
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":androidcodec_srcs",
-        ":bmp_srcs",
-        ":core_srcs",
-    ] + select_multi(
-        {
-            "//bazel/common_config_settings:gif_decode_codec": [":gif_srcs"],
-            ":needs_jpeg": [":jpeg_srcs"],
-            "//bazel/common_config_settings:png_decode_codec": [":png_srcs"],
-            "//bazel/common_config_settings:raw_decode_codec": [":raw_srcs"],
-            "//bazel/common_config_settings:webp_decode_codec": [":webp_srcs"],
-        },
-        default = [],
-    ),
+skia_filegroup(
+    name = "png_codec_base_srcs",
+    srcs = ["SkPngCodecBase.cpp"],
 )
 
-generated_cc_atom(
-    name = "SkAndroidCodecAdapter_hdr",
-    hdrs = ["SkAndroidCodecAdapter.h"],
-    visibility = ["//:__subpackages__"],
-    deps = ["//include/codec:SkAndroidCodec_hdr"],
+skia_filegroup(
+    name = "png_codec_base_hdrs",
+    srcs = ["SkPngCodecBase.h"],
 )
 
-generated_cc_atom(
-    name = "SkAndroidCodecAdapter_src",
-    srcs = ["SkAndroidCodecAdapter.cpp"],
-    visibility = ["//:__subpackages__"],
+skia_cc_library(
+    name = "png_codec_base",
+    srcs = [":png_codec_base_srcs"],
+    hdrs = [
+        ":png_codec_base_hdrs",
+        "//include/codec:any_codec_hdrs",
+    ],
+    features = ["layering_check"],
+    visibility = ["//experimental/rust_png/decoder:__pkg__"],
     deps = [
-        ":SkAndroidCodecAdapter_hdr",
-        ":SkCodecPriv_hdr",
+        ":any_decoder",
+        "//modules/skcms",
+        "//src/base",
+        "//src/core",
+        "//src/core:core_priv",
     ],
 )
 
-generated_cc_atom(
-    name = "SkAndroidCodec_src",
-    srcs = ["SkAndroidCodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkAndroidCodecAdapter_hdr",
-        ":SkCodecPriv_hdr",
-        ":SkSampledCodec_hdr",
-        "//include/codec:SkAndroidCodec_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkPixmap_hdr",
+skia_filegroup(
+    name = "buffet_libpng_srcs",
+    srcs = [
+        "SkPngCodec.cpp",
+        "SkPngCodec.h",
+        "SkPngCompositeChunkReader.cpp",
+        "SkPngCompositeChunkReader.h",
     ],
 )
 
-generated_cc_atom(
-    name = "SkBmpBaseCodec_hdr",
-    hdrs = ["SkBmpBaseCodec.h"],
+skia_filegroup(
+    name = "common_libpng_srcs",
+    srcs = [
+        "SkPngPriv.h",
+    ],
+    visibility = ["//src/encode:__pkg__"],
+)
+
+skia_cc_library(
+    name = "png_decode",
+    srcs = [
+        ":buffet_libpng_srcs",
+        ":common_libpng_srcs",
+    ],
+    hdrs = [
+        "//include/codec:any_codec_hdrs",
+        "//include/codec:png_public_hdrs",
+    ],
+    defines = [
+        "SK_CODEC_DECODES_PNG",
+        "SK_CODEC_DECODES_PNG_WITH_LIBPNG",
+    ],
+    features = ["layering_check"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":SkBmpCodec_hdr",
-        "//include/private:SkTemplates_hdr",
+        ":any_decoder",
+        ":png_codec_base",
+        "//modules/skcms",
+        "//src/base",
+        "//src/core",
+        "//src/core:core_priv",
+        "@libpng",
     ],
 )
 
-generated_cc_atom(
-    name = "SkBmpBaseCodec_src",
-    srcs = ["SkBmpBaseCodec.cpp"],
+skia_cc_library(
+    name = "wbmp_decode",
+    srcs = [
+        "SkBmpBaseCodec.h",
+        "SkBmpCodec.h",
+        "SkBmpMaskCodec.h",
+        "SkBmpRLECodec.h",
+        "SkBmpStandardCodec.h",
+        "SkWbmpCodec.cpp",
+        "SkWbmpCodec.h",
+        "//include/codec:bmp_public_hdrs",
+    ],
+    hdrs = [
+        "//include/codec:any_codec_hdrs",
+        "//include/codec:wbmp_public_hdrs",
+    ],
+    defines = ["SK_CODEC_DECODES_WBMP"],
+    features = ["layering_check"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":SkBmpBaseCodec_hdr",
-        "//include/private:SkMalloc_hdr",
+        ":any_decoder",
+        ":bmp_decode",  # Avoid ODR violations by not duplicating .cpp files
+        "//modules/skcms",
+        "//src/base",
+        "//src/core",
+        "//src/core:core_priv",
     ],
 )
 
-generated_cc_atom(
-    name = "SkBmpCodec_hdr",
-    hdrs = ["SkBmpCodec.h"],
+skia_cc_library(
+    name = "webp_decode",
+    srcs = [
+        "SkWebpCodec.cpp",
+        "SkWebpCodec.h",
+    ],
+    hdrs = [
+        "//include/codec:any_codec_hdrs",
+        "//include/codec:webp_public_hdrs",
+    ],
+    defines = ["SK_CODEC_DECODES_WEBP"],
+    features = ["layering_check"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":SkColorTable_hdr",
-        ":SkSwizzler_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkColorSpace_hdr",
-        "//include/core:SkImageInfo_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/core:SkTypes_hdr",
+        ":any_decoder",
+        "//modules/skcms",
+        "//src/base",
+        "//src/core",
+        "//src/core:core_priv",
+        "@libwebp",
     ],
 )
 
-generated_cc_atom(
-    name = "SkBmpCodec_src",
-    srcs = ["SkBmpCodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkBmpCodec_hdr",
-        ":SkBmpMaskCodec_hdr",
-        ":SkBmpRLECodec_hdr",
-        ":SkBmpStandardCodec_hdr",
-        ":SkCodecPriv_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/private:SkColorData_hdr",
+generate_cpp_files_for_headers(
+    name = "headers_to_compile",
+    headers = [
+        "SkPixmapUtilsPriv.h",
+        "SkScalingCodec.h",
     ],
 )
 
-generated_cc_atom(
-    name = "SkBmpMaskCodec_hdr",
-    hdrs = ["SkBmpMaskCodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkBmpBaseCodec_hdr",
-        ":SkMaskSwizzler_hdr",
-        "//include/core:SkImageInfo_hdr",
-        "//include/core:SkTypes_hdr",
+# The following are not yet incorporated into the Bazel build
+skia_filegroup(
+    name = "xmp_srcs",
+    srcs = [
+        "SkXmp.cpp",
     ],
 )
 
-generated_cc_atom(
-    name = "SkBmpMaskCodec_src",
-    srcs = ["SkBmpMaskCodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkBmpMaskCodec_hdr",
-        ":SkCodecPriv_hdr",
-        "//include/private:SkColorData_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkBmpRLECodec_hdr",
-    hdrs = ["SkBmpRLECodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkBmpCodec_hdr",
-        ":SkColorTable_hdr",
-        ":SkSampler_hdr",
-        "//include/core:SkImageInfo_hdr",
-        "//include/core:SkTypes_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkBmpRLECodec_src",
-    srcs = ["SkBmpRLECodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkBmpRLECodec_hdr",
-        ":SkCodecPriv_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/private:SkColorData_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkBmpStandardCodec_hdr",
-    hdrs = ["SkBmpStandardCodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkBmpBaseCodec_hdr",
-        ":SkColorTable_hdr",
-        ":SkSwizzler_hdr",
-        "//include/core:SkImageInfo_hdr",
-        "//include/core:SkTypes_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkBmpStandardCodec_src",
-    srcs = ["SkBmpStandardCodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkBmpStandardCodec_hdr",
-        ":SkCodecPriv_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/private:SkColorData_hdr",
-        "//src/core:SkMathPriv_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkCodecImageGenerator_hdr",
-    hdrs = ["SkCodecImageGenerator.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkData_hdr",
-        "//include/core:SkImageGenerator_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkCodecImageGenerator_src",
-    srcs = ["SkCodecImageGenerator.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecImageGenerator_hdr",
-        "//src/core:SkPixmapPriv_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkCodecPriv_hdr",
-    hdrs = ["SkCodecPriv.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkColorTable_hdr",
-        "//include/codec:SkEncodedOrigin_hdr",
-        "//include/core:SkImageInfo_hdr",
-        "//include/core:SkTypes_hdr",
-        "//include/private:SkColorData_hdr",
-        "//include/private:SkEncodedInfo_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkCodec_src",
-    srcs = ["SkCodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkBmpCodec_hdr",
-        ":SkCodecPriv_hdr",
-        ":SkFrameHolder_hdr",
-        ":SkHeifCodec_hdr",
-        ":SkIcoCodec_hdr",
-        ":SkJpegCodec_hdr",
-        ":SkJpegxlCodec_hdr",
-        ":SkPngCodec_hdr",
-        ":SkRawCodec_hdr",
-        ":SkWbmpCodec_hdr",
-        ":SkWebpCodec_hdr",
-        ":SkWuffsCodec_hdr",
-        "//include/codec:SkAndroidCodec_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkBitmap_hdr",
-        "//include/core:SkColorSpace_hdr",
-        "//include/core:SkData_hdr",
-        "//include/core:SkImage_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/private:SkHalf_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkColorTable_hdr",
-    hdrs = ["SkColorTable.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//include/core:SkColor_hdr",
-        "//include/core:SkRefCnt_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkColorTable_src",
-    srcs = ["SkColorTable.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkColorTable_hdr",
-        "//include/private:SkMalloc_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkEncodedInfo_src",
-    srcs = ["SkEncodedInfo.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = ["//include/private:SkEncodedInfo_hdr"],
-)
-
-generated_cc_atom(
-    name = "SkFrameHolder_hdr",
-    hdrs = ["SkFrameHolder.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//include/codec:SkCodecAnimation_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkRect_hdr",
-        "//include/core:SkTypes_hdr",
-        "//include/private:SkEncodedInfo_hdr",
-        "//include/private:SkNoncopyable_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkHeifCodec_hdr",
-    hdrs = ["SkHeifCodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkFrameHolder_hdr",
-        ":SkStubHeifDecoderAPI_hdr",
-        ":SkSwizzler_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/codec:SkEncodedOrigin_hdr",
-        "//include/core:SkImageInfo_hdr",
-        "//include/core:SkStream_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkHeifCodec_src",
-    srcs = ["SkHeifCodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecPriv_hdr",
-        ":SkHeifCodec_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/core:SkTypes_hdr",
-        "//include/private:SkColorData_hdr",
-        "//src/core:SkEndian_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkIcoCodec_hdr",
-    hdrs = ["SkIcoCodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkImageInfo_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/core:SkTypes_hdr",
-        "//include/private:SkTArray_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkIcoCodec_src",
-    srcs = ["SkIcoCodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkBmpCodec_hdr",
-        ":SkCodecPriv_hdr",
-        ":SkIcoCodec_hdr",
-        ":SkPngCodec_hdr",
-        "//include/core:SkData_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/private:SkColorData_hdr",
-        "//include/private:SkTDArray_hdr",
-        "//src/core:SkStreamPriv_hdr",
-        "//src/core:SkTSort_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkJpegCodec_hdr",
-    hdrs = ["SkJpegCodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkSwizzler_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkImageInfo_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/private:SkTemplates_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkJpegCodec_src",
-    srcs = ["SkJpegCodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecPriv_hdr",
-        ":SkJpegCodec_hdr",
-        ":SkJpegDecoderMgr_hdr",
-        ":SkJpegUtility_hdr",
-        ":SkParseEncodedOrigin_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/core:SkTypes_hdr",
-        "//include/private:SkColorData_hdr",
-        "//include/private:SkTemplates_hdr",
-        "//include/private:SkTo_hdr",
-        "//third_party:libjpeg-turbo",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkJpegDecoderMgr_hdr",
-    hdrs = ["SkJpegDecoderMgr.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecPriv_hdr",
-        ":SkJpegUtility_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//third_party:libjpeg-turbo",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkJpegDecoderMgr_src",
-    srcs = ["SkJpegDecoderMgr.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkJpegDecoderMgr_hdr",
-        ":SkJpegUtility_hdr",
-        "//include/android:SkAndroidFrameworkUtils_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkJpegPriv_hdr",
-    hdrs = ["SkJpegPriv.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//include/core:SkStream_hdr",
-        "//include/private:SkTArray_hdr",
-        "//third_party:libjpeg-turbo",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkJpegUtility_hdr",
-    hdrs = ["SkJpegUtility.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkJpegPriv_hdr",
-        "//include/core:SkStream_hdr",
-        "//third_party:libjpeg-turbo",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkJpegUtility_src",
-    srcs = ["SkJpegUtility.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecPriv_hdr",
-        ":SkJpegUtility_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkMaskSwizzler_hdr",
-    hdrs = ["SkMaskSwizzler.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkMasks_hdr",
-        ":SkSampler_hdr",
-        ":SkSwizzler_hdr",
-        "//include/core:SkTypes_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkMaskSwizzler_src",
-    srcs = ["SkMaskSwizzler.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecPriv_hdr",
-        ":SkMaskSwizzler_hdr",
-        "//include/private:SkColorData_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkMasks_hdr",
-    hdrs = ["SkMasks.h"],
-    visibility = ["//:__subpackages__"],
-    deps = ["//include/core:SkTypes_hdr"],
-)
-
-generated_cc_atom(
-    name = "SkMasks_src",
-    srcs = ["SkMasks.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecPriv_hdr",
-        ":SkMasks_hdr",
-        "//include/core:SkTypes_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkParseEncodedOrigin_hdr",
-    hdrs = ["SkParseEncodedOrigin.h"],
-    visibility = ["//:__subpackages__"],
-    deps = ["//include/codec:SkEncodedOrigin_hdr"],
-)
-
-generated_cc_atom(
-    name = "SkParseEncodedOrigin_src",
-    srcs = ["SkParseEncodedOrigin.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecPriv_hdr",
-        "//include/core:SkTypes_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkPngCodec_hdr",
-    hdrs = ["SkPngCodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkColorTable_hdr",
-        ":SkSwizzler_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkEncodedImageFormat_hdr",
-        "//include/core:SkImageInfo_hdr",
-        "//include/core:SkPngChunkReader_hdr",
-        "//include/core:SkRefCnt_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkPngCodec_src",
-    srcs = ["SkPngCodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecPriv_hdr",
-        ":SkColorTable_hdr",
-        ":SkPngCodec_hdr",
-        ":SkPngPriv_hdr",
-        ":SkSwizzler_hdr",
-        "//include/android:SkAndroidFrameworkUtils_hdr",
-        "//include/core:SkBitmap_hdr",
-        "//include/core:SkColorSpace_hdr",
-        "//include/core:SkMath_hdr",
-        "//include/core:SkPoint3_hdr",
-        "//include/core:SkSize_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/private:SkColorData_hdr",
-        "//include/private:SkMacros_hdr",
-        "//include/private:SkTemplates_hdr",
-        "//src/core:SkOpts_hdr",
-        "//third_party:libpng",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkPngPriv_hdr",
-    hdrs = ["SkPngPriv.h"],
-    visibility = ["//:__subpackages__"],
-    deps = ["//include/core:SkTypes_hdr"],
-)
-
-generated_cc_atom(
-    name = "SkRawCodec_hdr",
-    hdrs = ["SkRawCodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkColorSpace_hdr",
-        "//include/core:SkImageInfo_hdr",
-        "//include/core:SkTypes_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkRawCodec_src",
-    srcs = ["SkRawCodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecPriv_hdr",
-        ":SkJpegCodec_hdr",
-        ":SkRawCodec_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkData_hdr",
-        "//include/core:SkRefCnt_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/core:SkTypes_hdr",
-        "//include/private:SkColorData_hdr",
-        "//include/private:SkMutex_hdr",
-        "//include/private:SkTArray_hdr",
-        "//include/private:SkTemplates_hdr",
-        "//src/core:SkColorSpacePriv_hdr",
-        "//src/core:SkStreamPriv_hdr",
-        "//src/core:SkTaskGroup_hdr",
-        "//third_party:dng_sdk",
-        "//third_party:piex",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkSampledCodec_hdr",
-    hdrs = ["SkSampledCodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//include/codec:SkAndroidCodec_hdr",
-        "//include/codec:SkCodec_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkSampledCodec_src",
-    srcs = ["SkSampledCodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecPriv_hdr",
-        ":SkSampledCodec_hdr",
-        ":SkSampler_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkMath_hdr",
-        "//include/private:SkTemplates_hdr",
-        "//src/core:SkMathPriv_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkSampler_hdr",
-    hdrs = ["SkSampler.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecPriv_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkTypes_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkSampler_src",
-    srcs = ["SkSampler.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecPriv_hdr",
-        ":SkSampler_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//src/core:SkOpts_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkScalingCodec_hdr",
-    hdrs = ["SkScalingCodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = ["//include/codec:SkCodec_hdr"],
-)
-
-generated_cc_atom(
-    name = "SkStreamBuffer_hdr",
-    hdrs = ["SkStreamBuffer.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//include/core:SkData_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/core:SkTypes_hdr",
-        "//include/private:SkTHash_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkStreamBuffer_src",
-    srcs = ["SkStreamBuffer.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [":SkStreamBuffer_hdr"],
-)
-
-generated_cc_atom(
-    name = "SkStubHeifDecoderAPI_hdr",
-    hdrs = ["SkStubHeifDecoderAPI.h"],
-    visibility = ["//:__subpackages__"],
-)
-
-generated_cc_atom(
-    name = "SkSwizzler_hdr",
-    hdrs = ["SkSwizzler.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkSampler_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkColor_hdr",
-        "//include/core:SkImageInfo_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkSwizzler_src",
-    srcs = ["SkSwizzler.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecPriv_hdr",
-        ":SkSwizzler_hdr",
-        "//include/android:SkAndroidFrameworkUtils_hdr",
-        "//include/private:SkColorData_hdr",
-        "//include/private:SkHalf_hdr",
-        "//include/private:SkTemplates_hdr",
-        "//src/core:SkOpts_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkWbmpCodec_hdr",
-    hdrs = ["SkWbmpCodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkSwizzler_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkColorSpace_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkWbmpCodec_src",
-    srcs = ["SkWbmpCodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecPriv_hdr",
-        ":SkColorTable_hdr",
-        ":SkWbmpCodec_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkData_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/private:SkColorData_hdr",
-        "//include/private:SkTo_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkWebpCodec_hdr",
-    hdrs = ["SkWebpCodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkFrameHolder_hdr",
-        ":SkScalingCodec_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkEncodedImageFormat_hdr",
-        "//include/core:SkImageInfo_hdr",
-        "//include/core:SkTypes_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkWebpCodec_src",
-    srcs = ["SkWebpCodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecPriv_hdr",
-        ":SkParseEncodedOrigin_hdr",
-        ":SkSampler_hdr",
-        ":SkWebpCodec_hdr",
-        "//include/codec:SkCodecAnimation_hdr",
-        "//include/core:SkBitmap_hdr",
-        "//include/core:SkCanvas_hdr",
-        "//include/private:SkTemplates_hdr",
-        "//include/private:SkTo_hdr",
-        "//src/core:SkRasterPipeline_hdr",
-        "//src/core:SkStreamPriv_hdr",
-        "//third_party:libwebp",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkWuffsCodec_hdr",
-    hdrs = ["SkWuffsCodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = ["//include/codec:SkCodec_hdr"],
-)
-
-generated_cc_atom(
-    name = "SkWuffsCodec_src",
-    srcs = ["SkWuffsCodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkFrameHolder_hdr",
-        ":SkSampler_hdr",
-        ":SkScalingCodec_hdr",
-        ":SkWuffsCodec_hdr",
-        "//include/core:SkBitmap_hdr",
-        "//include/core:SkMatrix_hdr",
-        "//include/core:SkPaint_hdr",
-        "//include/private:SkMalloc_hdr",
-        "//src/core:SkDraw_hdr",
-        "//src/core:SkMatrixProvider_hdr",
-        "//src/core:SkRasterClip_hdr",
-        "//src/core:SkStreamPriv_hdr",
-        "//src/core:SkUtils_hdr",
-        "//third_party:wuffs",
-    ],
-)
-
-generated_cc_atom(
-    name = "SkJpegxlCodec_hdr",
-    hdrs = ["SkJpegxlCodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [":SkScalingCodec_hdr"],
-)
-
-generated_cc_atom(
-    name = "SkJpegxlCodec_src",
-    srcs = ["SkJpegxlCodec.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkFrameHolder_hdr",
-        ":SkJpegxlCodec_hdr",
-        ":SkSampler_hdr",
-        "//include/codec:SkEncodedOrigin_hdr",
-        "//include/core:SkData_hdr",
-        "//include/core:SkEncodedImageFormat_hdr",
-        "//include/core:SkImageInfo_hdr",
-        "//include/core:SkRefCnt_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/private:SkEncodedInfo_hdr",
-        "//include/private:SkTFitsIn_hdr",
-        "//include/private:SkTo_hdr",
-        "//jxl:decode_cxx_hdr",
-        "//jxl:decode_hdr",
-        "//src/core:SkOpts_hdr",
-        "//src/core:SkStreamPriv_hdr",
+split_srcs_and_hdrs(
+    name = "jpeg_xmp",
+    files = [
+        "SkJpegXmp.cpp",
+        "SkJpegXmp.h",
     ],
 )

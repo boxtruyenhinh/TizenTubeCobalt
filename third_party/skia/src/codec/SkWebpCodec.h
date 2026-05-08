@@ -8,16 +8,25 @@
 #ifndef SkWebpCodec_DEFINED
 #define SkWebpCodec_DEFINED
 
-#include "include/codec/SkCodec.h"
-#include "include/core/SkEncodedImageFormat.h"
-#include "include/core/SkImageInfo.h"
+#include "include/codec/SkEncodedImageFormat.h"
+#include "include/codec/SkEncodedOrigin.h"
+#include "include/core/SkData.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
+#include "include/private/SkEncodedInfo.h"
+#include "include/private/base/SkTemplates.h"
 #include "src/codec/SkFrameHolder.h"
 #include "src/codec/SkScalingCodec.h"
 
+#include <cstddef>
+#include <memory>
 #include <vector>
 
 class SkStream;
+class SkCodec;
+struct SkIRect;
+struct SkImageInfo;
+
 extern "C" {
     struct WebPDemuxer;
     void WebPDemuxDelete(WebPDemuxer* dmux);
@@ -37,6 +46,7 @@ protected:
     int onGetFrameCount() override;
     bool onGetFrameInfo(int, FrameInfo*) const override;
     int onGetRepetitionCount() override;
+    IsAnimated onIsAnimated() override;
 
     const SkFrameHolder* getFrameHolder() const override {
         return &fFrameHolder;
@@ -44,7 +54,10 @@ protected:
 
 private:
     SkWebpCodec(SkEncodedInfo&&, std::unique_ptr<SkStream>, WebPDemuxer*, sk_sp<SkData>,
-                SkEncodedOrigin);
+                SkEncodedOrigin, bool);
+    // Reads the rest of the data from this codec's 'fStream' if necessary,
+    // else does nothing, returns true on success.
+    bool ensureAllData();
 
     SkAutoTCallVProc<WebPDemuxer, WebPDemuxDelete> fDemux;
 
@@ -98,6 +111,7 @@ private:
     // that we will cap the frame count to the frames that
     // succeed.
     bool        fFailed;
+    bool        fOnlyHeaderParsed;
 
     using INHERITED = SkScalingCodec;
 };

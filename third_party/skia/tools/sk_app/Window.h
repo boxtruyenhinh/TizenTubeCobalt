@@ -10,13 +10,13 @@
 
 #include "include/core/SkRect.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTDArray.h"
-#include "tools/sk_app/DisplayParams.h"
+#include "include/private/base/SkTDArray.h"
 #include "tools/skui/InputState.h"
 #include "tools/skui/Key.h"
 #include "tools/skui/ModifierKey.h"
 
 #include <functional>
+#include <memory>
 
 class GrDirectContext;
 class SkCanvas;
@@ -24,18 +24,20 @@ class SkSurface;
 class SkSurfaceProps;
 class SkString;
 
-namespace skgpu {
+namespace skgpu::graphite {
 class Context;
+class Recorder;
+}
+
+namespace skwindow {
+class DisplayParams;
+class WindowContext;
 }
 
 namespace sk_app {
 
-class WindowContext;
-
 class Window {
 public:
-    static Window* CreateNativeWindow(void* platformData);
-
     virtual ~Window();
 
     virtual void setTitle(const char*) = 0;
@@ -56,33 +58,15 @@ public:
     virtual bool scaleContentToFit() const { return false; }
 
     enum BackendType {
-#ifdef SK_GL
         kNativeGL_BackendType,
-#endif
-#if SK_ANGLE && defined(SK_BUILD_FOR_WIN)
         kANGLE_BackendType,
-#endif
-#ifdef SK_DAWN
-        kDawn_BackendType,
-#endif
-#ifdef SK_VULKAN
+        kGraphiteDawn_BackendType,
         kVulkan_BackendType,
-#endif
-#ifdef SK_METAL
+        kGraphiteVulkan_BackendType,
         kMetal_BackendType,
-#ifdef SK_GRAPHITE_ENABLED
         kGraphiteMetal_BackendType,
-#endif
-#endif
-#ifdef SK_DIRECT3D
         kDirect3D_BackendType,
-#endif
         kRaster_BackendType,
-
-        kLast_BackendType = kRaster_BackendType
-    };
-    enum {
-        kBackendTypeCount = kLast_BackendType + 1
     };
 
     virtual bool attach(BackendType) = 0;
@@ -104,7 +88,7 @@ public:
         virtual bool onChar(SkUnichar c, skui::ModifierKey) { return false; }
         virtual bool onKey(skui::Key, skui::InputState, skui::ModifierKey) { return false; }
         virtual bool onMouse(int x, int y, skui::InputState, skui::ModifierKey) { return false; }
-        virtual bool onMouseWheel(float delta, skui::ModifierKey) { return false; }
+        virtual bool onMouseWheel(float delta, int x, int y, skui::ModifierKey) { return false; }
         virtual bool onTouch(intptr_t owner, skui::InputState, float x, float y) { return false; }
         // Platform-detected gesture events
         virtual bool onFling(skui::InputState state) { return false; }
@@ -128,7 +112,7 @@ public:
     bool onChar(SkUnichar c, skui::ModifierKey modifiers);
     bool onKey(skui::Key key, skui::InputState state, skui::ModifierKey modifiers);
     bool onMouse(int x, int y, skui::InputState state, skui::ModifierKey modifiers);
-    bool onMouseWheel(float delta, skui::ModifierKey modifiers);
+    bool onMouseWheel(float delta, int x, int y, skui::ModifierKey modifiers);
     bool onTouch(intptr_t owner, skui::InputState state, float x, float y);  // multi-owner = multi-touch
     // Platform-detected gesture events
     bool onFling(skui::InputState state);
@@ -142,8 +126,11 @@ public:
     int height() const;
     virtual float scaleFactor() const { return 1.0f; }
 
-    virtual const DisplayParams& getRequestedDisplayParams() { return fRequestedDisplayParams; }
-    virtual void setRequestedDisplayParams(const DisplayParams&, bool allowReattach = true);
+    const skwindow::DisplayParams* getRequestedDisplayParams() {
+        return fRequestedDisplayParams.get();
+    }
+    virtual void setRequestedDisplayParams(std::unique_ptr<const skwindow::DisplayParams>,
+                                           bool allowReattach = true);
 
     // Actual parameters in effect, obtained from the native window.
     int sampleCount() const;
@@ -151,16 +138,26 @@ public:
 
     // Returns null if there is not a GPU backend or if the backend is not yet created.
     GrDirectContext* directContext() const;
-    skgpu::Context* graphiteContext() const;
+    skgpu::graphite::Context* graphiteContext() const;
+    skgpu::graphite::Recorder* graphiteRecorder() const;
+
+    using GpuTimerCallback = std::function<void(uint64_t ns)>;
+
+    // Does the backend of this window support GPU timers (for use with submitToGpu)?
+    bool supportsGpuTimer() const;
+
+    // Will snap a Recording and submit to the Context if using Graphite or flush and submit
+    // if using Ganesh.
+    void submitToGpu(GpuTimerCallback = {});
 
 protected:
     Window();
 
-    SkTDArray<Layer*>      fLayers;
-    DisplayParams          fRequestedDisplayParams;
-    bool                   fIsActive = true;
+    SkTDArray<Layer*> fLayers;
+    std::unique_ptr<const skwindow::DisplayParams> fRequestedDisplayParams;
+    bool fIsActive = true;
 
-    std::unique_ptr<WindowContext> fWindowContext;
+    std::unique_ptr<skwindow::WindowContext> fWindowContext;
 
     virtual void onInval() = 0;
 
@@ -169,9 +166,13 @@ protected:
 
     bool fIsContentInvalidated = false;  // use this to avoid duplicate invalidate events
 
-    void visitLayers(std::function<void(Layer*)> visitor);
-    bool signalLayers(std::function<bool(Layer*)> visitor);
+    void visitLayers(const std::function<void(Layer*)>& visitor);
+    bool signalLayers(const std::function<bool(Layer*)>& visitor);
 };
+
+namespace Windows {
+Window* CreateNativeWindow(void* platformData);
+}
 
 }   // namespace sk_app
 #endif

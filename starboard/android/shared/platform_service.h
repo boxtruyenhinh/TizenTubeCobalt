@@ -16,13 +16,9 @@
 #define STARBOARD_ANDROID_SHARED_PLATFORM_SERVICE_H_
 
 namespace starboard {
-namespace android {
-namespace shared {
 
-const void* GetPlatformServiceApi();
+const void* GetPlatformServiceApiAndroid();
 
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard
 
 #endif  // STARBOARD_ANDROID_SHARED_PLATFORM_SERVICE_H_

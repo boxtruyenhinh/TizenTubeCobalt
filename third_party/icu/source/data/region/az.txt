@@ -298,6 +298,9 @@ az{
         ZW{"Zimbabve"}
         ZZ{"Naməlum Region"}
     }
+    Countries%chagos{
+        IO{"Çaqos arxipelaqı"}
+    }
     Countries%short{
         GB{"BK"}
         UN{"BMT"}
@@ -308,6 +311,7 @@ az{
         CG{"Konqo (Respublika)"}
         CI{"Fil Dişi Sahili"}
         CZ{"Çex Respublikası"}
+        NZ{"Aotearoa Yeni Zelandiya"}
         SZ{"Svazilend"}
     }
 }

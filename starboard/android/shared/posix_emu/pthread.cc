@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include <pthread.h>
+// clang-format on
 
 #include <errno.h>
 #include <fcntl.h>
@@ -32,5 +34,6 @@ int pthread_getname_np(pthread_t thread, char* name, size_t len) {
   }
   return -1;
 }
-}
+
 #endif  // __ANDROID_API__ < 26
+}

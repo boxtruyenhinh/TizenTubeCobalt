@@ -200,13 +200,25 @@ ssize_t tee(int, int, size_t, unsigned);
 #define F_SETLK64 F_SETLK
 #define F_SETLKW64 F_SETLKW
 #define flock64 flock
+#if !defined(STARBOARD)
 #define open64 open
+#endif
 #define openat64 openat
 #define creat64 creat
 #define lockf64 lockf
 #define posix_fadvise64 posix_fadvise
 #define posix_fallocate64 posix_fallocate
 #define off64_t off_t
+#endif
+
+#if defined(STARBOARD)
+#define F_GETLK 5
+#define F_SETLK 6
+#define F_SETLKW 7
+#if defined(_LARGEFILE64_SOURCE)
+#define F_SETLK64 F_SETLK
+#define F_SETLKW64 F_SETLKW,
+#endif
 #endif
 
 #ifdef __cplusplus

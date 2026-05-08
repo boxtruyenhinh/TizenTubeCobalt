@@ -18,14 +18,10 @@
 #include "starboard/shared/internal_only.h"
 
 namespace starboard {
-namespace shared {
-namespace posix {
 
 // Makes the socket file descriptor non-blocking.
 bool SetNonBlocking(int socket_fd);
 
-}  // namespace posix
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_POSIX_SET_NON_BLOCKING_INTERNAL_H_

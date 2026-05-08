@@ -6,8 +6,10 @@
  */
 
 #include "bench/Benchmark.h"
-#include "include/private/SkTemplates.h"
-#include "src/core/SkOpts.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/core/SkMemset.h"
+
+using namespace skia_private;
 
 template <typename T>
 class MemsetBench : public Benchmark {
@@ -17,32 +19,32 @@ public:
         , fBuffer(fN)
         , fName(SkStringPrintf("memset%zu_%zu", sizeof(T)*8, bytes)) {}
 
-    bool isSuitableFor(Backend backend) override { return backend == kNonRendering_Backend; }
+    bool isSuitableFor(Backend backend) override { return backend == Backend::kNonRendering; }
     const char* onGetName() override { return fName.c_str(); }
 
     void onDraw(int loops, SkCanvas*) override;
 
 private:
     int fN;
-    SkAutoTMalloc<T> fBuffer;
+    AutoTMalloc<T> fBuffer;
     SkString fName;
 };
 
 template <> void MemsetBench<uint64_t>::onDraw(int loops, SkCanvas*) {
     for (int i = 0; i < 1000*loops; i++) {
-        sk_memset64(fBuffer.get(), 0xFACEFACEFACEFACE, fN);
+        SkOpts::memset64(fBuffer.get(), 0xFACEFACEFACEFACE, fN);
     }
 }
 
 template <> void MemsetBench<uint32_t>::onDraw(int loops, SkCanvas*) {
     for (int i = 0; i < 1000*loops; i++) {
-        sk_memset32(fBuffer.get(), 0xFACEB004, fN);
+        SkOpts::memset32(fBuffer.get(), 0xFACEB004, fN);
     }
 }
 
 template <> void MemsetBench<uint16_t>::onDraw(int loops, SkCanvas*) {
     for (int i = 0; i < 1000*loops; i++) {
-        sk_memset16(fBuffer.get(), 0x4973, fN);
+        SkOpts::memset16(fBuffer.get(), 0x4973, fN);
     }
 }
 

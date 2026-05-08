@@ -8,7 +8,7 @@
 #ifndef Window_unix_DEFINED
 #define Window_unix_DEFINED
 
-#include "include/private/SkChecksum.h"
+#include "src/core/SkChecksum.h"
 #include "src/core/SkTDynamicHash.h"
 #include "tools/sk_app/Window.h"
 
@@ -79,7 +79,8 @@ public:
         }
     }
 
-    void setRequestedDisplayParams(const DisplayParams&, bool allowReattach) override;
+    void setRequestedDisplayParams(std::unique_ptr<const skwindow::DisplayParams>,
+                                   bool allowReattach) override;
 
 private:
     void closeWindow();
@@ -101,8 +102,6 @@ private:
     BackendType fBackend = BackendType::kRaster_BackendType;
 
     std::string fClipboardText;
-
-    using INHERITED = Window;
 };
 
 }   // namespace sk_app

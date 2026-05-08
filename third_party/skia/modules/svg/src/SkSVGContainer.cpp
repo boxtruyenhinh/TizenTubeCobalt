@@ -9,6 +9,10 @@
 
 #include "include/core/SkPath.h"
 #include "include/pathops/SkPathOps.h"
+#include "include/private/base/SkAssert.h"
+
+#include <utility>
+class SkSVGRenderContext;
 
 SkSVGContainer::SkSVGContainer(SkSVGTag t) : INHERITED(t) { }
 
@@ -22,7 +26,7 @@ bool SkSVGContainer::hasChildren() const {
 }
 
 void SkSVGContainer::onRender(const SkSVGRenderContext& ctx) const {
-    for (int i = 0; i < fChildren.count(); ++i) {
+    for (int i = 0; i < fChildren.size(); ++i) {
         fChildren[i]->render(ctx);
     }
 }
@@ -30,7 +34,7 @@ void SkSVGContainer::onRender(const SkSVGRenderContext& ctx) const {
 SkPath SkSVGContainer::onAsPath(const SkSVGRenderContext& ctx) const {
     SkPath path;
 
-    for (int i = 0; i < fChildren.count(); ++i) {
+    for (int i = 0; i < fChildren.size(); ++i) {
         const SkPath childPath = fChildren[i]->asPath(ctx);
 
         Op(path, childPath, kUnion_SkPathOp, &path);
@@ -40,10 +44,10 @@ SkPath SkSVGContainer::onAsPath(const SkSVGRenderContext& ctx) const {
     return path;
 }
 
-SkRect SkSVGContainer::onObjectBoundingBox(const SkSVGRenderContext& ctx) const {
+SkRect SkSVGContainer::onTransformableObjectBoundingBox(const SkSVGRenderContext& ctx) const {
     SkRect bounds = SkRect::MakeEmpty();
 
-    for (int i = 0; i < fChildren.count(); ++i) {
+    for (int i = 0; i < fChildren.size(); ++i) {
         const SkRect childBounds = fChildren[i]->objectBoundingBox(ctx);
         bounds.join(childBounds);
     }

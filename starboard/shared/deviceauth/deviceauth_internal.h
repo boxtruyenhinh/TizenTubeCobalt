@@ -18,8 +18,6 @@
 #include <cstddef>
 #include <cstdint>
 namespace starboard {
-namespace shared {
-namespace deviceauth {
 
 bool SignWithCertificationSecretKey(const char* secret_key,
                                     const uint8_t* message,
@@ -27,8 +25,6 @@ bool SignWithCertificationSecretKey(const char* secret_key,
                                     uint8_t* digest,
                                     size_t digest_size_in_bytes);
 
-}  // namespace deviceauth
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_DEVICEAUTH_DEVICEAUTH_INTERNAL_H_

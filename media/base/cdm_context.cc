@@ -22,8 +22,8 @@ Decryptor* CdmContext::GetDecryptor() {
   return nullptr;
 }
 
-absl::optional<base::UnguessableToken> CdmContext::GetCdmId() const {
-  return absl::nullopt;
+std::optional<base::UnguessableToken> CdmContext::GetCdmId() const {
+  return std::nullopt;
 }
 
 std::string CdmContext::CdmIdToString(const base::UnguessableToken* cdm_id) {
@@ -46,6 +46,13 @@ MediaCryptoContext* CdmContext::GetMediaCryptoContext() {
   return nullptr;
 }
 #endif
+
+#if BUILDFLAG(USE_STARBOARD_MEDIA)
+SbDrmSystem CdmContext::GetSbDrmSystem() {
+  return kSbDrmSystemInvalid;
+}
+#endif // BUILDFLAG(USE_STARBOARD_MEDIA)
+
 
 #if BUILDFLAG(IS_FUCHSIA)
 FuchsiaCdmContext* CdmContext::GetFuchsiaCdmContext() {

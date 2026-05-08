@@ -12,7 +12,7 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkString.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "tools/flags/CommandLineFlags.h"
 
 static DEFINE_double(strokeWidth, -1.0, "If set, use this stroke width in RectBench.");
@@ -228,7 +228,7 @@ protected:
         SkScalar gSizes[] = {
             SkIntToScalar(7), 0
         };
-        size_t sizes = SK_ARRAY_COUNT(gSizes);
+        size_t sizes = std::size(gSizes);
 
         if (FLAGS_strokeWidth >= 0) {
             gSizes[0] = (SkScalar)FLAGS_strokeWidth;
@@ -253,6 +253,45 @@ private:
     SkString fName;
 
 };
+
+class HairPointsBench : public Benchmark {
+    static constexpr float W = 640;
+    static constexpr float H = 480;
+    static constexpr int   N = 300;
+
+    const float            fAlpha;
+    std::array<SkPoint, N> fPts;
+    SkString               fName;
+
+public:
+    HairPointsBench(float alpha) : fAlpha(alpha) {
+        fName.printf("hair_points_alpha_%g", alpha);
+    }
+
+protected:
+    const char* onGetName() override { return fName.c_str(); }
+
+    void onDelayedSetup() override {
+        SkRandom rand;
+        for (auto& p : fPts) {
+            const auto x = rand.nextF() * W;
+            const auto y = rand.nextF() * H;
+            p.set(x, y);
+        }
+    }
+
+    void onDraw(int loops, SkCanvas* canvas) override {
+        SkPaint paint;
+        paint.setAlphaf(fAlpha);
+        paint.setStrokeWidth(0);    // we're hairpoints
+
+        for (int loop = 0; loop < loops; loop++) {
+            for (int i = 0; i < 1000; ++i)
+            canvas->drawPoints(SkCanvas::kPoints_PointMode, N, fPts.data(), paint);
+        }
+    }
+};
+
 
 /*******************************************************************************
  * to bench BlitMask [Opaque, Black, color, shader]
@@ -279,7 +318,7 @@ protected:
         SkScalar gSizes[] = {
             SkIntToScalar(13), SkIntToScalar(24)
         };
-        size_t sizes = SK_ARRAY_COUNT(gSizes);
+        size_t sizes = std::size(gSizes);
 
         if (FLAGS_strokeWidth >= 0) {
             gSizes[0] = (SkScalar)FLAGS_strokeWidth;
@@ -350,6 +389,8 @@ DEF_BENCH(return new RRectBench(1);)
 DEF_BENCH(return new RRectBench(1, 4);)
 DEF_BENCH(return new RRectBench(3);)
 DEF_BENCH(return new RRectBench(3, 4);)
+DEF_BENCH(return new HairPointsBench(0.5f);)
+DEF_BENCH(return new HairPointsBench(1);)
 DEF_BENCH(return new PointsBench(SkCanvas::kPoints_PointMode, "points");)
 DEF_BENCH(return new PointsBench(SkCanvas::kLines_PointMode, "lines");)
 DEF_BENCH(return new PointsBench(SkCanvas::kPolygon_PointMode, "polygon");)

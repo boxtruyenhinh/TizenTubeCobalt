@@ -16,15 +16,13 @@
 // configuration.h work for the current toolchain.
 
 #include "starboard/configuration.h"
+
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
 SB_COMPILE_ASSERT(sizeof(int32_t) < sizeof(int64_t), int32_less_than_int64);
-
-void TheUnreferencer(int unreferenced) {}
 
 struct PossiblyFunnySize {
   int32_t a;
@@ -59,4 +57,3 @@ TEST(SbArraySizeIntTest, SunnyDay) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

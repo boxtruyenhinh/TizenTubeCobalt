@@ -5,14 +5,21 @@
  * found in the LICENSE file.
  */
 
-#include "modules/skottie/src/Adapter.h"
+#include "include/core/SkRefCnt.h"
+#include "modules/jsonreader/SkJSONReader.h"
 #include "modules/skottie/src/SkottieJson.h"
-#include "modules/skottie/src/SkottiePriv.h"
-#include "modules/skottie/src/SkottieValue.h"
 #include "modules/skottie/src/layers/shapelayer/ShapeLayer.h"
+#include "modules/sksg/include/SkSGGeometryNode.h"
+#include "modules/sksg/include/SkSGMerge.h"
+
+#include <algorithm>
+#include <cstddef>
+#include <utility>
+#include <vector>
 
 namespace skottie {
 namespace internal {
+class AnimationBuilder;
 
 sk_sp<sksg::Merge> ShapeBuilder::MergeGeometry(std::vector<sk_sp<sksg::GeometryNode>>&& geos,
                                                sksg::Merge::Mode mode) {
@@ -39,7 +46,7 @@ std::vector<sk_sp<sksg::GeometryNode>> ShapeBuilder::AttachMergeGeometryEffect(
     };
 
     const auto mode = gModes[std::min<size_t>(ParseDefault<size_t>(jmerge["mm"], 1) - 1,
-                                            SK_ARRAY_COUNT(gModes) - 1)];
+                                            std::size(gModes) - 1)];
 
     std::vector<sk_sp<sksg::GeometryNode>> merged;
     merged.push_back(ShapeBuilder::MergeGeometry(std::move(geos), mode));

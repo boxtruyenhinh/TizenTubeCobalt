@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/shared/starboard/media/media_support_internal.h"
+// clang-format on
 
-#include "starboard/android/shared/jni_utils.h"
 #include "starboard/android/shared/media_capabilities_cache.h"
 #include "starboard/android/shared/media_common.h"
 #include "starboard/audio_sink.h"
@@ -22,13 +23,11 @@
 #include "starboard/configuration_constants.h"
 #include "starboard/media.h"
 
-using starboard::android::shared::MediaCapabilitiesCache;
-using starboard::android::shared::SupportedAudioCodecToMimeType;
-using starboard::shared::starboard::media::MimeType;
+namespace starboard {
 
-bool SbMediaIsAudioSupported(SbMediaAudioCodec audio_codec,
-                             const MimeType* mime_type,
-                             int64_t bitrate) {
+bool MediaIsAudioSupported(SbMediaAudioCodec audio_codec,
+                           const MimeType* mime_type,
+                           int64_t bitrate) {
   if (bitrate >= kSbMediaMaxAudioBitrateInBitsPerSecond) {
     return false;
   }
@@ -42,10 +41,6 @@ bool SbMediaIsAudioSupported(SbMediaAudioCodec audio_codec,
 
   bool enable_audio_passthrough = true;
   if (mime_type) {
-    if (!mime_type->is_valid()) {
-      return false;
-    }
-
     // Enables audio passthrough if the codec supports it.
     if (!mime_type->ValidateBoolParameter("audiopassthrough")) {
       return false;
@@ -80,3 +75,5 @@ bool SbMediaIsAudioSupported(SbMediaAudioCodec audio_codec,
   return MediaCapabilitiesCache::GetInstance()->IsPassthroughSupported(
       audio_codec);
 }
+
+}  // namespace starboard

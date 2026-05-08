@@ -5,27 +5,84 @@
  * found in the LICENSE file.
  */
 
-#include "tests/Test.h"
-
-#include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrClip.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrFragmentProcessor.h"
-#include "src/gpu/GrGpuResource.h"
-#include "src/gpu/GrImageInfo.h"
-#include "src/gpu/GrMemoryPool.h"
-#include "src/gpu/GrProxyProvider.h"
-#include "src/gpu/GrResourceProvider.h"
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBitmap.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkString.h"
+#include "include/core/SkSurfaceProps.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
+#include "include/private/SkSLSampleUsage.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkRandom.h"
+#include "src/core/SkColorData.h"
 #include "src/gpu/KeyBuilder.h"
-#include "src/gpu/SkGr.h"
-#include "src/gpu/effects/GrTextureEffect.h"
-#include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
-#include "src/gpu/ops/GrMeshDrawOp.h"
-#include "src/gpu/v1/SurfaceDrawContext_v1.h"
+#include "src/gpu/SkBackingFit.h"
+#include "src/gpu/Swizzle.h"
+#include "src/gpu/ganesh/GrAppliedClip.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrImageInfo.h"
+#include "src/gpu/ganesh/GrPixmap.h"
+#include "src/gpu/ganesh/GrProcessorAnalysis.h"
+#include "src/gpu/ganesh/GrProcessorSet.h"
+#include "src/gpu/ganesh/GrProcessorUnitTest.h"
+#include "src/gpu/ganesh/GrProxyProvider.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/GrTextureProxy.h"
+#include "src/gpu/ganesh/GrUserStencilSettings.h"
+#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/SurfaceContext.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
+#include "src/gpu/ganesh/effects/GrTextureEffect.h"
+#include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
+#include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
+#include "src/gpu/ganesh/ops/GrOp.h"
+#include "tests/CtsEnforcement.h"
+#include "tests/Test.h"
+#include "tests/TestHarness.h"
 #include "tests/TestUtils.h"
+#include "tools/EncodeUtils.h"
+#include "tools/flags/CommandLineFlags.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
+#include <cstdint>
+#include <initializer_list>
+#include <memory>
 #include <random>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+using namespace skia_private;
+
+class GrDstProxyView;
+class GrMeshDrawTarget;
+class GrOpFlushState;
+class GrProgramInfo;
+class GrRecordingContext;
+class GrResourceProvider;
+class SkArenaAlloc;
+enum class GrXferBarrierFlags;
+struct GrContextOptions;
+struct GrShaderCaps;
 
 namespace {
 class TestOp : public GrMeshDrawOp {
@@ -93,7 +150,7 @@ public:
     static std::unique_ptr<GrFragmentProcessor> Make(std::unique_ptr<GrFragmentProcessor> child) {
         return std::unique_ptr<GrFragmentProcessor>(new TestFP(std::move(child)));
     }
-    static std::unique_ptr<GrFragmentProcessor> Make(const SkTArray<GrSurfaceProxyView>& views) {
+    static std::unique_ptr<GrFragmentProcessor> Make(const TArray<GrSurfaceProxyView>& views) {
         return std::unique_ptr<GrFragmentProcessor>(new TestFP(views));
     }
 
@@ -109,7 +166,7 @@ public:
     }
 
 private:
-    TestFP(const SkTArray<GrSurfaceProxyView>& views)
+    TestFP(const TArray<GrSurfaceProxyView>& views)
             : INHERITED(kTestFP_ClassID, kNone_OptimizationFlags) {
         for (const GrSurfaceProxyView& view : views) {
             this->registerChild(GrTextureEffect::Make(view, kUnknown_SkAlphaType));
@@ -141,7 +198,7 @@ private:
 };
 }  // namespace
 
-DEF_GPUTEST_FOR_ALL_CONTEXTS(ProcessorRefTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_ALL_CONTEXTS(ProcessorRefTest, reporter, ctxInfo, CtsEnforcement::kNever) {
     auto dContext = ctxInfo.directContext();
     GrProxyProvider* proxyProvider = dContext->priv().proxyProvider();
 
@@ -155,16 +212,27 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(ProcessorRefTest, reporter, ctxInfo) {
 
     for (bool makeClone : {false, true}) {
         for (int parentCnt = 0; parentCnt < 2; parentCnt++) {
-            auto sdc = skgpu::v1::SurfaceDrawContext::Make(
-                    dContext, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kApprox, {1, 1},
-                    SkSurfaceProps());
+            auto sdc = skgpu::ganesh::SurfaceDrawContext::Make(dContext,
+                                                               GrColorType::kRGBA_8888,
+                                                               nullptr,
+                                                               SkBackingFit::kApprox,
+                                                               {1, 1},
+                                                               SkSurfaceProps(),
+                                                               /*label=*/{});
             {
-                sk_sp<GrTextureProxy> proxy = proxyProvider->createProxy(
-                        format, kDims, GrRenderable::kNo, 1, GrMipmapped::kNo, SkBackingFit::kExact,
-                        SkBudgeted::kYes, GrProtected::kNo);
+                sk_sp<GrTextureProxy> proxy =
+                        proxyProvider->createProxy(format,
+                                                   kDims,
+                                                   GrRenderable::kNo,
+                                                   1,
+                                                   skgpu::Mipmapped::kNo,
+                                                   SkBackingFit::kExact,
+                                                   skgpu::Budgeted::kYes,
+                                                   GrProtected::kNo,
+                                                   /*label=*/"ProcessorRefTest");
 
                 {
-                    SkTArray<GrSurfaceProxyView> views;
+                    TArray<GrSurfaceProxyView> views;
                     views.push_back({proxy, kTopLeft_GrSurfaceOrigin, swizzle});
                     auto fp = TestFP::Make(std::move(views));
                     for (int i = 0; i < parentCnt; ++i) {
@@ -196,13 +264,12 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(ProcessorRefTest, reporter, ctxInfo) {
     }
 }
 
-#include "tools/flags/CommandLineFlags.h"
 static DEFINE_bool(randomProcessorTest, false,
                    "Use non-deterministic seed for random processor tests?");
 static DEFINE_int(processorSeed, 0,
                   "Use specific seed for processor tests. Overridden by --randomProcessorTest.");
 
-#if GR_TEST_UTILS
+#if defined(GPU_TEST_UTILS)
 
 static GrColor input_texel_color(int x, int y, SkScalar delta) {
     // Delta must be less than 0.5 to prevent over/underflow issues with the input color
@@ -228,7 +295,7 @@ static GrColor input_texel_color(int x, int y, SkScalar delta) {
 
 // The output buffer must be the same size as the render-target context.
 static void render_fp(GrDirectContext* dContext,
-                      skgpu::v1::SurfaceDrawContext* sdc,
+                      skgpu::ganesh::SurfaceDrawContext* sdc,
                       std::unique_ptr<GrFragmentProcessor> fp,
                       GrColor* outBuffer) {
     sdc->fillWithFP(std::move(fp));
@@ -243,8 +310,10 @@ static void render_fp(GrDirectContext* dContext,
 class TestFPGenerator {
     public:
         TestFPGenerator() = delete;
-        TestFPGenerator(GrDirectContext* context, GrResourceProvider* resourceProvider)
+        TestFPGenerator(GrDirectContext* context, skgpu::ganesh::SurfaceDrawContext* sdc,
+                        GrResourceProvider* resourceProvider)
                 : fContext(context)
+                , fSurfaceDrawContext(sdc)
                 , fResourceProvider(resourceProvider)
                 , fInitialSeed(synthesizeInitialSeed())
                 , fRandomSeed(fInitialSeed) {}
@@ -321,8 +390,8 @@ class TestFPGenerator {
             // This will generate the exact same randomized FP (of each requested type) each time
             // it's called. Call `reroll` to get a different FP.
             SkRandom random{fRandomSeed};
-            GrProcessorTestData testData{&random, fContext, randomTreeDepth,
-                                         SK_ARRAY_COUNT(fTestViews), fTestViews,
+            GrProcessorTestData testData{&random, fSurfaceDrawContext, randomTreeDepth,
+                                         static_cast<int>(std::size(fTestViews)), fTestViews,
                                          std::move(inputFP)};
             return GrFragmentProcessorTestFactory::MakeIdx(type, &testData);
         }
@@ -330,7 +399,7 @@ class TestFPGenerator {
         std::unique_ptr<GrFragmentProcessor> make(int type, int randomTreeDepth,
                                                   GrSurfaceProxyView view,
                                                   SkAlphaType alpha = kPremul_SkAlphaType) {
-            return make(type, randomTreeDepth, GrTextureEffect::Make(view, alpha));
+            return make(type, randomTreeDepth, GrTextureEffect::Make(std::move(view), alpha));
         }
 
     private:
@@ -343,8 +412,9 @@ class TestFPGenerator {
             }
         }
 
-        GrDirectContext* fContext;              // owned by caller
-        GrResourceProvider* fResourceProvider;  // owned by caller
+        GrDirectContext* fContext;                               // owned by caller
+        skgpu::ganesh::SurfaceDrawContext* fSurfaceDrawContext;  // owned by caller
+        GrResourceProvider* fResourceProvider;                   // owned by caller
         const uint32_t fInitialSeed;
         uint32_t fRandomSeed;
         GrProcessorTestData::ViewInfo fTestViews[2];
@@ -385,7 +455,7 @@ static bool log_pixels(GrColor* pixels, int widthHeight, SkString* dst) {
             SkImageInfo::Make(widthHeight, widthHeight, kRGBA_8888_SkColorType, kLogAlphaType);
     SkBitmap bmp;
     bmp.installPixels(info, pixels, widthHeight * sizeof(GrColor));
-    return BipmapToBase64DataURI(bmp, dst);
+    return ToolUtils::BitmapToBase64DataURI(bmp, dst);
 }
 
 static bool log_texture_view(GrDirectContext* dContext, GrSurfaceProxyView src, SkString* dst) {
@@ -396,7 +466,7 @@ static bool log_texture_view(GrDirectContext* dContext, GrSurfaceProxyView src, 
     SkBitmap bm;
     SkAssertResult(bm.tryAllocPixels(ii));
     SkAssertResult(sContext->readPixels(dContext, bm.pixmap(), {0, 0}));
-    return BipmapToBase64DataURI(bm, dst);
+    return ToolUtils::BitmapToBase64DataURI(bm, dst);
 }
 
 static bool fuzzy_color_equals(const SkPMColor4f& c1, const SkPMColor4f& c2) {
@@ -516,22 +586,29 @@ static bool legal_modulation(const GrColor inGr[3], const GrColor outGr[3]) {
     return isLegalColorModulation || isLegalAlphaModulation;
 }
 
-DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(ProcessorOptimizationValidationTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(ProcessorOptimizationValidationTest,
+                               reporter,
+                               ctxInfo,
+                               CtsEnforcement::kNever) {
     GrDirectContext* context = ctxInfo.directContext();
     GrResourceProvider* resourceProvider = context->priv().resourceProvider();
     using FPFactory = GrFragmentProcessorTestFactory;
 
-    TestFPGenerator fpGenerator{context, resourceProvider};
+    // Make the destination context for the test.
+    static constexpr int kRenderSize = 256;
+    auto sdc = skgpu::ganesh::SurfaceDrawContext::Make(context,
+                                                       GrColorType::kRGBA_8888,
+                                                       nullptr,
+                                                       SkBackingFit::kExact,
+                                                       {kRenderSize, kRenderSize},
+                                                       SkSurfaceProps(),
+                                                       /*label=*/{});
+
+    TestFPGenerator fpGenerator{context, sdc.get(), resourceProvider};
     if (!fpGenerator.init()) {
         ERRORF(reporter, "Could not initialize TestFPGenerator");
         return;
     }
-
-    // Make the destination context for the test.
-    static constexpr int kRenderSize = 256;
-    auto sdc = skgpu::v1::SurfaceDrawContext::Make(
-            context, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kExact,
-            {kRenderSize, kRenderSize}, SkSurfaceProps());
 
     // Coverage optimization uses three frames with a linearly transformed input texture.  The first
     // frame has no offset, second frames add .2 and .4, which should then be present as a fixed
@@ -567,12 +644,6 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(ProcessorOptimizationValidationTest, repor
         int optimizedForCoverageAsAlpha = 0;
         int optimizedForConstantOutputForInput = 0;
 
-#ifdef __MSVC_RUNTIME_CHECKS
-        // This test is infuriatingly slow with MSVC runtime checks enabled
-        static constexpr int kMinimumTrials = 1;
-        static constexpr int kMaximumTrials = 1;
-        static constexpr int kExpectedSuccesses = 1;
-#else
         // We start by testing each fragment-processor 100 times, watching the optimization bits
         // that appear. If we see an optimization bit appear in those first 100 trials, we keep
         // running tests until we see at least five successful trials that have this optimization
@@ -581,7 +652,6 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(ProcessorOptimizationValidationTest, repor
         static constexpr int kMinimumTrials = 100;
         static constexpr int kMaximumTrials = 2000;
         static constexpr int kExpectedSuccesses = 5;
-#endif
 
         for (int trial = 0;; ++trial) {
             // Create a randomly-configured FP.
@@ -645,11 +715,9 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(ProcessorOptimizationValidationTest, repor
             // violating the optimizations, it's reasonable to expect it to violate requirements on
             // a large number of pixels in the image. Sporadic pixel violations are more indicative
             // of device errors and represents a separate problem.
-#if defined(SK_BUILD_FOR_SKQP)
-            static constexpr int kMaxAcceptableFailedPixels = 0; // Strict when running as SKQP
-#else
-            static constexpr int kMaxAcceptableFailedPixels = 2 * kRenderSize; // ~0.7% of the image
-#endif
+            static const int kMaxAcceptableFailedPixels =
+                    CurrentTestHarnessIsSkQP() ? 0 :  // Strict when running as SKQP
+                            2 * kRenderSize;          // ~0.7% of the image
 
             // Collect first optimization failure message, to be output later as a warning or an
             // error depending on whether the rendering "passed" or failed.
@@ -820,11 +888,9 @@ static bool verify_identical_render(skiatest::Reporter* reporter, int renderSize
     // is logically wrong, it's reasonable to expect it produce a large number of pixel differences
     // in the image. Sporadic pixel violations are more indicative device errors and represents a
     // separate problem.
-#if defined(SK_BUILD_FOR_SKQP)
-    const int maxAcceptableFailedPixels = 0;  // Strict when running as SKQP
-#else
-    const int maxAcceptableFailedPixels = 2 * renderSize;  // ~0.002% of the pixels (size 1024*1024)
-#endif
+    static const int maxAcceptableFailedPixels =
+            CurrentTestHarnessIsSkQP() ? 0 :  // Strict when running as SKQP
+                    2 * renderSize;           // ~0.002% of the pixels (size 1024*1024)
 
     int failedPixelCount = 0;
     int firstWrongX = 0;
@@ -882,21 +948,25 @@ static void log_clone_failure(skiatest::Reporter* reporter, int renderSize,
 
 // Tests that a fragment processor returned by GrFragmentProcessor::clone() is equivalent to its
 // progenitor.
-DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(ProcessorCloneTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(ProcessorCloneTest, reporter, ctxInfo, CtsEnforcement::kNever) {
     GrDirectContext* context = ctxInfo.directContext();
     GrResourceProvider* resourceProvider = context->priv().resourceProvider();
 
-    TestFPGenerator fpGenerator{context, resourceProvider};
+    // Make the destination context for the test.
+    static constexpr int kRenderSize = 1024;
+    auto sdc = skgpu::ganesh::SurfaceDrawContext::Make(context,
+                                                       GrColorType::kRGBA_8888,
+                                                       nullptr,
+                                                       SkBackingFit::kExact,
+                                                       {kRenderSize, kRenderSize},
+                                                       SkSurfaceProps(),
+                                                       /*label=*/{});
+
+    TestFPGenerator fpGenerator{context, sdc.get(), resourceProvider};
     if (!fpGenerator.init()) {
         ERRORF(reporter, "Could not initialize TestFPGenerator");
         return;
     }
-
-    // Make the destination context for the test.
-    static constexpr int kRenderSize = 1024;
-    auto sdc = skgpu::v1::SurfaceDrawContext::Make(
-            context, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kExact,
-            {kRenderSize, kRenderSize}, SkSurfaceProps());
 
     std::vector<GrColor> inputPixels = make_input_pixels(kRenderSize, kRenderSize, 0.0f);
     GrSurfaceProxyView inputTexture =
@@ -968,4 +1038,4 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(ProcessorCloneTest, reporter, ctxInfo) {
     }
 }
 
-#endif  // GR_TEST_UTILS
+#endif  // defined(GPU_TEST_UTILS)

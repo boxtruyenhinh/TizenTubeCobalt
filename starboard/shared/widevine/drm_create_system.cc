@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/drm.h"
+// clang-format on
 
 #include "starboard/common/log.h"
 #include "starboard/common/string.h"
@@ -34,7 +36,7 @@ SbDrmSystem SbDrmCreateSystem(
     SbDrmSessionKeyStatusesChangedFunc key_statuses_changed_callback,
     SbDrmServerCertificateUpdatedFunc server_certificate_updated_callback,
     SbDrmSessionClosedFunc session_closed_callback) {
-  using starboard::shared::widevine::DrmSystemWidevine;
+  using starboard::DrmSystemWidevine;
   if (!update_request_callback || !session_updated_callback) {
     return kSbDrmSystemInvalid;
   }

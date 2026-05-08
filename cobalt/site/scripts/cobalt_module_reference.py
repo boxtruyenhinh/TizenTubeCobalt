@@ -1,23 +1,23 @@
 # Copyright 2017 The Cobalt Authors. All Rights Reserved.
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the 'License');
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
+# distributed under the License is distributed on an 'AS IS' BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Generates reference markdown documentation for Starboard modules.
+'''Generates reference markdown documentation for Starboard modules.
 
 The full process:
 1. Preprocess the files to be Doxygen friendly (Doxygenation).
 2. Run Doxygen to produce XML that describes each module.
 3. Parse the XML and generate Markdown for each module.
-"""
+'''
 
 import contextlib
 from io import StringIO
@@ -40,7 +40,7 @@ _HEADER_XML_RE = re.compile(_HEADER_XML_PATTERN)
 _SCRIPT_FILE = os.path.basename(__file__)
 _SCRIPT_NAME, _ = os.path.splitext(_SCRIPT_FILE)
 
-_OSS_STARBOARD_VERSIONS = [14, 15, 16]
+_OSS_STARBOARD_VERSIONS = [18]
 
 
 def _strip(string_or_none):
@@ -114,7 +114,7 @@ def _find_structs(compounddef_element, xml_path):
     struct_xml_path = os.path.join(xml_path, refid + '.xml')
     struct_xml = ET.parse(struct_xml_path)
     struct_elements = struct_xml.findall(
-        './/compounddef[@kind="struct"][compoundname]')
+        ".//compounddef[@kind='struct'][compoundname]")
     for struct_element in struct_elements:
       struct_name = _find_filename(struct_element)
       all_struct_elements[struct_name] = struct_element
@@ -142,7 +142,7 @@ def _find_member_definition(memberdef_element):
   args_name = _strip(memberdef_element.findtext('./argsstring'))
   member_name = _strip(memberdef_element.findtext('./name'))
   # Doxygen does not handle structs of non-typedef'd function pointers
-  # gracefully. The 'type" and "argsstring' elements are used to temporarily
+  # gracefully. The 'type' and 'argsstring' elements are used to temporarily
   # store the information needed to be able to rebuild the full signature, e.g.:
   #
   #  void (*glEnable)(SbGlEnum cap)
@@ -264,7 +264,7 @@ def _emit_macro(out, memberdef_element):
   param_defs = memberdef_element.findall('./param/defname')
   if param_defs:
     param_names = [_strip(x.text) for x in param_defs]
-    params = f'({", ".join(param_names)})'
+    params = f"({', '.join(param_names)})"
 
   logging.info('Macro: %s%s', name, params)
   with out.auto_scoped_heading(name + params):
@@ -455,7 +455,7 @@ def generate(source_dir, output_dir):
       for header_xml_path in _get_files(doxygen_xml_path, _HEADER_XML_RE):
         header_xml = ET.parse(header_xml_path)
         for compounddef_element in header_xml.findall(
-            './/compounddef[@kind="file"][compoundname]'):
+            ".//compounddef[@kind='file'][compoundname]"):
           environment.make_dirs(version_doc_dir_path)
           header_filename = _find_filename(compounddef_element)
           doc_filename = (

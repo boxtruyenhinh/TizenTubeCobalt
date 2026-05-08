@@ -9,12 +9,12 @@
 
 #include "libANGLE/renderer/vulkan/fuchsia/WindowSurfaceVkFuchsia.h"
 
-#include <fuchsia_egl.h>
-#include <fuchsia_egl_backend.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/object.h>
+#include "common/fuchsia_egl/fuchsia_egl.h"
+#include "common/fuchsia_egl/fuchsia_egl_backend.h"
 
-#include "libANGLE/renderer/vulkan/RendererVk.h"
+#include "libANGLE/renderer/vulkan/vk_renderer.h"
 #include "libANGLE/renderer/vulkan/vk_utils.h"
 
 namespace rx
@@ -34,9 +34,11 @@ bool WindowSurfaceVkFuchsia::isValidNativeWindow(EGLNativeWindowType window)
     return fuchsia_egl_window_get_width(egl_window) >= 0;
 }
 
-angle::Result WindowSurfaceVkFuchsia::createSurfaceVk(vk::Context *context, gl::Extents *extentsOut)
+angle::Result WindowSurfaceVkFuchsia::createSurfaceVk(vk::ErrorContext *context)
 {
+#if !defined(ANGLE_SHARED_LIBVULKAN)
     InitImagePipeSurfaceFUCHSIAFunctions(context->getRenderer()->getInstance());
+#endif  // !defined(ANGLE_SHARED_LIBVULKAN)
     fuchsia_egl_window *egl_window = reinterpret_cast<fuchsia_egl_window *>(mNativeWindowType);
 
     VkImagePipeSurfaceCreateInfoFUCHSIA createInfo = {};
@@ -45,11 +47,11 @@ angle::Result WindowSurfaceVkFuchsia::createSurfaceVk(vk::Context *context, gl::
     ANGLE_VK_TRY(context, vkCreateImagePipeSurfaceFUCHSIA(context->getRenderer()->getInstance(),
                                                           &createInfo, nullptr, &mSurface));
 
-    return getCurrentWindowSize(context, extentsOut);
+    return angle::Result::Continue;
 }
 
-angle::Result WindowSurfaceVkFuchsia::getCurrentWindowSize(vk::Context *context,
-                                                           gl::Extents *extentsOut)
+angle::Result WindowSurfaceVkFuchsia::getCurrentWindowSize(vk::ErrorContext *context,
+                                                           gl::Extents *extentsOut) const
 {
     fuchsia_egl_window *egl_window = reinterpret_cast<fuchsia_egl_window *>(mNativeWindowType);
 

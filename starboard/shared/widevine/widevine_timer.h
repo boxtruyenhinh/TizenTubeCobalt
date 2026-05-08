@@ -15,23 +15,20 @@
 #ifndef STARBOARD_SHARED_WIDEVINE_WIDEVINE_TIMER_H_
 #define STARBOARD_SHARED_WIDEVINE_WIDEVINE_TIMER_H_
 
-#include <pthread.h>
-
 #include <map>
+#include <memory>
+#include <mutex>
 
-#include "starboard/common/condition_variable.h"
-#include "starboard/common/mutex.h"
-#include "starboard/shared/starboard/player/job_queue.h"
+#include "starboard/shared/starboard/player/job_thread.h"
 #include "third_party/internal/ce_cdm/cdm/include/cdm.h"
 
 namespace starboard {
-namespace shared {
-namespace widevine {
 
 // Manages the scheduled callbacks of Widevine.  All its public functions can
 // be called from any threads.
 class WidevineTimer : public ::widevine::Cdm::ITimer {
  public:
+  WidevineTimer();
   ~WidevineTimer() override;
 
   // Call |client->onTimerExpired(context)| after |delay_in_milliseconds|.
@@ -44,21 +41,12 @@ class WidevineTimer : public ::widevine::Cdm::ITimer {
   void cancel(IClient* client) override;
 
  private:
-  typedef starboard::player::JobQueue JobQueue;
-
-  static void* ThreadFunc(void* param);
-  void RunLoop(ConditionVariable* condition_variable);
-  void CancelAllJobsOnClient(IClient* client,
-                             ConditionVariable* condition_variable);
-
-  Mutex mutex_;
-  pthread_t thread_ = 0;
-  JobQueue* job_queue_ = NULL;
-  std::map<IClient*, JobQueue::JobOwner*> active_clients_;
+  const std::unique_ptr<JobThread> job_thread_;
+  std::mutex mutex_;
+  std::map<IClient*, JobQueue::JobOwner*>
+      active_clients_;  // Guarded by |mutex_|.
 };
 
-}  // namespace widevine
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_WIDEVINE_WIDEVINE_TIMER_H_

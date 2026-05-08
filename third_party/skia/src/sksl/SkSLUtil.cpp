@@ -7,22 +7,25 @@
 
 #include "src/sksl/SkSLUtil.h"
 
+#include "src/core/SkSLTypeShared.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLOutputStream.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/ir/SkSLType.h"
 
-#include "src/gpu/GrShaderCaps.h"
-
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS
-#endif
+#include <string>
 
 namespace SkSL {
 
-#if defined(SKSL_STANDALONE) || !SK_SUPPORT_GPU
+// TODO: Once Graphite has its own GPU-caps system, SK_GRAPHITE should get its own mode.
+// At the moment, it either mimics what GrShaderCaps reports, or it uses these hard-coded values
+// depending on the build.
+#if defined(SKSL_STANDALONE) || !defined(SK_GANESH)
 std::unique_ptr<ShaderCaps> ShaderCapsFactory::MakeShaderCaps() {
     std::unique_ptr<ShaderCaps> standalone = std::make_unique<ShaderCaps>();
     standalone->fShaderDerivativeSupport = true;
+    standalone->fExplicitTextureLodSupport = true;
     standalone->fFlatInterpolationSupport = true;
     standalone->fNoPerspectiveInterpolationSupport = true;
     standalone->fSampleMaskSupport = true;
@@ -31,15 +34,14 @@ std::unique_ptr<ShaderCaps> ShaderCapsFactory::MakeShaderCaps() {
 }
 #else
 std::unique_ptr<ShaderCaps> ShaderCapsFactory::MakeShaderCaps() {
-    return std::make_unique<GrShaderCaps>();
+    return std::make_unique<ShaderCaps>();
 }
-#endif  // defined(SKSL_STANDALONE) || !SK_SUPPORT_GPU
+#endif  // defined(SKSL_STANDALONE) || !defined(SK_GANESH)
 
 void write_stringstream(const StringStream& s, OutputStream& out) {
     out.write(s.str().c_str(), s.str().size());
 }
 
-#if !defined(SKSL_STANDALONE) && SK_SUPPORT_GPU
 bool type_to_sksltype(const Context& context, const Type& type, SkSLType* outType) {
     // If a new GrSL type is added, this function will need to be updated.
     static_assert(kSkSLTypeCount == 41);
@@ -81,6 +83,5 @@ bool type_to_sksltype(const Context& context, const Type& type, SkSLType* outTyp
     if (type.matches(*context.fTypes.fUInt4   )) { *outType = SkSLType::kUInt4;    return true; }
     return false;
 }
-#endif
 
 }  // namespace SkSL

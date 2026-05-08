@@ -23,9 +23,7 @@
 #include "starboard/linux/shared/platform_service.h"
 #include "starboard/shared/starboard/application.h"
 
-// Omit namespace 'linux' due to symbol name conflict with macro 'linux'
 namespace starboard {
-namespace shared {
 namespace {
 typedef struct PreAppRecommendationsPlatformServiceImpl
     : public PlatformServiceImpl {
@@ -100,7 +98,7 @@ std::string extractJsonValue(const std::string& jsonLikeString,
 }
 
 void* Send(PlatformServiceImpl* service,
-           void* data,
+           const void* data,
            uint64_t length,
            uint64_t* output_length,
            bool* invalid_state) {
@@ -189,5 +187,4 @@ const void* GetPreappRecommendationServiceApi() {
   return &kGetPreappRecommendationServiceApi;
 }
 
-}  // namespace shared
 }  // namespace starboard

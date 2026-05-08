@@ -258,6 +258,9 @@ lo{
         "America:Chihuahua"{
             ec{"ຊິວາວາ"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"ຊີອູດັດ ຄົວເຣຊ"}
+        }
         "America:Coral_Harbour"{
             ec{"ອາທິໂຄຄານ"}
         }
@@ -1223,6 +1226,9 @@ lo{
         "Pacific:Johnston"{
             ec{"ຈອນສະໂຕນ"}
         }
+        "Pacific:Kanton"{
+            ec{"ແຄນຕອນ"}
+        }
         "Pacific:Kiritimati"{
             ec{"ຄີຣິທີມາຕີ"}
         }
@@ -1925,10 +1931,9 @@ lo{
             lg{"ເວລາເຢກາເຕລິນເບີກ"}
             ls{"ເວລາມາດຕະຖານເຢກາເຕລິນເບີກ"}
         }
-        fallbackFormat{"{1} ({0})"}
-        gmtFormat{"GMT{0}"}
-        gmtZeroFormat{"GMT"}
-        hourFormat{"+HH:mm;-HH:mm"}
+        "meta:Yukon"{
+            ls{"ເວລາຢູຄອນ"}
+        }
         regionFormat{"ເວລາ {0}"}
         regionFormatDaylight{"ເວລາກາງເວັນ {0}"}
         regionFormatStandard{"ເວລາມາດຕະຖານ {0}"}

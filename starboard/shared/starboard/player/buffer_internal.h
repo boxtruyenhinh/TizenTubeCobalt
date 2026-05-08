@@ -15,18 +15,17 @@
 #ifndef STARBOARD_SHARED_STARBOARD_PLAYER_BUFFER_INTERNAL_H_
 #define STARBOARD_SHARED_STARBOARD_PLAYER_BUFFER_INTERNAL_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <utility>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 #include "starboard/configuration.h"
 #include "starboard/shared/internal_only.h"
-#include "starboard/types.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
 
 // A buffer containing arbitrary binary data, with life time and size managed.
 // It performs better than std::vector<> as it doesn't fill the buffer with 0s.
@@ -61,8 +60,9 @@ class Buffer {
     if (data_) {
       uint8_t buffer[kPaddingSize];
       memset(buffer, kPadding, kPaddingSize);
-      SB_CHECK(memcmp(data_, buffer, kPaddingSize) == 0);
-      SB_CHECK(memcmp(data_ + kPaddingSize + size_, buffer, kPaddingSize) == 0);
+      SB_CHECK_EQ(memcmp(data_, buffer, kPaddingSize), 0);
+      SB_CHECK_EQ(memcmp(data_ + kPaddingSize + size_, buffer, kPaddingSize),
+                  0);
     }
 #endif  // !defined(NDEBUG)
     delete[] data_;
@@ -88,9 +88,6 @@ class Buffer {
   Buffer& operator=(const Buffer& that) = delete;
 };
 
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_BUFFER_INTERNAL_H_

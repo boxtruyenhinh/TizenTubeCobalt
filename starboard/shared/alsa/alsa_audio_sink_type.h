@@ -19,14 +19,10 @@
 #include "starboard/shared/starboard/audio_sink/audio_sink_internal.h"
 
 namespace starboard {
-namespace shared {
-namespace alsa {
 
-void PlatformInitialize();
-void PlatformTearDown();
+void AlsaPlatformInitialize();
+void AlsaPlatformTearDown();
 
-}  // namespace alsa
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_ALSA_ALSA_AUDIO_SINK_TYPE_H_

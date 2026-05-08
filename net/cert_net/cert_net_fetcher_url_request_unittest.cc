@@ -14,7 +14,6 @@
 #include "base/run_loop.h"
 #include "base/synchronization/lock.h"
 #include "net/cert/cert_net_fetcher.h"
-#include "net/cert/ct_policy_enforcer.h"
 #include "net/cert/mock_cert_verifier.h"
 #include "net/cert/multi_log_ct_verifier.h"
 #include "net/dns/mock_host_resolver.h"
@@ -59,7 +58,7 @@ void VerifySuccess(const std::string& expected_body,
   request->WaitForResult(&actual_error, &actual_body);
 
   EXPECT_THAT(actual_error, IsOk());
-  EXPECT_EQ(expected_body, base::CollapseWhitespaceASCII(std::string(actual_body.begin(), actual_body.end()), true));
+  EXPECT_EQ(expected_body, std::string(actual_body.begin(), actual_body.end()));
 }
 
 // Wait for the request to complete, and verify that it completed with the
@@ -281,9 +280,9 @@ TEST_F(CertNetFetcherURLRequestTest, ParallelFetchNoDuplicates) {
       StartRequest(fetcher(), url3);
 
   // Wait for all of the requests to complete and verify the fetch results.
-  VerifySuccess("-cert.crt-", request1.get());
-  VerifySuccess("-root.crl-", request2.get());
-  VerifySuccess("-certs.p7c-", request3.get());
+  VerifySuccess("-cert.crt-\n", request1.get());
+  VerifySuccess("-root.crl-\n", request2.get());
+  VerifySuccess("-certs.p7c-\n", request3.get());
 
   EXPECT_EQ(3, NumCreatedRequests());
 }
@@ -299,7 +298,7 @@ TEST_F(CertNetFetcherURLRequestTest, ContentTypeDoesntMatter) {
   GURL url = test_server_.GetURL("/foo.txt");
   std::unique_ptr<CertNetFetcher::Request> request =
       StartRequest(fetcher(), url);
-  VerifySuccess("-foo.txt-", request.get());
+  VerifySuccess("-foo.txt-\n", request.get());
 }
 
 // Fetch a URLs whose HTTP response code is not 200. These are considered
@@ -333,7 +332,7 @@ TEST_F(CertNetFetcherURLRequestTest, ContentDisposition) {
   GURL url = test_server_.GetURL("/downloadable.js");
   std::unique_ptr<CertNetFetcher::Request> request =
       StartRequest(fetcher(), url);
-  VerifySuccess("-downloadable.js-", request.get());
+  VerifySuccess("-downloadable.js-\n", request.get());
 }
 
 // Verifies that a cacheable request will be served from the HTTP cache the
@@ -348,7 +347,7 @@ TEST_F(CertNetFetcherURLRequestTest, Cache) {
   {
     std::unique_ptr<CertNetFetcher::Request> request =
         StartRequest(fetcher(), url);
-    VerifySuccess("-cacheable_1hr.crt-", request.get());
+    VerifySuccess("-cacheable_1hr.crt-\n", request.get());
   }
 
   EXPECT_EQ(1, NumCreatedRequests());
@@ -360,7 +359,7 @@ TEST_F(CertNetFetcherURLRequestTest, Cache) {
   {
     std::unique_ptr<CertNetFetcher::Request> request =
         StartRequest(fetcher(), url);
-    VerifySuccess("-cacheable_1hr.crt-", request.get());
+    VerifySuccess("-cacheable_1hr.crt-\n", request.get());
   }
 
   EXPECT_EQ(2, NumCreatedRequests());
@@ -405,7 +404,7 @@ TEST_F(CertNetFetcherURLRequestTest, Gzip) {
   GURL url(test_server_.GetURL("/gzipped_crl"));
   std::unique_ptr<CertNetFetcher::Request> request =
       StartRequest(fetcher(), url);
-  VerifySuccess("-gzipped_crl-", request.get());
+  VerifySuccess("-gzipped_crl-\n", request.get());
 }
 
 // Try fetching an unsupported URL scheme (https).
@@ -479,8 +478,8 @@ TEST_F(CertNetFetcherURLRequestTest, CancelBeforeRunningMessageLoop) {
 
   // Wait for the non-cancelled requests to complete, and verify the fetch
   // results.
-  VerifySuccess("-cert.crt-", request1.get());
-  VerifySuccess("-certs.p7c-", request3.get());
+  VerifySuccess("-cert.crt-\n", request1.get());
+  VerifySuccess("-certs.p7c-\n", request3.get());
 }
 
 // Start several requests, and cancel one of them after the first has completed.
@@ -522,7 +521,7 @@ TEST_F(CertNetFetcherURLRequestTest, CancelAfterRunningMessageLoop) {
   request2.reset();
 
   // Wait for the first request to complete and verify the fetch result.
-  VerifySuccess("-cert.crt-", request1.get());
+  VerifySuccess("-cert.crt-\n", request1.get());
 }
 
 // Fetch the same URLs in parallel and verify that only 1 request is made per
@@ -559,10 +558,10 @@ TEST_F(CertNetFetcherURLRequestTest, ParallelFetchDuplicates) {
   request3.reset();
 
   // Wait for the remaining requests to finish and verify the fetch results.
-  VerifySuccess("-root.crl-", request2.get());
-  VerifySuccess("-root.crl-", request4.get());
-  VerifySuccess("-root.crl-", request5.get());
-  VerifySuccess("-cert.crt-", request6.get());
+  VerifySuccess("-root.crl-\n", request2.get());
+  VerifySuccess("-root.crl-\n", request4.get());
+  VerifySuccess("-root.crl-\n", request5.get());
+  VerifySuccess("-cert.crt-\n", request6.get());
 
   // Verify that only 2 URLRequests were started even though 6 requests were
   // issued.
@@ -589,7 +588,7 @@ TEST_F(CertNetFetcherURLRequestTest, CancelThenStart) {
   request3.reset();
 
   // All but |request2| were canceled.
-  VerifySuccess("-cert.crt-", request2.get());
+  VerifySuccess("-cert.crt-\n", request2.get());
 }
 
 // Start duplicate requests and then cancel all of them.

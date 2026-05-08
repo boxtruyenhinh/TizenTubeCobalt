@@ -14,7 +14,11 @@
 
 #include "base/message_loop/message_pump_ui_starboard.h"
 
+#include "build/build_config.h"
+#include "base/auto_reset.h"
 #include "base/logging.h"
+#include "base/notreached.h"
+#include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "starboard/event.h"
 #include "starboard/system.h"
@@ -55,7 +59,7 @@ void MessagePumpUIStarboard::CancelImmediate() {
 
 void MessagePumpUIStarboard::RunUntilIdle() {
   DCHECK(delegate_);
-#if !defined(COBALT_BUILD_TYPE_GOLD)
+#if !BUILDFLAG(COBALT_IS_RELEASE_BUILD)
   // Abort if this is a QA build to signal that this is unexpected.
   CHECK(delegate_);
 #endif
@@ -74,13 +78,10 @@ void MessagePumpUIStarboard::RunUntilIdle() {
     if (attempt_more_work)
       continue;
 
-    attempt_more_work = delegate_->DoIdleWork();
+    delegate_->DoIdleWork();
 
     if (should_quit())
       break;
-
-    if (attempt_more_work)
-      continue;
 
     // If there is delayed work.
     if (!next_work_info.delayed_run_time.is_max()) {
@@ -93,11 +94,44 @@ void MessagePumpUIStarboard::RunUntilIdle() {
 }
 
 void MessagePumpUIStarboard::Run(Delegate* delegate) {
-  // This should never be called because we are not like a normal message pump
-  // where we loop until told to quit. We are providing a MessagePump interface
-  // on top of an externally-owned message pump. We want to exist and be able to
-  // schedule work, but the actual for(;;) loop is owned by Starboard.
-  NOTREACHED();
+  // Cobalt's primary message pump is typically owned by the Starboard OS layer
+  // (via SbEventHandle). However, certain system events (like Blur and
+  // Conceal) require the UI thread to synchronously block the OS from returning
+  // until asynchronous Wayland/X11 teardown tasks have executed on this very
+  // thread.
+  //
+  // To support this, we implement a standard nested Chromium message
+  // loop here. This allows instantiating a nested
+  // `base::RunLoop` during deactivating transitions, which blocks the OS thread
+  // while simultaneously spinning up this inner `Run()` loop to process the
+  // necessary asynchronous teardown tasks.
+  SetDelegate(delegate);
+  base::AutoReset<bool> auto_reset_should_quit(&should_quit_, false);
+
+  while (!should_quit()) {
+    Delegate::NextWorkInfo next_work_info = delegate_->DoWork();
+    bool attempt_more_work = next_work_info.is_immediate();
+
+    if (should_quit())
+      break;
+
+    if (attempt_more_work)
+      continue;
+
+    delegate_->DoIdleWork();
+
+    if (should_quit())
+      break;
+
+    // We are idle. Wait for an external thread to post a task or for a delayed
+    // task to become ready.
+    base::TimeDelta delay = next_work_info.remaining_delay();
+    if (next_work_info.delayed_run_time.is_max()) {
+      wakeup_event_.Wait();
+    } else if (delay.is_positive()) {
+      wakeup_event_.TimedWait(delay);
+    }
+  }
 }
 
 void MessagePumpUIStarboard::Attach(Delegate* delegate) {
@@ -107,14 +141,21 @@ void MessagePumpUIStarboard::Attach(Delegate* delegate) {
   // return control back to the Looper.
 
   SetDelegate(delegate);
+
+  run_loop_ = std::make_unique<RunLoop>();
+  // Since the RunLoop was just created above, BeforeRun should be guaranteed to
+  // return true (it only returns false if the RunLoop has been Quit already).
+  CHECK(run_loop_->BeforeRun());
 }
 
 void MessagePumpUIStarboard::Quit() {
-  delegate_ = nullptr;
-  CancelAll();
+  should_quit_ = true;
+  wakeup_event_.Signal();
 }
 
 void MessagePumpUIStarboard::ScheduleWork() {
+  wakeup_event_.Signal();
+
   // Check if outstanding event already exists.
   if (outstanding_event_)
     return;

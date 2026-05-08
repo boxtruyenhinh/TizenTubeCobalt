@@ -7,13 +7,21 @@
 #ifndef SkPDFGradientShader_DEFINED
 #define SkPDFGradientShader_DEFINED
 
-#include "include/core/SkShader.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkScalar.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkPoint_impl.h"
 #include "src/pdf/SkPDFTypes.h"
 #include "src/pdf/SkPDFUtils.h"
+#include "src/shaders/SkShaderBase.h"
 
-class SkMatrix;
+#include <cstdint>
+#include <memory>
+
 class SkPDFDocument;
-struct SkIRect;
+class SkShader;
 
 namespace SkPDFGradientShader {
 
@@ -23,9 +31,9 @@ SkPDFIndirectReference Make(SkPDFDocument* doc,
                             const SkIRect& surfaceBBox);
 
 struct Key {
-    SkShader::GradientType fType;
-    SkShader::GradientInfo fInfo;
-    std::unique_ptr<SkColor[]> fColors;
+    SkShaderBase::GradientType fType;
+    SkShaderBase::GradientInfo fInfo;
+    std::unique_ptr<SkColor4f[]> fColors;
     std::unique_ptr<SkScalar[]> fStops;
     SkMatrix fCanvasTransform;
     SkMatrix fShaderTransform;
@@ -37,7 +45,7 @@ struct KeyHash {
     uint32_t operator()(const Key& k) const { return k.fHash; }
 };
 
-inline bool operator==(const SkShader::GradientInfo& u, const SkShader::GradientInfo& v) {
+inline bool operator==(const SkShaderBase::GradientInfo& u, const SkShaderBase::GradientInfo& v) {
     return u.fColorCount    == v.fColorCount
         && u.fPoint[0]      == v.fPoint[0]
         && u.fPoint[1]      == v.fPoint[1]

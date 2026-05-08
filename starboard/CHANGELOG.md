@@ -5,12 +5,220 @@ This file will be updated each time a new Starboard version is released.
 Each section in this file describes the changes made to the Starboard interface
 since the version previous to it.
 
-**NOTE: Starboard versions 13 and older are no longer supported.**
+**NOTE: Starboard versions 16 and older are no longer supported.**
+
+## Version 18
+
+### Removed SbThreadSampler and SbThreadContext
+The SbThreadSampler and SbThreadContext APIs are no longer used. Instead,
+POSIX APIs are used directly.
+
+### Support decode-to-texture mode
+Implementations of `DecodeTarget` for YUV planes should ensure they use
+`GL_RED_EXT` or `GL_LUMINANCE` instead of `GL_ALPHA` to avoid green-screen
+rendering issues caused by Chromium's shader expectations.
+
+### Added the following POSIX symbols:
+* `getrandom`
+* `getuid`
+* `if_indextoname`
+* `if_nametoindex`
+* `statx`
+
+### Added AV2 to SbMediaVideoCodec
+This prepares Cobalt for future AV2 playback support.
+
+## Version 17
+Starboard 17 fully switches to POSIX APIs.
+
+### Removed SbCPUFeaturesGet
+The functionality is migrated to use `getauxval` instead.
+
+### Added the following POSIX symbols:
+* `access`
+* `aligned_alloc`
+* `chmod`
+* `clock_nanosleep`
+* `dup`
+* `dup2`
+* `epoll_create`
+* `epoll_create1`
+* `epoll_ctl`
+* `epoll_wait`
+* `eventfd`
+* `fchmod`
+* `fchown`
+* `fdatasync`
+* `fdopendir`
+* `fstatat`
+* `gai_strerror`
+* `getauxval`
+* `getcwd`
+* `geteuid`
+* `getpeername`
+* `getpid`
+* `getpriority`
+* `getrlimit`
+* `getsockopt`
+* `isatty`
+* `kill`
+* `link`
+* `madvise`
+* `malloc_usable_size`
+* `mincore`
+* `mkdtemp`
+* `mkostemp`
+* `mkstemp`
+* `openat`
+* `pathconf`
+* `pause`
+* `pipe`
+* `pipe2`
+* `poll`
+* `prctl`
+* `pread`
+* `pthread_attr_getschedpolicy`
+* `pthread_attr_getscope`
+* `pthread_attr_getstack`
+* `pthread_attr_setschedpolicy`
+* `pthread_attr_setscope`
+* `pthread_attr_setstack`
+* `pthread_getattr_np`
+* `pthread_getschedparam`
+* `pthread_kill`
+* `pthread_mutexattr_destroy`
+* `pthread_mutexattr_getpshared`
+* `pthread_mutexattr_gettype`
+* `pthread_mutexattr_init`
+* `pthread_mutexattr_setpshared`
+* `pthread_mutexattr_settype`
+* `pthread_rwlock_destroy`
+* `pthread_rwlock_init`
+* `pthread_rwlock_rdlock`
+* `pthread_rwlock_tryrdlock`
+* `pthread_rwlock_trywrlock`
+* `pthread_rwlock_unlock`
+* `pthread_rwlock_wrlock`
+* `pthread_setschedparam`
+* `pthread_sigmask`
+* `pwrite`
+* `raise`
+* `rand`
+* `rand_r`
+* `readdir`
+* `readlink`
+* `readv`
+* `realpath`
+* `recvmmsg`
+* `recvmsg`
+* `rename`
+* `sched_getaffinity`
+* `sched_get_priority_max`
+* `sched_get_priority_min`
+* `select`
+* `sem_destroy`
+* `sem_init`
+* `sem_post`
+* `sem_timedwait`
+* `sem_wait`
+* `sendmsg`
+* `setpriority`
+* `shutdown`
+* `sigaction`
+* `signal`
+* `socketpair`
+* `srand`
+* `statvfs`
+* `symlink`
+* `sysconf`
+* `uname`
+* `unlinkat`
+* `utimensat`
+* `writev`
+
+### Removed the following POSIX Symbols:
+The following were removed in favor of more modern POSIX APIs added above.
+* `open`
+* `stat`
+
+### From `starboard/time_zone.h`
+ * Removed `SbTimeZoneGetCurrent`. The time offset is now derived
+   from the name returned by `SbTimeZoneGetName`, using the zoneinfo
+   that is in the included ICU data.
+
+### Introduces new system property kSbSystemPathFilesDirectory.
+
+Path to directory for permanent storage. Both read and write access are
+required. The path is used primarily for DOM localStorage and HTTP cookies
+persistence.
+
+### Removed the following SbEvents:
+* `kSbEventTypeUser`.
+* `kSbEventTypeAccessibilitySettingsChanged`
+* `kSbEventTypeAccessibilityCaptionSettingsChanged`
+* `kSbEventTypeOnScreenKeyboardShown`
+* `kSbEventTypeOnScreenKeyboardHidden`
+* `kSbEventTypeOnScreenKeyboardFocused`
+* `kSbEventTypeOnScreenKeyboardBlurred`
+* `kSbEventTypeVerticalSync`
+
+### Removed `starboard/accessibility.h`
+The functionality is migrated to a starboard extension.
+
+### Removed `starboard/atomic.h`
+### Removed `starboard/byte_swap.h`
+### Removed `starboard/condition_variable.h`
+### Removed `starboard/directory.h`
+### Removed `starboard/image.h`
+### Removed `starboard/mutex.h`
+### Removed `starboard/memory.h`
+### Removed `starboard/once.h`
+### Removed `starboard/socket.h`
+### Removed `starboard/string.h`
+### Removed `starboard/time.h`
+### Removed `starboard/ui_navigation.h`
+The functionality is migrated to starboard extension.
+### Removed `starboard/user.h`
+### Removed unused symbols from `starboard/file.h`
+### Removed unused symbols from `starboard/thread.h`
+### Removed unused symbols from `starboard/types.h`
+  * Removed provisions for SSIZE_T
+### Removed `DEPRECATED_SCOPED_PTR`
+### Removed `SB_HAS_IPV6` config
+All platforms support IPv6
+### Remove Win32/UWP support
+### Remove quirk for `INT16_AUDIO
+It was only used by win32 platforms
+### Removed unused configuration variables
+* `kSbDefaultMmapThreshold`
+* `kSbFileAltSepChar`
+* `kSbFileAltSepString`
+* `kSbHasMediaWebmVp9Support`
+* `kSbMallocAlignment`
+* `kSbMediaVideoFrameAlignment`
+* `kSbMemoryLogPath`
+* `kSbPreferredRgbaByteOrder`
+### Removed starboad/atomic.h support for C.
+The existing code was migrated to C11 atomics.
+
+### Renamed `SbMediaIs*Supported()` functions
+`SbMediaIsAudioSupported()`, `SbMediaIsSupported()`, and
+`SbMediaIsVideoSupported()` were never part of the Starboard interface.
+Their Sb prefixes were removed and renamed to `MediaIsAudioSupported()`,
+`MediaIsSupported()`, and `MediaIsVideoSupported()`.  They are also moved from
+the global namespace into ::starboard::shared::starboard::media.
+
+### Updated `kSbEventTypeAccessibilityTextToSpeechSettingsChanged` SbEvent
+Now the data field of this SbEvent type is a boolean indicating if text-to-speech is enabled.
+
+### Removed unused methods
+* `SbMediaGetMaxBufferCapacity`. This method is no longer used. Use
+  `SbMediaGetAudioBufferBudget` and `SbMediaGetVideoBufferBudget` instead.
 
 ## Version 16
 A key update in Starboard version 16 is the adoption of POSIX APIs.
 For a full overview of Starboard POSIX migrations, please refer to
-[migration guide](/starboard/doc/starboard_16_posix.md).
+[migration guide](/starboard/doc/starboard_17_posix.md).
 
 #### Added new configuration constant `kHasPartialAudioFramesSupport`
 Set this to true if your platform supports partial audio frames.
@@ -1008,7 +1216,7 @@ Added two new functions `SbPlayerGetMaximumNumberOfSamplesPerWrite()` and
 maximum numbers of samples that can be written using the latter at once.
 As it takes multiple thread context switches to call `SbPlayerWriteSample2()`
 once, it can optimize performance on low end platforms by reducing the
-frequence of calling `SbPlayerWriteSample2()`.
+frequency of calling `SbPlayerWriteSample2()`.
 
 ### Add support for player error messages
 

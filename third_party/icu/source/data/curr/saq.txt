@@ -171,9 +171,13 @@ saq{
             "SHP",
             "Paunt eel Santahelena",
         }
+        SLE{
+            "SLE",
+            "Leoni",
+        }
         SLL{
             "SLL",
-            "Leoni",
+            "Leoni (1964—2022)",
         }
         SOS{
             "SOS",
@@ -212,7 +216,7 @@ saq{
             "Njilingi eel CFA BEAC",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "Njilingi eel CFA BCEAO",
         }
         ZAR{

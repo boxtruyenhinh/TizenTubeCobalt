@@ -15,15 +15,18 @@
 #ifndef STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_VIDEO_RENDERER_INTERNAL_IMPL_H_
 #define STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_VIDEO_RENDERER_INTERNAL_IMPL_H_
 
+#include <atomic>
 #include <list>
 #include <memory>
+#include <mutex>
+#include <optional>
+#include <ostream>
 
-#include "starboard/common/atomic.h"
 #include "starboard/common/log.h"
-#include "starboard/common/mutex.h"
 #include "starboard/common/ref_counted.h"
 #include "starboard/media.h"
 #include "starboard/shared/internal_only.h"
+#include "starboard/shared/starboard/experimental_features.h"
 #include "starboard/shared/starboard/player/filter/common.h"
 #include "starboard/shared/starboard/player/filter/media_time_provider.h"
 #include "starboard/shared/starboard/player/filter/video_decoder_internal.h"
@@ -35,10 +38,6 @@
 #include "starboard/shared/starboard/player/job_queue.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 // A class that sits in between the video decoder, the video sink and the
 // pipeline to coordinate data transfer between these parties.
@@ -46,10 +45,12 @@ class VideoRendererImpl : public VideoRenderer, private JobQueue::JobOwner {
  public:
   // All of the functions are called on the PlayerWorker thread unless marked
   // otherwise.
-  VideoRendererImpl(std::unique_ptr<VideoDecoder> decoder,
+  VideoRendererImpl(JobQueue* job_queue,
+                    std::unique_ptr<VideoDecoder> decoder,
                     MediaTimeProvider* media_time_provider,
                     std::unique_ptr<VideoRenderAlgorithm> algorithm,
-                    scoped_refptr<VideoRendererSink> sink);
+                    scoped_refptr<VideoRendererSink> sink,
+                    const ExperimentalFeatures& experimental_features);
   ~VideoRendererImpl() override;
 
   void Initialize(const ErrorCB& error_cb,
@@ -64,6 +65,7 @@ class VideoRendererImpl : public VideoRenderer, private JobQueue::JobOwner {
   void WriteEndOfStream() override;
 
   void Seek(int64_t seek_to_time) override;
+  void SetPlaybackRate(double playback_rate) override;
 
   bool IsEndOfStreamWritten() const override {
     return end_of_stream_written_.load();
@@ -84,9 +86,10 @@ class VideoRendererImpl : public VideoRenderer, private JobQueue::JobOwner {
   void OnSeekTimeout();
 
   MediaTimeProvider* const media_time_provider_;
-  std::unique_ptr<VideoRenderAlgorithm> algorithm_;
+  const std::unique_ptr<VideoRenderAlgorithm> algorithm_;
   scoped_refptr<VideoRendererSink> sink_;
   std::unique_ptr<VideoDecoder> decoder_;
+  const ExperimentalFeatures experimental_features_;
 
   PrerolledCB prerolled_cb_;
   EndedCB ended_cb_;
@@ -97,16 +100,17 @@ class VideoRendererImpl : public VideoRenderer, private JobQueue::JobOwner {
   // performance by keeping track of whether we already have a fresh decoder,
   // and can thus avoid doing a full reset.
   bool first_input_written_ = false;
-  atomic_bool end_of_stream_written_;
-  atomic_bool end_of_stream_decoded_;
-  atomic_bool ended_cb_called_;
+  std::atomic_bool end_of_stream_written_{false};
+  std::atomic_bool end_of_stream_decoded_{false};
+  std::atomic_bool ended_cb_called_{false};
 
-  atomic_bool need_more_input_;
-  atomic_bool seeking_;
+  std::atomic_bool need_more_input_{true};
+  std::atomic_bool seeking_{false};
+  std::atomic<int32_t> input_buffers_sent_{0};
   int64_t seeking_to_time_ = 0;  // microseconds
 
   // |number_of_frames_| = decoder_frames_.size() + sink_frames_.size()
-  atomic_int32_t number_of_frames_;
+  std::atomic<int32_t> number_of_frames_{0};
   // |sink_frames_| is locked inside VideoRenderer::Render() when calling
   // algorithm_->Render().  So OnDecoderStatus() won't try to lock and append
   // the decoded frames to |sink_frames_| directly to avoid being blocked.  It
@@ -114,9 +118,9 @@ class VideoRendererImpl : public VideoRenderer, private JobQueue::JobOwner {
   // both |decoder_frames_| and |sink_frames_| can be used on multiple threads.
   // When they are being modified at the same time, |decoder_frames_mutex_|
   // should always be locked before |sink_frames_mutex_| to avoid deadlock.
-  Mutex decoder_frames_mutex_;
+  std::mutex decoder_frames_mutex_;
   Frames decoder_frames_;
-  Mutex sink_frames_mutex_;
+  std::mutex sink_frames_mutex_;
   Frames sink_frames_;
 
 #if SB_PLAYER_FILTER_ENABLE_STATE_CHECK
@@ -148,10 +152,6 @@ class VideoRendererImpl : public VideoRenderer, private JobQueue::JobOwner {
 #endif                                  // SB_PLAYER_FILTER_ENABLE_STATE_CHECK
 };
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_VIDEO_RENDERER_INTERNAL_IMPL_H_

@@ -1,4 +1,4 @@
-// Copyright 2018 The Crashpad Authors. All rights reserved.
+// Copyright 2018 The Crashpad Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "base/files/file_path.h"
+#include "build/build_config.h"
 
 namespace crashpad {
 
@@ -34,11 +35,22 @@ std::vector<std::string> BuildHandlerArgvStrings(
     const base::FilePath& database,
     const base::FilePath& metrics_dir,
     const std::string& url,
-#if defined(STARBOARD)
-    const std::string& ca_certificates_path,
-#endif  // STARBOARD
     const std::map<std::string, std::string>& annotations,
-    const std::vector<std::string>& arguments);
+    const std::vector<std::string>& arguments,
+    const std::vector<base::FilePath>& attachments = {});
+
+#if BUILDFLAG(IS_STARBOARD) || BUILDFLAG(IS_NATIVE_TARGET)
+//! \brief An override that includes an arg for |ca_certificates_path|.
+std::vector<std::string> BuildHandlerArgvStrings(
+    const base::FilePath& handler,
+    const base::FilePath& database,
+    const base::FilePath& metrics_dir,
+    const std::string& url,
+    const base::FilePath& ca_certificates_path,
+    const std::map<std::string, std::string>& annotations,
+    const std::vector<std::string>& arguments,
+    const std::vector<base::FilePath>& attachments = {});
+#endif
 
 //! \brief Flattens a string vector into a const char* vector suitable for use
 //!     in an exec() call.

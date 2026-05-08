@@ -16,13 +16,9 @@
 #define STARBOARD_ANDROID_SHARED_CRASH_HANDLER_H_
 
 namespace starboard {
-namespace android {
-namespace shared {
 
 const void* GetCrashHandlerApi();
 
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard
 
 #endif  // STARBOARD_ANDROID_SHARED_CRASH_HANDLER_H_

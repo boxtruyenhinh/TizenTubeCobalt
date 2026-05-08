@@ -258,6 +258,9 @@ ne{
         "America:Chihuahua"{
             ec{"चिहुवाहुवा"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"जुआरेज सहर"}
+        }
         "America:Coral_Harbour"{
             ec{"एटिकोकान"}
         }
@@ -583,7 +586,7 @@ ne{
             ec{"तिजुआना"}
         }
         "America:Toronto"{
-            ec{"टोरोण्टो"}
+            ec{"टोरोन्टो"}
         }
         "America:Tortola"{
             ec{"टार्टोला"}
@@ -1222,6 +1225,9 @@ ne{
         }
         "Pacific:Johnston"{
             ec{"जोन्सटन"}
+        }
+        "Pacific:Kanton"{
+            ec{"कान्टोन"}
         }
         "Pacific:Kiritimati"{
             ec{"किरितिमाटी"}
@@ -1883,10 +1889,9 @@ ne{
             lg{"येकाटेरिनबर्ग समय"}
             ls{"येकाटेरिनबर्ग मानक समय"}
         }
-        fallbackFormat{"{1} ({0})"}
-        gmtFormat{"GMT{0}"}
-        gmtZeroFormat{"GMT"}
-        hourFormat{"+HH:mm;-HH:mm"}
+        "meta:Yukon"{
+            ls{"युकोनको समय"}
+        }
         regionFormat{"{0} समय"}
         regionFormatDaylight{"{0} (+१)"}
         regionFormatStandard{"{0} (+०)"}

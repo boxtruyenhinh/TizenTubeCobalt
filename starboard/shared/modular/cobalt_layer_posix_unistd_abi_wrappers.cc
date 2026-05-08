@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#if SB_API_VERSION >= 16
-
 #include <unistd.h>
 
 extern "C" {
@@ -30,17 +28,51 @@ off_t lseek(int fildes, off_t offset, int whence) {
   return __abi_wrap_lseek(fildes, offset, whence);
 }
 
-ssize_t __abi_wrap_read(int fildes, void* buf, size_t nbyte);
+long __abi_wrap_sysconf(int name);
 
-ssize_t read(int fildes, void* buf, size_t nbyte) {
-  return __abi_wrap_read(fildes, buf, nbyte);
+long sysconf(int name) {
+  return __abi_wrap_sysconf(name);
 }
 
-ssize_t __abi_wrap_write(int fildes, const void* buf, size_t nbyte);
+long __abi_wrap_pathconf(const char* path, int name);
 
-ssize_t write(int fildes, const void* buf, size_t nbyte) {
-  return __abi_wrap_write(fildes, buf, nbyte);
-}
+long pathconf(const char* path, int name) {
+  return __abi_wrap_pathconf(path, name);
 }
 
-#endif  // SB_API_VERSION >= 16
+pid_t __abi_wrap_getpid();
+
+pid_t getpid() {
+  return __abi_wrap_getpid();
+}
+
+uid_t __abi_wrap_geteuid();
+
+uid_t geteuid() {
+  return __abi_wrap_geteuid();
+}
+
+uid_t __abi_wrap_getuid();
+
+uid_t getuid() {
+  return __abi_wrap_getuid();
+}
+
+int __abi_wrap_access(const char* path, int amode);
+
+int access(const char* path, int amode) {
+  return __abi_wrap_access(path, amode);
+}
+
+int __abi_wrap_fchown(int fd, uid_t owner, gid_t group);
+
+int fchown(int fd, uid_t owner, gid_t group) {
+  return __abi_wrap_fchown(fd, owner, group);
+}
+
+int __abi_wrap_unlinkat(int fildes, const char* path, int flag);
+
+int unlinkat(int fildes, const char* path, int flag) {
+  return __abi_wrap_unlinkat(fildes, path, flag);
+}
+}  // extern "C"

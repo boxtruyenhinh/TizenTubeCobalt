@@ -14,21 +14,17 @@
 
 #include "starboard/nplb/player_creation_param_helpers.h"
 
-#include "starboard/common/log.h"
 #include "starboard/shared/starboard/player/video_dmp_reader.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
-using shared::starboard::media::AudioStreamInfo;
-using shared::starboard::media::VideoStreamInfo;
-using shared::starboard::player::video_dmp::VideoDmpReader;
+using ::starboard::VideoDmpReader;
 
 }  // namespace
 
-AudioStreamInfo CreateAudioStreamInfo(SbMediaAudioCodec codec) {
-  AudioStreamInfo audio_stream_info = {};
+starboard::AudioStreamInfo CreateAudioStreamInfo(SbMediaAudioCodec codec) {
+  starboard::AudioStreamInfo audio_stream_info = {};
 
   audio_stream_info.codec = codec;
   audio_stream_info.mime = "";
@@ -92,20 +88,18 @@ AudioStreamInfo CreateAudioStreamInfo(SbMediaAudioCodec codec) {
       audio_stream_info.bits_per_sample = 32;
       break;
     }
-#if SB_API_VERSION >= 15
     case kSbMediaAudioCodecIamf: {
       audio_stream_info.number_of_channels = 2;
       audio_stream_info.samples_per_second = 48000;
       audio_stream_info.bits_per_sample = 32;
       break;
     }
-#endif  // SB_API_VERSION >= 15
   }
   return audio_stream_info;
 }
 
-VideoStreamInfo CreateVideoStreamInfo(SbMediaVideoCodec codec) {
-  VideoStreamInfo video_stream_info;
+starboard::VideoStreamInfo CreateVideoStreamInfo(SbMediaVideoCodec codec) {
+  starboard::VideoStreamInfo video_stream_info;
 
   video_stream_info.codec = codec;
 
@@ -117,8 +111,7 @@ VideoStreamInfo CreateVideoStreamInfo(SbMediaVideoCodec codec) {
   video_stream_info.color_metadata.matrix = kSbMediaMatrixIdBt709;
   video_stream_info.color_metadata.range = kSbMediaRangeIdLimited;
 
-  video_stream_info.frame_width = 1920;
-  video_stream_info.frame_height = 1080;
+  video_stream_info.frame_size = {1920, 1080};
 
   return video_stream_info;
 }
@@ -160,4 +153,3 @@ SbPlayerOutputMode GetPreferredOutputMode(
 }
 
 }  // namespace nplb
-}  // namespace starboard

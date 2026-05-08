@@ -1,4 +1,4 @@
-// Copyright 2017 The Cobalt Authors. All Rights Reserved.
+// Copyright 2025 The Cobalt Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,41 +15,36 @@
 #ifndef STARBOARD_SHARED_STARBOARD_LINK_RECEIVER_H_
 #define STARBOARD_SHARED_STARBOARD_LINK_RECEIVER_H_
 
-#include "starboard/shared/internal_only.h"
 #include "starboard/shared/starboard/application.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
 
-// A loopback-only server that listens to receive null-terminated strings that
-// will be dispatched to the Link() method on the passed in |application|. This
-// will result in kSbEventTypeLink events being dispatched on the main Starboard
-// dispatch thread.
-//
-// This server Runs on its own thread, joining it on destruction. It must be
-// destroyed before the associated Application is destroyed.
-//
-// When the server is started, it attempts to write a file to the temporary
-// directory with the port that it is listening on. Other programs can then look
-// for this file to find the port to connect to to send links.
-//
-// The script starboard/tools/send_link.py can dispatch links to this server, if
-// running.
+// Forward declaration for the implementation class (PImpl idiom).
+class LinkReceiverImpl;
+
 class LinkReceiver {
  public:
+  // Constructor that listens on an ephemeral port (port 0).
+  // The actual port can be retrieved if needed, but is typically written to a
+  // temporary file for discovery.
   explicit LinkReceiver(Application* application);
+
+  // Constructor that listens on a specific port.
   LinkReceiver(Application* application, int port);
+
+  // Destructor safely shuts down the receiver thread.
   ~LinkReceiver();
 
- private:
-  class Impl;
+  // Disable copy and move operations.
+  LinkReceiver(const LinkReceiver&) = delete;
+  LinkReceiver& operator=(const LinkReceiver&) = delete;
+  LinkReceiver(LinkReceiver&&) = delete;
+  LinkReceiver& operator=(LinkReceiver&&) = delete;
 
-  Impl* impl_;
+ private:
+  LinkReceiverImpl* impl_;
 };
 
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_LINK_RECEIVER_H_

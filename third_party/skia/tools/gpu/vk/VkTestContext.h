@@ -12,21 +12,19 @@
 
 #ifdef SK_VULKAN
 
-#include "include/gpu/vk/GrVkBackendContext.h"
+#include "include/gpu/vk/VulkanBackendContext.h"
 #include "tools/gpu/vk/GrVulkanDefines.h"
 
-class GrVkExtensions;
+namespace skgpu { class VulkanExtensions; }
 
 namespace sk_gpu_test {
 class VkTestContext : public TestContext {
 public:
     GrBackendApi backend() override { return GrBackendApi::kVulkan; }
 
-    const GrVkBackendContext& getVkBackendContext() const {
-        return fVk;
-    }
+    const skgpu::VulkanBackendContext& getVkBackendContext() const { return fVk; }
 
-    const GrVkExtensions* getVkExtensions() const {
+    const skgpu::VulkanExtensions* getVkExtensions() const {
         return fExtensions;
     }
 
@@ -35,8 +33,10 @@ public:
     }
 
 protected:
-    VkTestContext(const GrVkBackendContext& vk, const GrVkExtensions* extensions,
-                  const VkPhysicalDeviceFeatures2* features, bool ownsContext,
+    VkTestContext(const skgpu::VulkanBackendContext& vk,
+                  const skgpu::VulkanExtensions* extensions,
+                  const VkPhysicalDeviceFeatures2* features,
+                  bool ownsContext,
                   VkDebugReportCallbackEXT debugCallback,
                   PFN_vkDestroyDebugReportCallbackEXT destroyCallback)
             : fVk(vk)
@@ -46,8 +46,8 @@ protected:
             , fDebugCallback(debugCallback)
             , fDestroyDebugReportCallbackEXT(destroyCallback) {}
 
-    GrVkBackendContext                  fVk;
-    const GrVkExtensions*               fExtensions;
+    skgpu::VulkanBackendContext         fVk;
+    const skgpu::VulkanExtensions*      fExtensions;
     const VkPhysicalDeviceFeatures2*    fFeatures;
     bool                                fOwnsContext;
     VkDebugReportCallbackEXT            fDebugCallback = VK_NULL_HANDLE;

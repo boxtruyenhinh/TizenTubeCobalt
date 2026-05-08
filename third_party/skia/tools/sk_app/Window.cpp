@@ -9,26 +9,32 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkSurface.h"
-#include "tools/sk_app/WindowContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
+#include "tools/window/DisplayParams.h"
+#include "tools/window/WindowContext.h"
+
+using skwindow::DisplayParams;
 
 namespace sk_app {
 
-Window::Window() {}
+// Use the default DisplayParams
+Window::Window() : fRequestedDisplayParams(std::make_unique<DisplayParams>()) {}
 
 Window::~Window() {}
 
 void Window::detach() { fWindowContext = nullptr; }
 
-void Window::visitLayers(std::function<void(Layer*)> visitor) {
-    for (int i = 0; i < fLayers.count(); ++i) {
+void Window::visitLayers(const std::function<void(Layer*)>& visitor) {
+    for (int i = 0; i < fLayers.size(); ++i) {
         if (fLayers[i]->fActive) {
             visitor(fLayers[i]);
         }
     }
 }
 
-bool Window::signalLayers(std::function<bool(Layer*)> visitor) {
-    for (int i = fLayers.count() - 1; i >= 0; --i) {
+bool Window::signalLayers(const std::function<bool(Layer*)>& visitor) {
+    for (int i = fLayers.size() - 1; i >= 0; --i) {
         if (fLayers[i]->fActive && visitor(fLayers[i])) {
             return true;
         }
@@ -52,8 +58,9 @@ bool Window::onMouse(int x, int y, skui::InputState state, skui::ModifierKey mod
     return this->signalLayers([=](Layer* layer) { return layer->onMouse(x, y, state, modifiers); });
 }
 
-bool Window::onMouseWheel(float delta, skui::ModifierKey modifiers) {
-    return this->signalLayers([=](Layer* layer) { return layer->onMouseWheel(delta, modifiers); });
+bool Window::onMouseWheel(float delta, int x, int y, skui::ModifierKey modifiers) {
+    return this->signalLayers(
+            [=](Layer* layer) { return layer->onMouseWheel(delta, x, y, modifiers); });
 }
 
 bool Window::onTouch(intptr_t owner, skui::InputState state, float x, float y) {
@@ -92,7 +99,9 @@ void Window::onPaint() {
     this->visitLayers([](Layer* layer) { layer->onPrePaint(); });
     this->visitLayers([=](Layer* layer) { layer->onPaint(backbuffer.get()); });
 
-    backbuffer->flushAndSubmit();
+    if (auto dContext = this->directContext()) {
+        dContext->flushAndSubmit(backbuffer.get(), GrSyncCpu::kNo);
+    }
 
     fWindowContext->swapBuffers();
 }
@@ -126,10 +135,11 @@ int Window::height() const {
     return fWindowContext->height();
 }
 
-void Window::setRequestedDisplayParams(const DisplayParams& params, bool /* allowReattach */) {
-    fRequestedDisplayParams = params;
+void Window::setRequestedDisplayParams(std::unique_ptr<const DisplayParams> params,
+                                       bool /* allowReattach */) {
+    fRequestedDisplayParams = std::move(params);
     if (fWindowContext) {
-        fWindowContext->setDisplayParams(fRequestedDisplayParams);
+        fWindowContext->setDisplayParams(fRequestedDisplayParams->clone());
     }
 }
 
@@ -152,6 +162,42 @@ GrDirectContext* Window::directContext() const {
         return nullptr;
     }
     return fWindowContext->directContext();
+}
+
+skgpu::graphite::Context* Window::graphiteContext() const {
+#if defined(SK_GRAPHITE)
+    if (!fWindowContext) {
+        return nullptr;
+    }
+    return fWindowContext->graphiteContext();
+#else
+    return nullptr;
+#endif
+}
+
+skgpu::graphite::Recorder* Window::graphiteRecorder() const {
+#if defined(SK_GRAPHITE)
+    if (!fWindowContext) {
+        return nullptr;
+    }
+    return fWindowContext->graphiteRecorder();
+#else
+    return nullptr;
+#endif
+}
+
+bool Window::supportsGpuTimer() const {
+    return fWindowContext ? fWindowContext->supportsGpuTimer() : false;
+}
+
+void Window::submitToGpu(GpuTimerCallback callback) {
+    if (fWindowContext) {
+        fWindowContext->submitToGpu(std::move(callback));
+        return;
+    }
+    if (callback) {
+        callback(0);
+    }
 }
 
 void Window::inval() {

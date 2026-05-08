@@ -171,9 +171,13 @@ ff{
             "SHP",
             "Liibar Sent Helen",
         }
+        SLE{
+            "SLE",
+            "Lewoon Seraa Liyon",
+        }
         SLL{
             "SLL",
-            "Lewoon Seraa Liyon",
+            "Lewoon Seraa Liyon (1964—2022)",
         }
         SOS{
             "SOS",
@@ -212,7 +216,7 @@ ff{
             "Mbuuɗi Seefaa BEAC",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "Mbuuɗu Seefaa BCEAO",
         }
         ZAR{

@@ -16,11 +16,11 @@
 #include "starboard/configuration_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if SB_IS(EVERGREEN_COMPATIBLE)
+#if !SB_IS(EVERGREEN_COMPATIBLE)
+#error These tests apply only to EVERGREEN_COMPATIBLE platforms.
+#endif
 
-namespace starboard {
 namespace nplb {
-namespace nplb_evergreen_compat_tests {
 namespace {
 
 // Drain file names need to be able to contain the drain file prefix, the base64
@@ -30,8 +30,4 @@ TEST(MaxFileNameTest, SunnyDay) {
 }
 
 }  // namespace
-}  // namespace nplb_evergreen_compat_tests
 }  // namespace nplb
-}  // namespace starboard
-
-#endif  // SB_IS(EVERGREEN_COMPATIBLE)

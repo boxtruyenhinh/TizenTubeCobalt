@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "starboard/shared/starboard/player/filter/audio_decoder_internal.h"
-
 #include <unistd.h>
 
 #include <algorithm>
@@ -21,21 +19,21 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "starboard/common/condition_variable.h"
+#include "starboard/common/check_op.h"
 #include "starboard/common/media.h"
-#include "starboard/common/mutex.h"
 #include "starboard/common/ref_counted.h"
 #include "starboard/common/time.h"
 #include "starboard/configuration_constants.h"
 #include "starboard/media.h"
-#include "starboard/memory.h"
 #include "starboard/shared/starboard/media/media_support_internal.h"
 #include "starboard/shared/starboard/media/media_util.h"
 #include "starboard/shared/starboard/player/decoded_audio_internal.h"
+#include "starboard/shared/starboard/player/filter/audio_decoder_internal.h"
 #include "starboard/shared/starboard/player/filter/player_components.h"
 #include "starboard/shared/starboard/player/filter/stub_player_components_factory.h"
 #include "starboard/shared/starboard/player/filter/testing/test_util.h"
@@ -47,17 +45,11 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
-namespace testing {
 namespace {
 
 using ::testing::Bool;
 using ::testing::Combine;
 using ::testing::ValuesIn;
-using video_dmp::VideoDmpReader;
 
 const int64_t kWaitForNextEventTimeOut = 5'000'000;  // 5 seconds
 
@@ -73,10 +65,10 @@ scoped_refptr<DecodedAudio> ConsolidateDecodedAudios(
   auto sample_type = decoded_audios.front()->sample_type();
 
   for (auto decoded_audio : decoded_audios) {
-    SB_DCHECK(decoded_audio->channels() == channels);
-    SB_DCHECK(decoded_audio->sample_type() == sample_type);
-    SB_DCHECK(decoded_audio->storage_type() ==
-              kSbMediaAudioFrameStorageTypeInterleaved);
+    SB_DCHECK_EQ(decoded_audio->channels(), channels);
+    SB_DCHECK_EQ(decoded_audio->sample_type(), sample_type);
+    SB_DCHECK_EQ(decoded_audio->storage_type(),
+                 kSbMediaAudioFrameStorageTypeInterleaved);
     total_size_in_bytes += decoded_audio->size_in_bytes();
   }
 
@@ -119,17 +111,19 @@ class AudioDecoderTest
 
     CreateComponents(dmp_reader_.audio_stream_info(), &audio_decoder_,
                      &audio_renderer_sink_);
+    ASSERT_TRUE(audio_decoder_);
   }
 
  protected:
   enum Event { kConsumed, kOutput, kError };
 
   void CreateComponents(
-      const media::AudioStreamInfo& audio_stream_info,
+      const AudioStreamInfo& audio_stream_info,
       std::unique_ptr<AudioDecoder>* audio_decoder,
       std::unique_ptr<AudioRendererSink>* audio_renderer_sink) {
-    if (CreateAudioComponents(using_stub_decoder_, audio_stream_info,
-                              audio_decoder, audio_renderer_sink)) {
+    if (CreateAudioComponents(using_stub_decoder_, &job_queue_,
+                              audio_stream_info, audio_decoder,
+                              audio_renderer_sink)) {
       SB_CHECK(*audio_decoder);
       (*audio_decoder)
           ->Initialize(std::bind(&AudioDecoderTest::OnOutput, this),
@@ -138,17 +132,17 @@ class AudioDecoderTest
   }
 
   void OnOutput() {
-    ScopedLock scoped_lock(event_queue_mutex_);
+    std::lock_guard lock(event_queue_mutex_);
     event_queue_.push_back(kOutput);
   }
 
   void OnError() {
-    ScopedLock scoped_lock(event_queue_mutex_);
+    std::lock_guard lock(event_queue_mutex_);
     event_queue_.push_back(kError);
   }
 
   void OnConsumed() {
-    ScopedLock scoped_lock(event_queue_mutex_);
+    std::lock_guard lock(event_queue_mutex_);
     event_queue_.push_back(kConsumed);
   }
 
@@ -157,7 +151,7 @@ class AudioDecoderTest
     while (CurrentMonotonicTime() - start < kWaitForNextEventTimeOut) {
       job_queue_.RunUntilIdle();
       {
-        ScopedLock scoped_lock(event_queue_mutex_);
+        std::lock_guard lock(event_queue_mutex_);
         if (!event_queue_.empty()) {
           *event = event_queue_.front();
           event_queue_.pop_front();
@@ -187,7 +181,7 @@ class AudioDecoderTest
 
     can_accept_more_input_ = false;
 
-    last_input_buffer_ = GetAudioInputBuffer(index);
+    last_input_buffer_ = GetTestAudioInputBuffer(index);
     audio_decoder_->Decode({last_input_buffer_}, consumed_cb());
     written_inputs_.push_back(last_input_buffer_);
   }
@@ -202,7 +196,7 @@ class AudioDecoderTest
 
     can_accept_more_input_ = false;
 
-    last_input_buffer_ = GetAudioInputBuffer(
+    last_input_buffer_ = GetTestAudioInputBuffer(
         index, discarded_duration_from_front, discarded_duration_from_back);
     audio_decoder_->Decode({last_input_buffer_}, consumed_cb());
     written_inputs_.push_back(last_input_buffer_);
@@ -282,8 +276,8 @@ class AudioDecoderTest
   // The start_index will be updated to the new position.
   void WriteTimeLimitedInputs(int* start_index, int64_t time_limit) {
     SB_DCHECK(start_index);
-    SB_DCHECK(*start_index >= 0);
-    SB_DCHECK(*start_index < dmp_reader_.number_of_audio_buffers());
+    SB_DCHECK_GE(*start_index, 0);
+    SB_DCHECK_LT(*start_index, dmp_reader_.number_of_audio_buffers());
     ASSERT_NO_FATAL_FAILURE(
         WriteSingleInput(static_cast<size_t>(*start_index)));
     SB_DCHECK(last_input_buffer_);
@@ -349,7 +343,7 @@ class AudioDecoderTest
     decoded_audio_sample_rate_ = 0;
     first_output_received_ = false;
     {
-      ScopedLock scoped_lock(event_queue_mutex_);
+      std::lock_guard lock(event_queue_mutex_);
       event_queue_.clear();
     }
   }
@@ -416,8 +410,8 @@ class AudioDecoderTest
     }
   }
 
-  scoped_refptr<InputBuffer> GetAudioInputBuffer(size_t index) {
-    auto input_buffer = testing::GetAudioInputBuffer(&dmp_reader_, index);
+  scoped_refptr<InputBuffer> GetTestAudioInputBuffer(size_t index) {
+    auto input_buffer = GetAudioInputBuffer(&dmp_reader_, index);
     auto iter = invalid_inputs_.find(index);
     if (iter != invalid_inputs_.end()) {
       std::vector<uint8_t> content(input_buffer->size(), iter->second);
@@ -427,15 +421,15 @@ class AudioDecoderTest
     return input_buffer;
   }
 
-  scoped_refptr<InputBuffer> GetAudioInputBuffer(
+  scoped_refptr<InputBuffer> GetTestAudioInputBuffer(
       size_t index,
       int64_t discarded_duration_from_front,
       int64_t discarded_duration_from_back) {
     SB_DCHECK(IsPartialAudioSupported());
 
-    auto input_buffer = testing::GetAudioInputBuffer(
-        &dmp_reader_, index, discarded_duration_from_front,
-        discarded_duration_from_back);
+    auto input_buffer =
+        GetAudioInputBuffer(&dmp_reader_, index, discarded_duration_from_front,
+                            discarded_duration_from_back);
     auto iter = invalid_inputs_.find(index);
     if (iter != invalid_inputs_.end()) {
       std::vector<uint8_t> content(input_buffer->size(), iter->second);
@@ -473,7 +467,7 @@ class AudioDecoderTest
     ASSERT_LE(abs(expected_output_frames - GetTotalFrames(decoded_audios_)), 1);
   }
 
-  Mutex event_queue_mutex_;
+  std::mutex event_queue_mutex_;
   std::deque<Event> event_queue_;
 
   // Test parameter for the filename to load with the VideoDmpReader.
@@ -705,9 +699,6 @@ TEST_P(AudioDecoderTest, MultipleInputs) {
 
 TEST_P(AudioDecoderTest, LimitedInput) {
   int64_t duration = 500'000;  // 0.5 seconds
-#if SB_API_VERSION < 15
-  SbMediaSetAudioWriteDuration(duration);
-#endif  // SB_API_VERSION < 15
 
   ASSERT_TRUE(decoded_audios_.empty());
   int start_index = 0;
@@ -724,9 +715,6 @@ TEST_P(AudioDecoderTest, LimitedInput) {
 TEST_P(AudioDecoderTest, ContinuedLimitedInput) {
   constexpr int kMaxAccessUnitsToDecode = 256;
   int64_t duration = 500'000;  // 0.5 seconds
-#if SB_API_VERSION < 15
-  SbMediaSetAudioWriteDuration(duration);
-#endif  // SB_API_VERSION < 15
 
   int64_t start = CurrentMonotonicTime();
   int start_index = 0;
@@ -817,8 +805,8 @@ TEST_P(AudioDecoderTest, PartialAudio) {
     auto frames_per_access_unit =
         reference_decoded_audio->frames() / number_of_input_to_write;
     int64_t duration_to_discard =
-        media::AudioFramesToDuration(frames_per_access_unit,
-                                     decoded_audio_sample_rate_) /
+        AudioFramesToDuration(frames_per_access_unit,
+                              decoded_audio_sample_rate_) /
         4;
 
     RecreateDecoder();
@@ -985,9 +973,5 @@ INSTANTIATE_TEST_CASE_P(
     GetAudioDecoderTestConfigName);
 
 }  // namespace
-}  // namespace testing
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
+
 }  // namespace starboard

@@ -6,13 +6,12 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <ostream>
-#include <vector>
 
 #include "quiche/quic/core/congestion_control/rtt_stats.h"
 #include "quiche/quic/core/crypto/crypto_protocol.h"
 #include "quiche/quic/core/quic_connection_stats.h"
 #include "quiche/quic/core/quic_constants.h"
+#include "quiche/quic/core/quic_time.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/platform/api/quic_expect_bug.h"
 #include "quiche/quic/platform/api/quic_flags.h"
@@ -40,7 +39,7 @@ namespace {
 const bool kInstigateAck = true;
 const QuicTime::Delta kMinRttMs = QuicTime::Delta::FromMilliseconds(40);
 const QuicTime::Delta kDelayedAckTime =
-    QuicTime::Delta::FromMilliseconds(kDefaultDelayedAckTimeMs);
+    QuicTime::Delta::FromMilliseconds(GetDefaultDelayedAckTimeMs());
 
 class QuicReceivedPacketManagerTest : public QuicTest {
  protected:
@@ -180,6 +179,20 @@ TEST_F(QuicReceivedPacketManagerTest, LimitAckRanges) {
         EXPECT_FALSE(received_manager_.ack_frame().packets.Contains(
             QuicPacketNumber((i - j) * 2)));
       }
+    }
+  }
+}
+
+TEST_F(QuicReceivedPacketManagerTest, TrimAckRangesEarly) {
+  const size_t kMaxAckRanges = 10;
+  received_manager_.set_max_ack_ranges(kMaxAckRanges);
+  for (size_t i = 0; i < kMaxAckRanges + 10; ++i) {
+    RecordPacketReceipt(1 + 2 * i);
+    if (i < kMaxAckRanges) {
+      EXPECT_EQ(i + 1, received_manager_.ack_frame().packets.NumIntervals());
+    } else {
+      EXPECT_EQ(kMaxAckRanges,
+                received_manager_.ack_frame().packets.NumIntervals());
     }
   }
 }
@@ -359,9 +372,9 @@ TEST_F(QuicReceivedPacketManagerTest, AckDecimationReducesAcks) {
 
   // Start ack decimation from 10th packet.
   received_manager_.set_min_received_before_ack_decimation(10);
-#if defined(USE_COBALT_CUSTOMIZATIONS)
+#if BUILDFLAG(IS_COBALT)
   received_manager_.set_max_retransmittable_packets_before_ack(10);
-#endif  // defined(USE_COBALT_CUSTOMIZATIONS)
+#endif
 
   // Receives packets 1 - 29.
   for (size_t i = 1; i <= 29; ++i) {
@@ -392,9 +405,9 @@ TEST_F(QuicReceivedPacketManagerTest, AckDecimationReducesAcks) {
 
 TEST_F(QuicReceivedPacketManagerTest, SendDelayedAckDecimation) {
   EXPECT_FALSE(HasPendingAck());
-#if defined(USE_COBALT_CUSTOMIZATIONS)
+#if BUILDFLAG(IS_COBALT)
   received_manager_.set_max_retransmittable_packets_before_ack(10);
-#endif  // defined(USE_COBALT_CUSTOMIZATIONS)
+#endif
   // The ack time should be based on min_rtt * 1/4, since it's less than the
   // default delayed ack time.
   QuicTime ack_time = clock_.ApproximateNow() + kMinRttMs * 0.25;
@@ -426,9 +439,9 @@ TEST_F(QuicReceivedPacketManagerTest, SendDelayedAckDecimation) {
 
 TEST_F(QuicReceivedPacketManagerTest, SendDelayedAckDecimationMin1ms) {
   EXPECT_FALSE(HasPendingAck());
-#if defined(USE_COBALT_CUSTOMIZATIONS)
+#if BUILDFLAG(IS_COBALT)
   received_manager_.set_max_retransmittable_packets_before_ack(10);
-#endif  // defined(USE_COBALT_CUSTOMIZATIONS)
+#endif
   // Seed the min_rtt with a kAlarmGranularity signal.
   rtt_stats_.UpdateRtt(kAlarmGranularity, QuicTime::Delta::Zero(),
                        clock_.ApproximateNow());
@@ -463,9 +476,9 @@ TEST_F(QuicReceivedPacketManagerTest, SendDelayedAckDecimationMin1ms) {
 TEST_F(QuicReceivedPacketManagerTest,
        SendDelayedAckDecimationUnlimitedAggregation) {
   EXPECT_FALSE(HasPendingAck());
-#if defined(USE_COBALT_CUSTOMIZATIONS)
+#if BUILDFLAG(IS_COBALT)
   received_manager_.set_max_retransmittable_packets_before_ack(10);
-#endif  // defined(USE_COBALT_CUSTOMIZATIONS)
+#endif
   QuicConfig config;
   QuicTagVector connection_options;
   // No limit on the number of packets received before sending an ack.
@@ -505,9 +518,9 @@ TEST_F(QuicReceivedPacketManagerTest,
 
 TEST_F(QuicReceivedPacketManagerTest, SendDelayedAckDecimationEighthRtt) {
   EXPECT_FALSE(HasPendingAck());
-#if defined(USE_COBALT_CUSTOMIZATIONS)
+#if BUILDFLAG(IS_COBALT)
   received_manager_.set_max_retransmittable_packets_before_ack(10);
-#endif  // defined(USE_COBALT_CUSTOMIZATIONS)
+#endif
   QuicReceivedPacketManagerPeer::SetAckDecimationDelay(&received_manager_,
                                                        0.125);
 
@@ -597,10 +610,6 @@ TEST_F(QuicReceivedPacketManagerTest,
 TEST_F(QuicReceivedPacketManagerTest,
        DisableMissingPaketsAckByIgnoreOrderFromAckFrequencyFrame) {
   EXPECT_FALSE(HasPendingAck());
-  QuicConfig config;
-  config.SetConnectionOptionsToSend({kAFFE});
-  received_manager_.SetFromConfig(config, Perspective::IS_CLIENT);
-
   QuicAckFrequencyFrame frame;
   frame.max_ack_delay = kDelayedAckTime;
   frame.packet_tolerance = 2;
@@ -704,16 +713,42 @@ TEST_F(QuicReceivedPacketManagerTest, CountEcnPackets) {
   RecordPacketReceipt(5, QuicTime::Zero(), ECN_ECT1);
   RecordPacketReceipt(6, QuicTime::Zero(), ECN_CE);
   QuicFrame ack = received_manager_.GetUpdatedAckFrame(QuicTime::Zero());
-  if (GetQuicRestartFlag(quic_receive_ecn)) {
-    EXPECT_TRUE(ack.ack_frame->ecn_counters.has_value());
-    EXPECT_EQ(ack.ack_frame->ecn_counters->ect0, 1);
-    EXPECT_EQ(ack.ack_frame->ecn_counters->ect1, 1);
-    EXPECT_EQ(ack.ack_frame->ecn_counters->ce, 1);
-  } else {
-    EXPECT_FALSE(ack.ack_frame->ecn_counters.has_value());
-  }
+  EXPECT_TRUE(ack.ack_frame->ecn_counters.has_value());
+  EXPECT_EQ(ack.ack_frame->ecn_counters->ect0, 1);
+  EXPECT_EQ(ack.ack_frame->ecn_counters->ect1, 1);
+  EXPECT_EQ(ack.ack_frame->ecn_counters->ce, 1);
+}
+
+TEST_F(QuicReceivedPacketManagerTest, NewCeTriggersImmediateAck) {
+  EXPECT_FALSE(HasPendingAck());
+  RecordPacketReceipt(3, QuicTime::Zero(), ECN_ECT1);
+  MaybeUpdateAckTimeout(kInstigateAck, 3);
+  EXPECT_TRUE(HasPendingAck());
+  EXPECT_GT(received_manager_.ack_timeout(), clock_.ApproximateNow());
+  // Ack is triggered by kDefaultRetransmittablePacketsBeforeAck.
+  RecordPacketReceipt(4, QuicTime::Zero(), ECN_ECT1);
+  MaybeUpdateAckTimeout(kInstigateAck, 4);
+  CheckAckTimeout(clock_.ApproximateNow());
+  // New CE triggers immediate ACK.
+  RecordPacketReceipt(5, QuicTime::Zero(), ECN_CE);
+  MaybeUpdateAckTimeout(kInstigateAck, 5);
+  CheckAckTimeout(clock_.ApproximateNow());
+  // Do not ack consecutive CE.
+  RecordPacketReceipt(6, QuicTime::Zero(), ECN_CE);
+  MaybeUpdateAckTimeout(kInstigateAck, 6);
+  EXPECT_TRUE(HasPendingAck());
+  CheckAckTimeout(clock_.ApproximateNow() + kDelayedAckTime);
+  // Non-CE packet is second, triggers ACK.
+  RecordPacketReceipt(7, QuicTime::Zero(), ECN_ECT1);
+  MaybeUpdateAckTimeout(kInstigateAck, 7);
+  CheckAckTimeout(clock_.ApproximateNow());
+  // New non-consecutive CE triggers immediate ACK.
+  RecordPacketReceipt(8, QuicTime::Zero(), ECN_CE);
+  MaybeUpdateAckTimeout(kInstigateAck, 8);
+  CheckAckTimeout(clock_.ApproximateNow());
 }
 
 }  // namespace
+
 }  // namespace test
 }  // namespace quic

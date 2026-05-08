@@ -1,20 +1,20 @@
-load("//bazel:macros.bzl", "generated_cc_atom")
+load("//bazel:skia_rules.bzl", "skia_cc_library")
 
-generated_cc_atom(
-    name = "InputState_hdr",
-    hdrs = ["InputState.h"],
-    visibility = ["//:__subpackages__"],
+package(
+    default_applicable_licenses = ["//:license"],
 )
 
-generated_cc_atom(
-    name = "Key_hdr",
-    hdrs = ["Key.h"],
-    visibility = ["//:__subpackages__"],
-)
+licenses(["notice"])
 
-generated_cc_atom(
-    name = "ModifierKey_hdr",
-    hdrs = ["ModifierKey.h"],
+# TODO(kjlubick) make this depend on //src/base after migrating all users
+# of this off the legacy targets
+skia_cc_library(
+    name = "skui",
+    hdrs = [
+        "InputState.h",
+        "Key.h",
+        "ModifierKey.h",
+    ],
     visibility = ["//:__subpackages__"],
-    deps = ["//include/private:SkBitmaskEnum_hdr"],
+    deps = ["//src/base"],
 )

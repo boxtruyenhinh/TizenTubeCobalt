@@ -19,10 +19,8 @@
 #define STARBOARD_COMMON_ALLOCATOR_H_
 
 #include <cstddef>
-#include <vector>
 
 namespace starboard {
-namespace common {
 
 // The Allocator interface offers a standard and consistent way of allocating
 // and freeing memory.  The interface makes no assumption on how the memory
@@ -38,14 +36,23 @@ class Allocator {
 
   virtual ~Allocator() {}
 
+  // TODO: b/369245553 - Cobalt: Consider controlling this via a command line
+  // parameter.
+  static constexpr int ExtraLogLevel() {
+    // 0 => keep allocator related logging to minimum.
+    // 1 => enable extra logging for statistics in this class and its users.
+    // 2 => enable per allocation logging (extremely chatty).
+    return 0;
+  }
+
   // Allocates a range of memory of the given size, without any alignment
   // constraints.
   // Will return NULL if the allocation fails.
-  virtual void* Allocate(std::size_t size) = 0;
+  virtual void* Allocate(size_t size) = 0;
 
   // Allocates a range of memory of the given size with the given alignment.
   // Will return NULL if the allocation fails.
-  virtual void* Allocate(std::size_t size, std::size_t alignment) = 0;
+  virtual void* Allocate(size_t size, size_t alignment) = 0;
 
   // When supported, allocates a range of memory of the given size for the given
   // alignment. Returns a pointer that may not be aligned but points to a memory
@@ -58,8 +65,7 @@ class Allocator {
   // user may lose the ability to combine two adjacent allocations in this case.
   // Note that the coding style recommends that in/out parameters to be placed
   // after input parameters but |size| is kept in the left for consistency.
-  virtual void* AllocateForAlignment(std::size_t* /*size*/,
-                                     std::size_t /*alignment*/) {
+  virtual void* AllocateForAlignment(size_t* /*size*/, size_t /*alignment*/) {
     return 0;
   }
 
@@ -67,25 +73,33 @@ class Allocator {
   virtual void Free(void* memory) = 0;
 
   // Frees memory with a size. By default it will delegate to Free().
-  virtual void FreeWithSize(void* memory, std::size_t /*size*/) {
-    Free(memory);
-  }
+  virtual void FreeWithSize(void* memory, size_t /*size*/) { Free(memory); }
+
+  // Hints to the allocator that the physical memory backing this range is no
+  // longer needed, but the virtual address space should remain reserved.
+  virtual void Decommit(void* memory, size_t size) {}
 
   // Returns the allocator's total capacity for allocations.  It will always
   // be true that GetSize() <= GetCapacity(), though it is possible for
   // capacity to grow and change over time.  It is also possible that due to,
   // say, fragmentation, an allocation may fail even if GetCapacity() reports
   // that enough space is available.
-  virtual std::size_t GetCapacity() const = 0;
+  virtual size_t GetCapacity() const = 0;
 
   // Returns the allocator's total memory currently allocated.
-  virtual std::size_t GetAllocated() const = 0;
+  virtual size_t GetAllocated() const = 0;
 
   // Print information for all allocations.
-  virtual void PrintAllocations() const = 0;
+  //
+  // When `align_allocated_size` is set to true, the allocated size of
+  // individual allocations will be aligned up to the next power of 2 to group
+  // more allocations of similar sizes into the same line.
+  // `max_allocations_to_print` limits the max lines of allocations to print
+  // inside PrintAllocations().
+  virtual void PrintAllocations(bool align_allocated_size,
+                                int max_allocations_to_print) const = 0;
 };
 
-}  // namespace common
 }  // namespace starboard
 
 #endif  // STARBOARD_COMMON_ALLOCATOR_H_

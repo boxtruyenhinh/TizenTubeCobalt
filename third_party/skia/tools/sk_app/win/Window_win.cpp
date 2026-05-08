@@ -5,22 +5,19 @@
 * found in the LICENSE file.
 */
 
-#include "include/gpu/vk/GrVkVulkan.h"
-
 #include "tools/sk_app/win/Window_win.h"
 
 #include <tchar.h>
 #include <windows.h>
 #include <windowsx.h>
 
-#include "src/utils/SkUTF.h"
-#include "tools/sk_app/WindowContext.h"
-#include "tools/sk_app/win/WindowContextFactory_win.h"
+#include "src/base/SkUTF.h"
 #include "tools/skui/ModifierKey.h"
+#include "tools/window/DisplayParams.h"
+#include "tools/window/WindowContext.h"
+#include "tools/window/win/WindowContextFactory_win.h"
 
-#ifdef SK_VULKAN
-#include "tools/sk_app/VulkanWindowContext.h"
-#endif
+using skwindow::DisplayParams;
 
 namespace sk_app {
 
@@ -29,7 +26,7 @@ static int gWindowY = 0;
 static int gWindowWidth = CW_USEDEFAULT;
 static int gWindowHeight = 0;
 
-Window* Window::CreateNativeWindow(void* platformData) {
+Window* Windows::CreateNativeWindow(void* platformData) {
     HINSTANCE hInstance = (HINSTANCE)platformData;
 
     Window_win* window = new Window_win();
@@ -152,7 +149,7 @@ static skui::Key get_key(WPARAM vk) {
         { 'Y',        skui::Key::kY        },
         { 'Z',        skui::Key::kZ        },
     };
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gPair); i++) {
+    for (size_t i = 0; i < std::size(gPair); i++) {
         if (gPair[i].fVK == vk) {
             return gPair[i].fKey;
         }
@@ -296,10 +293,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                                            get_modifiers(message, wParam, lParam));
         } break;
 
-        case WM_MOUSEWHEEL:
+        case WM_MOUSEWHEEL: {
+            int xPos = GET_X_LPARAM(lParam);
+            int yPos = GET_Y_LPARAM(lParam);
             eventHandled = window->onMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? +1.0f : -1.0f,
+                                                xPos,
+                                                yPos,
                                                 get_modifiers(message, wParam, lParam));
-            break;
+        } break;
 
         case WM_TOUCH: {
             uint16_t numInputs = LOWORD(wParam);
@@ -352,37 +353,43 @@ bool Window_win::attach(BackendType attachType) {
     switch (attachType) {
 #ifdef SK_GL
         case kNativeGL_BackendType:
-            fWindowContext = window_context_factory::MakeGLForWin(fHWnd, fRequestedDisplayParams);
+            fWindowContext = skwindow::MakeGLForWin(fHWnd, fRequestedDisplayParams->clone());
             break;
 #endif
 #if SK_ANGLE
         case kANGLE_BackendType:
-            fWindowContext =
-                    window_context_factory::MakeANGLEForWin(fHWnd, fRequestedDisplayParams);
+            fWindowContext = skwindow::MakeANGLEForWin(fHWnd, fRequestedDisplayParams->clone());
             break;
 #endif
 #ifdef SK_DAWN
-        case kDawn_BackendType:
+#if defined(SK_GRAPHITE)
+        case kGraphiteDawn_BackendType:
             fWindowContext =
-                    window_context_factory::MakeDawnD3D12ForWin(fHWnd, fRequestedDisplayParams);
+                    skwindow::MakeGraphiteDawnD3D12ForWin(fHWnd, fRequestedDisplayParams->clone());
             break;
 #endif
+#endif
         case kRaster_BackendType:
-            fWindowContext =
-                    window_context_factory::MakeRasterForWin(fHWnd, fRequestedDisplayParams);
+            fWindowContext = skwindow::MakeRasterForWin(fHWnd, fRequestedDisplayParams->clone());
             break;
 #ifdef SK_VULKAN
         case kVulkan_BackendType:
-            fWindowContext =
-                    window_context_factory::MakeVulkanForWin(fHWnd, fRequestedDisplayParams);
+            fWindowContext = skwindow::MakeVulkanForWin(fHWnd, fRequestedDisplayParams->clone());
             break;
+#if defined(SK_GRAPHITE)
+        case kGraphiteVulkan_BackendType:
+            fWindowContext =
+                    skwindow::MakeGraphiteVulkanForWin(fHWnd, fRequestedDisplayParams->clone());
+            break;
+#endif
 #endif
 #ifdef SK_DIRECT3D
         case kDirect3D_BackendType:
-            fWindowContext =
-                window_context_factory::MakeD3D12ForWin(fHWnd, fRequestedDisplayParams);
+            fWindowContext = skwindow::MakeD3D12ForWin(fHWnd, fRequestedDisplayParams->clone());
             break;
 #endif
+        default:
+            SK_ABORT("Unknown backend");
     }
     this->onBackendCreated();
 
@@ -393,12 +400,13 @@ void Window_win::onInval() {
     InvalidateRect(fHWnd, nullptr, false);
 }
 
-void Window_win::setRequestedDisplayParams(const DisplayParams& params, bool allowReattach) {
+void Window_win::setRequestedDisplayParams(std::unique_ptr<const DisplayParams> params,
+                                           bool allowReattach) {
     // GL on Windows doesn't let us change MSAA after the window is created
-    if (params.fMSAASampleCount != this->getRequestedDisplayParams().fMSAASampleCount
-            && allowReattach) {
+    if (params->msaaSampleCount() != this->getRequestedDisplayParams()->msaaSampleCount() &&
+        allowReattach) {
         // Need to change these early, so attach() creates the window context correctly
-        fRequestedDisplayParams = params;
+        fRequestedDisplayParams = params->clone();
 
         fWindowContext = nullptr;
         this->closeWindow();
@@ -408,7 +416,7 @@ void Window_win::setRequestedDisplayParams(const DisplayParams& params, bool all
         }
     }
 
-    INHERITED::setRequestedDisplayParams(params, allowReattach);
+    Window::setRequestedDisplayParams(std::move(params), allowReattach);
 }
 
 }   // namespace sk_app

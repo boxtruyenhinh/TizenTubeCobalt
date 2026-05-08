@@ -11,7 +11,7 @@
 #include "bench/Benchmark.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPicture.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
 
 class SkSurface;
 
@@ -24,11 +24,13 @@ public:
              bool doLooping);
     ~SKPBench() override;
 
-    int calculateLoops(int defaultLoops) const override {
-        return fDoLooping ? defaultLoops : 1;
+    bool shouldLoop() const override {
+        return fDoLooping;
     }
 
-    void getGpuStats(SkCanvas*, SkTArray<SkString>* keys, SkTArray<double>* values) override;
+    void getGpuStats(SkCanvas*,
+                     skia_private::TArray<SkString>* keys,
+                     skia_private::TArray<double>* values) override;
     bool getDMSAAStats(GrRecordingContext*) override;
 
 protected:
@@ -37,24 +39,27 @@ protected:
     void onPerCanvasPreDraw(SkCanvas*) override;
     void onPerCanvasPostDraw(SkCanvas*) override;
     bool isSuitableFor(Backend backend) override;
-    void onDraw(int loops, SkCanvas* canvas) override;
-    SkIPoint onGetSize() override;
+    void onDraw(int loops, SkCanvas*) override { SkASSERT(false); }
+    void onDrawFrame(int loops, SkCanvas*, std::function<void()> submitFrame) override;
+    SkISize onGetSize() override;
 
     virtual void drawMPDPicture();
     virtual void drawPicture();
 
     const SkPicture* picture() const { return fPic.get(); }
-    const SkTArray<sk_sp<SkSurface>>& surfaces() const { return fSurfaces; }
+    const skia_private::TArray<sk_sp<SkSurface>>& surfaces() const { return fSurfaces; }
     const SkTDArray<SkIRect>& tileRects() const { return fTileRects; }
 
 private:
+    bool submitsInternalFrames() override { return true; }
+
     sk_sp<const SkPicture> fPic;
     const SkIRect fClip;
     const SkScalar fScale;
     SkString fName;
     SkString fUniqueName;
 
-    SkTArray<sk_sp<SkSurface>> fSurfaces;   // for MultiPictureDraw
+    skia_private::TArray<sk_sp<SkSurface>> fSurfaces;   // for MultiPictureDraw
     SkTDArray<SkIRect> fTileRects;     // for MultiPictureDraw
 
     const bool fDoLooping;

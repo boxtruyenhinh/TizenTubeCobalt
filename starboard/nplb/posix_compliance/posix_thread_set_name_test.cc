@@ -13,11 +13,11 @@
 // limitations under the License.
 
 #include <pthread.h>
+#include <sys/prctl.h>
 
 #include "starboard/nplb/posix_compliance/posix_thread_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -32,12 +32,20 @@ void* SetThreadNameEntryPoint(void* context) {
   char name[4096] = {0};
   Context* real_context = static_cast<Context*>(context);
 
+#if __ANDROID_API__ < 26
+  prctl(PR_GET_NAME, name, 0L, 0L, 0L);
+#else
   pthread_getname_np(pthread_self(), name, SB_ARRAY_SIZE_INT(name));
+#endif  // __ANDROID_API__ < 26
   real_context->got_name1 = name;
 
   pthread_setname_np(pthread_self(), real_context->name_to_set.c_str());
 
+#if __ANDROID_API__ < 26
+  prctl(PR_GET_NAME, name, 0L, 0L, 0L);
+#else
   pthread_getname_np(pthread_self(), name, SB_ARRAY_SIZE_INT(name));
+#endif  // __ANDROID_API__ < 26
   real_context->got_name2 = name;
 
   return NULL;
@@ -45,16 +53,15 @@ void* SetThreadNameEntryPoint(void* context) {
 
 TEST(PosixThreadSetNameTest, SunnyDay) {
   Context context;
-  context.name_to_set = posix::kAltThreadName;
+  context.name_to_set = kAltThreadName;
   pthread_t thread;
-  EXPECT_EQ(pthread_create(&thread, NULL, SetThreadNameEntryPoint, &context),
+  EXPECT_EQ(pthread_create(&thread, nullptr, SetThreadNameEntryPoint, &context),
             0);
   EXPECT_TRUE(thread != 0);
   EXPECT_EQ(pthread_join(thread, NULL), 0);
-  EXPECT_NE(posix::kAltThreadName, context.got_name1);
-  EXPECT_EQ(posix::kAltThreadName, context.got_name2);
+  EXPECT_NE(kAltThreadName, context.got_name1);
+  EXPECT_EQ(kAltThreadName, context.got_name2);
 }
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

@@ -179,9 +179,13 @@ seh{
             "SHP",
             "Libra de Santa Helena",
         }
+        SLE{
+            "SLE",
+            "Leone de Serra Leoa",
+        }
         SLL{
             "SLL",
-            "Leone de Serra Leoa",
+            "Leone de Serra Leoa (1964—2022)",
         }
         SOS{
             "SOS",
@@ -220,7 +224,7 @@ seh{
             "Franco CFA BEAC",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "Franco CFA BCEAO",
         }
         ZAR{

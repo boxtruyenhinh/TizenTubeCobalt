@@ -9,19 +9,21 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathEffect.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkString.h"
 #include "include/core/SkStrokeRec.h"
 #include "include/effects/SkDashPathEffect.h"
 #include "include/effects/SkTrimPathEffect.h"
 #include "include/pathops/SkPathOps.h"
-#include "include/private/SkFloatBits.h"
-#include "include/private/SkFloatingPoint.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "include/utils/SkParsePath.h"
+#include "src/base/SkFloatBits.h"
 #include "src/core/SkPaintDefaults.h"
 #include "src/core/SkPathPriv.h"
 
-#include <emscripten/emscripten.h>
+#include <emscripten.h>
 #include <emscripten/bind.h>
 
 using namespace emscripten;
@@ -32,6 +34,7 @@ static const int QUAD = 2;
 static const int CONIC = 3;
 static const int CUBIC = 4;
 static const int CLOSE = 5;
+
 
 // Just for self-documenting purposes where the main thing being returned is an
 // SkPath, but in an error case, something of type null (which is val) could also be
@@ -104,33 +107,33 @@ SkPathOrNull EMSCRIPTEN_KEEPALIVE FromCmds(uintptr_t /* float* */ cptr, int numC
     for(int i = 0; i < numCmds;){
          switch (sk_float_floor2int(cmds[i++])) {
             case MOVE:
-                CHECK_NUM_ARGS(2);
-                x1 = cmds[i++], y1 = cmds[i++];
+                CHECK_NUM_ARGS(2)
+                x1 = cmds[i++]; y1 = cmds[i++];
                 path.moveTo(x1, y1);
                 break;
             case LINE:
-                CHECK_NUM_ARGS(2);
-                x1 = cmds[i++], y1 = cmds[i++];
+                CHECK_NUM_ARGS(2)
+                x1 = cmds[i++]; y1 = cmds[i++];
                 path.lineTo(x1, y1);
                 break;
             case QUAD:
-                CHECK_NUM_ARGS(4);
-                x1 = cmds[i++], y1 = cmds[i++];
-                x2 = cmds[i++], y2 = cmds[i++];
+                CHECK_NUM_ARGS(4)
+                x1 = cmds[i++]; y1 = cmds[i++];
+                x2 = cmds[i++]; y2 = cmds[i++];
                 path.quadTo(x1, y1, x2, y2);
                 break;
             case CONIC:
-                CHECK_NUM_ARGS(5);
-                x1 = cmds[i++], y1 = cmds[i++];
-                x2 = cmds[i++], y2 = cmds[i++];
+                CHECK_NUM_ARGS(5)
+                x1 = cmds[i++]; y1 = cmds[i++];
+                x2 = cmds[i++]; y2 = cmds[i++];
                 x3 = cmds[i++]; // weight
                 path.conicTo(x1, y1, x2, y2, x3);
                 break;
             case CUBIC:
-                CHECK_NUM_ARGS(6);
-                x1 = cmds[i++], y1 = cmds[i++];
-                x2 = cmds[i++], y2 = cmds[i++];
-                x3 = cmds[i++], y3 = cmds[i++];
+                CHECK_NUM_ARGS(6)
+                x1 = cmds[i++]; y1 = cmds[i++];
+                x2 = cmds[i++]; y2 = cmds[i++];
+                x3 = cmds[i++]; y3 = cmds[i++];
                 path.cubicTo(x1, y1, x2, y2, x3, y3);
                 break;
             case CLOSE:
@@ -201,6 +204,10 @@ void ApplyQuadTo(SkPath& p, SkScalar x1, SkScalar y1, SkScalar x2, SkScalar y2) 
     p.quadTo(x1, y1, x2, y2);
 }
 
+bool EMSCRIPTEN_KEEPALIVE IsEmpty(const SkPath& path) {
+    return path.isEmpty();
+}
+
 
 
 //========================================================================================
@@ -208,13 +215,11 @@ void ApplyQuadTo(SkPath& p, SkScalar x1, SkScalar y1, SkScalar x2, SkScalar y2) 
 //========================================================================================
 
 JSString EMSCRIPTEN_KEEPALIVE ToSVGString(const SkPath& path) {
-    SkString s;
-    SkParsePath::ToSVGString(path, &s);
     // Wrapping it in val automatically turns it into a JS string.
     // Not too sure on performance implications, but is is simpler than
     // returning a raw pointer to const char * and then using
     // UTF8ToString() on the calling side.
-    return emscripten::val(s.c_str());
+    return emscripten::val(SkParsePath::ToSVGString(path).c_str());
 }
 
 
@@ -232,6 +237,10 @@ SkPathOrNull EMSCRIPTEN_KEEPALIVE FromSVGString(std::string str) {
 
 bool EMSCRIPTEN_KEEPALIVE ApplySimplify(SkPath& path) {
     return Simplify(path, &path);
+}
+
+bool EMSCRIPTEN_KEEPALIVE ApplyAsWinding(SkPath& path) {
+    return AsWinding(path, &path);
 }
 
 bool EMSCRIPTEN_KEEPALIVE ApplyPathOp(SkPath& pathOne, const SkPath& pathTwo, SkPathOp op) {
@@ -342,6 +351,11 @@ void ApplyAddPath(SkPath& orig, const SkPath& newPath,
     orig.addPath(newPath, m);
 }
 
+void ApplyReverseAddPath(SkPath& orig, const SkPath& newPath) {
+    orig.reverseAddPath(newPath);
+}
+
+
 JSString GetFillTypeString(const SkPath& path) {
     if (path.getFillType() == SkPathFillType::kWinding) {
         return emscripten::val("nonzero");
@@ -393,6 +407,7 @@ struct StrokeOpts {
     // any are omitted.
     SkScalar width;
     SkScalar miter_limit;
+    SkScalar res_scale;
     SkPaint::Join join;
     SkPaint::Cap cap;
 };
@@ -404,8 +419,11 @@ bool ApplyStroke(SkPath& path, StrokeOpts opts) {
     p.setStrokeJoin(opts.join);
     p.setStrokeWidth(opts.width);
     p.setStrokeMiter(opts.miter_limit);
-
-    return p.getFillPath(path, &path);
+    // Default to 1.0 if 0 (or an invalid negative number)
+    if (opts.res_scale <= 0) {
+        opts.res_scale = 1.0;
+    }
+    return skpathutils::FillPathWithPaint(path, p, &path, nullptr, opts.res_scale);
 }
 
 //========================================================================================
@@ -473,6 +491,7 @@ EMSCRIPTEN_BINDINGS(skia) {
 
         // Path2D API
         .function("_addPath", &ApplyAddPath)
+        .function("_reverseAddPath", &ApplyReverseAddPath)
         // 3 additional overloads of addPath are handled in JS bindings
         .function("_arc", &ApplyAddArc)
         .function("_arcTo", &ApplyArcTo)
@@ -488,6 +507,7 @@ EMSCRIPTEN_BINDINGS(skia) {
         // "quadraticCurveTo" alias handled in JS bindings
         .function("_quadTo", &ApplyQuadTo)
         .function("_rect", &ApplyAddRect)
+        .function("_isEmpty", &IsEmpty)
 
         // Extra features
         .function("setFillType", select_overload<void(SkPathFillType)>(&SkPath::setFillType))
@@ -509,6 +529,7 @@ EMSCRIPTEN_BINDINGS(skia) {
 
         // PathOps
         .function("_simplify", &ApplySimplify)
+        .function("_asWinding", &ApplyAsWinding)
         .function("_op", &ApplyPathOp)
 
         // Exporting
@@ -589,6 +610,7 @@ EMSCRIPTEN_BINDINGS(skia) {
     value_object<StrokeOpts>("StrokeOpts")
         .field("width",       &StrokeOpts::width)
         .field("miter_limit", &StrokeOpts::miter_limit)
+        .field("res_scale",   &StrokeOpts::res_scale)
         .field("join",        &StrokeOpts::join)
         .field("cap",         &StrokeOpts::cap);
 

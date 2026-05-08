@@ -9,28 +9,29 @@
 
 #ifdef SK_VULKAN
 
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/vk/GrVkExtensions.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/vk/GrVkDirectContext.h"
+#include "include/gpu/vk/VulkanBackendContext.h"
+#include "include/gpu/vk/VulkanExtensions.h"
+#include "include/gpu/vk/VulkanMemoryAllocator.h"
 #include "tools/gpu/vk/VkTestUtils.h"
 
-namespace {
+extern bool gCreateProtectedContext;
 
-#define ACQUIRE_VK_PROC(name, device)                                               \
-    f##name = reinterpret_cast<PFN_vk##name>(getProc("vk" #name, nullptr, device)); \
-    SkASSERT(f##name)
+namespace {
 
 class VkTestContextImpl : public sk_gpu_test::VkTestContext {
 public:
     static VkTestContext* Create(VkTestContext* sharedContext) {
-        GrVkBackendContext backendContext;
-        GrVkExtensions* extensions;
+        skgpu::VulkanBackendContext backendContext;
+        skgpu::VulkanExtensions* extensions;
         VkPhysicalDeviceFeatures2* features;
         bool ownsContext = true;
         VkDebugReportCallbackEXT debugCallback = VK_NULL_HANDLE;
         PFN_vkDestroyDebugReportCallbackEXT destroyCallback = nullptr;
         if (sharedContext) {
             backendContext = sharedContext->getVkBackendContext();
-            extensions = const_cast<GrVkExtensions*>(sharedContext->getVkExtensions());
+            extensions = const_cast<skgpu::VulkanExtensions*>(sharedContext->getVkExtensions());
             features = const_cast<VkPhysicalDeviceFeatures2*>(sharedContext->getVkFeatures());
             // We always delete the parent context last so make sure the child does not think they
             // own the vulkan context.
@@ -41,11 +42,13 @@ public:
                 return nullptr;
             }
 
-            extensions = new GrVkExtensions();
+            extensions = new skgpu::VulkanExtensions();
             features = new VkPhysicalDeviceFeatures2;
             memset(features, 0, sizeof(VkPhysicalDeviceFeatures2));
             if (!sk_gpu_test::CreateVkBackendContext(instProc, &backendContext, extensions,
-                                                     features, &debugCallback)) {
+                                                     features, &debugCallback,
+                                                     nullptr, sk_gpu_test::CanPresentFn(),
+                                                     gCreateProtectedContext)) {
                 sk_gpu_test::FreeVulkanFeaturesStructs(features);
                 delete features;
                 delete extensions;
@@ -64,10 +67,8 @@ public:
 
     void testAbandon() override {}
 
-    void finish() override {}
-
     sk_sp<GrDirectContext> makeContext(const GrContextOptions& options) override {
-        return GrDirectContext::MakeVulkan(fVk, options);
+        return GrDirectContexts::MakeVulkan(fVk, options);
     }
 
 protected:
@@ -104,11 +105,17 @@ protected:
     }
 
 private:
-    VkTestContextImpl(const GrVkBackendContext& backendContext, const GrVkExtensions* extensions,
-                      VkPhysicalDeviceFeatures2* features, bool ownsContext,
+    VkTestContextImpl(const skgpu::VulkanBackendContext& backendContext,
+                      const skgpu::VulkanExtensions* extensions,
+                      VkPhysicalDeviceFeatures2* features,
+                      bool ownsContext,
                       VkDebugReportCallbackEXT debugCallback,
                       PFN_vkDestroyDebugReportCallbackEXT destroyCallback)
-            : VkTestContext(backendContext, extensions, features, ownsContext, debugCallback,
+            : VkTestContext(backendContext,
+                            extensions,
+                            features,
+                            ownsContext,
+                            debugCallback,
                             destroyCallback) {
         fFenceSupport = true;
     }

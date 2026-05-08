@@ -5,6 +5,8 @@
 #ifndef V8_COMPILER_JS_CREATE_LOWERING_H_
 #define V8_COMPILER_JS_CREATE_LOWERING_H_
 
+#include <optional>
+
 #include "src/base/compiler-specific.h"
 #include "src/common/globals.h"
 #include "src/compiler/graph-reducer.h"
@@ -22,6 +24,7 @@ namespace compiler {
 // Forward declarations.
 class CommonOperatorBuilder;
 class CompilationDependencies;
+class FrameState;
 class JSGraph;
 class JSOperatorBuilder;
 class MachineOperatorBuilder;
@@ -32,10 +35,9 @@ class SlackTrackingPrediction;
 class V8_EXPORT_PRIVATE JSCreateLowering final
     : public NON_EXPORTED_BASE(AdvancedReducer) {
  public:
-  JSCreateLowering(Editor* editor, CompilationDependencies* dependencies,
-                   JSGraph* jsgraph, JSHeapBroker* broker, Zone* zone)
+  JSCreateLowering(Editor* editor, JSGraph* jsgraph, JSHeapBroker* broker,
+                   Zone* zone)
       : AdvancedReducer(editor),
-        dependencies_(dependencies),
         jsgraph_(jsgraph),
         broker_(broker),
         zone_(zone) {}
@@ -81,18 +83,31 @@ class V8_EXPORT_PRIVATE JSCreateLowering final
       ElementsKind elements_kind, AllocationType allocation,
       const SlackTrackingPrediction& slack_tracking_prediction);
   Reduction ReduceJSCreateObject(Node* node);
+  Reduction ReduceJSCreateStringWrapper(Node* node);
 
-  Node* AllocateArguments(Node* effect, Node* control, Node* frame_state);
-  Node* AllocateRestArguments(Node* effect, Node* control, Node* frame_state,
-                              int start_index);
-  Node* AllocateAliasedArguments(Node* effect, Node* control, Node* frame_state,
-                                 Node* context,
-                                 const SharedFunctionInfoRef& shared,
-                                 bool* has_aliased_arguments);
-  Node* AllocateAliasedArguments(Node* effect, Node* control, Node* context,
-                                 Node* arguments_frame, Node* arguments_length,
-                                 const SharedFunctionInfoRef& shared,
-                                 bool* has_aliased_arguments);
+  // The following functions all return nullptr iff there are too many arguments
+  // for inline allocation.
+  Node* TryAllocateArguments(Node* effect, Node* control,
+                             FrameState frame_state);
+  Node* TryAllocateRestArguments(Node* effect, Node* control,
+                                 FrameState frame_state, int start_index);
+  Node* TryAllocateAliasedArguments(Node* effect, Node* control,
+                                    FrameState frame_state, Node* context,
+                                    SharedFunctionInfoRef shared,
+                                    bool* has_aliased_arguments);
+  Node* TryAllocateAliasedArguments(Node* effect, Node* control, Node* context,
+                                    Node* arguments_length,
+                                    SharedFunctionInfoRef shared,
+                                    bool* has_aliased_arguments);
+  std::optional<Node*> TryAllocateFastLiteral(Node* effect, Node* control,
+                                              JSObjectRef boilerplate,
+                                              AllocationType allocation,
+                                              int max_depth,
+                                              int* max_properties);
+  std::optional<Node*> TryAllocateFastLiteralElements(
+      Node* effect, Node* control, JSObjectRef boilerplate,
+      AllocationType allocation, int max_depth, int* max_properties);
+
   Node* AllocateElements(Node* effect, Node* control,
                          ElementsKind elements_kind, int capacity,
                          AllocationType allocation);
@@ -102,25 +117,19 @@ class V8_EXPORT_PRIVATE JSCreateLowering final
                          ElementsKind elements_kind,
                          std::vector<Node*> const& values,
                          AllocationType allocation);
-  Node* AllocateFastLiteral(Node* effect, Node* control,
-                            JSObjectRef boilerplate, AllocationType allocation);
-  Node* AllocateFastLiteralElements(Node* effect, Node* control,
-                                    JSObjectRef boilerplate,
-                                    AllocationType allocation);
   Node* AllocateLiteralRegExp(Node* effect, Node* control,
-                              JSRegExpRef boilerplate);
+                              RegExpBoilerplateDescriptionRef boilerplate);
 
   Factory* factory() const;
-  Graph* graph() const;
+  TFGraph* graph() const;
   JSGraph* jsgraph() const { return jsgraph_; }
   NativeContextRef native_context() const;
   CommonOperatorBuilder* common() const;
   SimplifiedOperatorBuilder* simplified() const;
-  CompilationDependencies* dependencies() const { return dependencies_; }
+  CompilationDependencies* dependencies() const;
   JSHeapBroker* broker() const { return broker_; }
   Zone* zone() const { return zone_; }
 
-  CompilationDependencies* const dependencies_;
   JSGraph* const jsgraph_;
   JSHeapBroker* const broker_;
   Zone* const zone_;

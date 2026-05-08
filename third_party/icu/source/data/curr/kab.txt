@@ -171,9 +171,13 @@ kab{
             "SHP",
             "Apund Asant Ilini",
         }
+        SLE{
+            "SLE",
+            "Alyun",
+        }
         SLL{
             "SLL",
-            "Alyun",
+            "Alyun (1964—2022)",
         }
         SOS{
             "SOS",
@@ -212,7 +216,7 @@ kab{
             "Afrank BCEA CFA",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "Afrank BCEAO CFA",
         }
         ZAR{

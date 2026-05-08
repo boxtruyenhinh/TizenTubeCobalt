@@ -27,8 +27,10 @@
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
 #include <vector>
 
+// clang-format off
 #include <Windows.h>
 #include <Psapi.h>
+// clang-format on
 #else  // PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -87,7 +89,7 @@ bool IsMapped(void* start, size_t size) {
   if (pages_found * page_size == size)
     return true;
   return false;
-#elif PERFETTO_BUILDFLAG(PERFETTO_OS_FUCHSIA) || defined(STARBOARD)
+#elif PERFETTO_BUILDFLAG(PERFETTO_OS_FUCHSIA)
   // Fuchsia doesn't yet support paging (b/119503290).
   ignore_result(page_size);
   return true;

@@ -12,48 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
 #include <iostream>
-#include <string>
 
 #include "starboard/common/time.h"
-#include "starboard/file.h"
 #include "starboard/nplb/file_helpers.h"
 #include "starboard/system.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
-
-inline int64_t TimeTToWindowsUsec(time_t time) {
-  int64_t posix_usec = static_cast<int64_t>(time) * 1000000;
-  return PosixTimeToWindowsTime(posix_usec);
-}
 
 TEST(PosixFileGetInfoTest, InvalidFileErrors) {
   struct stat info;
   int result = fstat(-1, &info);
-  EXPECT_FALSE(result == 0);
+  EXPECT_NE(result, 0);
+}
+
+constexpr int64_t kMicrosecond = 1'000'000;
+auto ToMicroseconds(const struct timespec& ts) {
+  return ts.tv_sec * kMicrosecond + ts.tv_nsec / 1000;
 }
 
 TEST(PosixFileGetInfoTest, WorksOnARegularFile) {
   // This test is potentially flaky because it's comparing times. So, building
   // in extra sensitivity to make flakiness more apparent.
-  const int kTrials = 100;
+  constexpr int kTrials = 100;
   for (int i = 0; i < kTrials; ++i) {
-    // We can't assume filesystem timestamp precision, so go back a minute
-    // for a better chance to contain the imprecision and rounding errors.
-    const int64_t kOneMinuteInMicroseconds = 60'000'000;
-    int64_t time =
-        PosixTimeToWindowsTime(CurrentPosixTime()) - kOneMinuteInMicroseconds;
+    int64_t time_usec = starboard::CurrentPosixTime();
 
-    const int kFileSize = 12;
-    starboard::nplb::ScopedRandomFile random_file(kFileSize);
+    constexpr int kFileSize = 12;
+    ScopedRandomFile random_file(kFileSize);
     const std::string& filename = random_file.filename();
 
     int file = open(filename.c_str(), O_RDONLY);
@@ -61,37 +52,99 @@ TEST(PosixFileGetInfoTest, WorksOnARegularFile) {
 
     {
       struct stat info;
-      int result = fstat(file, &info);
+      fstat(file, &info);
       EXPECT_EQ(kFileSize, info.st_size);
       EXPECT_FALSE(S_ISDIR(info.st_mode));
       EXPECT_FALSE(S_ISLNK(info.st_mode));
-      EXPECT_LE(time, TimeTToWindowsUsec(info.st_atime));
-      EXPECT_LE(time, TimeTToWindowsUsec(info.st_atime));
-      EXPECT_LE(time, TimeTToWindowsUsec(info.st_ctime));
+      // We can't assume filesystem timestamp precision, so allow a minute
+      // difference.
+      constexpr int64_t kOneMinute = 60 * kMicrosecond;
+      EXPECT_NEAR(time_usec, ToMicroseconds(info.st_mtim), kOneMinute);
+      EXPECT_NEAR(time_usec, ToMicroseconds(info.st_atim), kOneMinute);
+      EXPECT_NEAR(time_usec, ToMicroseconds(info.st_ctim), kOneMinute);
     }
 
     int result = close(file);
-    EXPECT_TRUE(result == 0);
+    EXPECT_EQ(result, 0);
   }
 }
 
 TEST(PosixFileGetInfoTest, WorksOnStaticContentFiles) {
-  int count = 1;
   for (auto filename : GetFileTestsFilePaths()) {
     int file = open(filename.c_str(), O_RDONLY);
     ASSERT_TRUE(file >= 0);
 
     struct stat info;
-    EXPECT_TRUE(fstat(file, &info) == 0);
+    EXPECT_EQ(fstat(file, &info), 0);
     size_t content_length = GetTestFileExpectedContent(filename).length();
-    EXPECT_EQ(content_length, info.st_size);
+    EXPECT_EQ(static_cast<long>(content_length), info.st_size);
     EXPECT_FALSE(S_ISDIR(info.st_mode));
     EXPECT_FALSE(S_ISLNK(info.st_mode));
 
-    EXPECT_TRUE(close(file) == 0);
+    EXPECT_EQ(close(file), 0);
   }
+}
+
+TEST(PosixFileGetInfoTest, WorksOnADirectory) {
+  ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.IsValid());
+
+  int fd = open(temp_dir.path().c_str(), O_RDONLY);
+  ASSERT_NE(fd, -1);
+
+  struct stat info;
+  EXPECT_EQ(fstat(fd, &info), 0);
+  EXPECT_TRUE(S_ISDIR(info.st_mode));
+
+  EXPECT_EQ(close(fd), 0);
+}
+
+TEST(PosixFileGetInfoTest, FollowsSymbolicLink) {
+  int file_size = 128;
+  ScopedRandomFile target_file(file_size);
+  std::string target_path = target_file.filename();
+
+  ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.IsValid());
+
+  std::string link_path = temp_dir.path() + "/symlink";
+  ASSERT_EQ(symlink(target_path.c_str(), link_path.c_str()), 0);
+
+  // Open the symbolic link.
+  int fd = open(link_path.c_str(), O_RDONLY);
+  ASSERT_NE(fd, -1);
+
+  // fstat should report info about the target file, not the link.
+  struct stat info;
+  EXPECT_EQ(fstat(fd, &info), 0);
+  EXPECT_EQ(info.st_size, file_size);  // Size should be target's size.
+  EXPECT_TRUE(S_ISREG(info.st_mode));  // Should be a regular file.
+
+  EXPECT_EQ(close(fd), 0);
+}
+
+TEST(PosixFileGetInfoTest, ReportsHardLinkCount) {
+  ScopedRandomFile file;
+  std::string path1 = file.filename();
+
+  ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.IsValid());
+
+  std::string path2 = temp_dir.path() + "/hardlink";
+
+  // Create a hard link.
+  ASSERT_EQ(link(path1.c_str(), path2.c_str()), 0);
+
+  // fstat the original file.
+  int fd = open(path1.c_str(), O_RDONLY);
+  ASSERT_NE(fd, -1);
+
+  struct stat info;
+  EXPECT_EQ(fstat(fd, &info), 0);
+  EXPECT_EQ(info.st_nlink, 2u);
+
+  EXPECT_EQ(close(fd), 0);
 }
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

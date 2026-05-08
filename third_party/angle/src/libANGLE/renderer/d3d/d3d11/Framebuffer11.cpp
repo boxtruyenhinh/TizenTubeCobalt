@@ -17,6 +17,7 @@
 #include "libANGLE/renderer/d3d/TextureD3D.h"
 #include "libANGLE/renderer/d3d/d3d11/Buffer11.h"
 #include "libANGLE/renderer/d3d/d3d11/Clear11.h"
+#include "libANGLE/renderer/d3d/d3d11/Context11.h"
 #include "libANGLE/renderer/d3d/d3d11/RenderTarget11.h"
 #include "libANGLE/renderer/d3d/d3d11/Renderer11.h"
 #include "libANGLE/renderer/d3d/d3d11/TextureStorage11.h"
@@ -53,6 +54,17 @@ angle::Result MarkAttachmentsDirty(const gl::Context *context,
 
     return angle::Result::Continue;
 }
+
+UINT GetAttachmentLayer(const gl::FramebufferAttachment *attachment)
+{
+    if (attachment->type() == GL_TEXTURE &&
+        attachment->getTexture()->getType() == gl::TextureType::_3D)
+    {
+        return attachment->layer();
+    }
+    return 0;
+}
+
 }  // anonymous namespace
 
 Framebuffer11::Framebuffer11(const gl::FramebufferState &data, Renderer11 *renderer)
@@ -235,14 +247,26 @@ angle::Result Framebuffer11::invalidateAttachment(const gl::Context *context,
 
     RenderTarget11 *renderTarget = nullptr;
     ANGLE_TRY(attachment->getRenderTarget(context, 0, &renderTarget));
-    const auto &rtv = renderTarget->getRenderTargetView();
-
-    if (rtv.valid())
+    if (attachment->getDepthSize() > 0 || attachment->getStencilSize() > 0)
     {
-        deviceContext1->DiscardView(rtv.get());
+        const auto &dsv = renderTarget->getDepthStencilView();
+        if (dsv.valid())
+        {
+            deviceContext1->DiscardView(dsv.get());
+        }
+        return angle::Result::Continue;
     }
+    else
+    {
+        const auto &rtv = renderTarget->getRenderTargetView();
 
-    return angle::Result::Continue;
+        if (rtv.valid())
+        {
+            deviceContext1->DiscardView(rtv.get());
+        }
+
+        return angle::Result::Continue;
+    }
 }
 
 angle::Result Framebuffer11::readPixelsImpl(const gl::Context *context,
@@ -251,12 +275,12 @@ angle::Result Framebuffer11::readPixelsImpl(const gl::Context *context,
                                             GLenum type,
                                             size_t outputPitch,
                                             const gl::PixelPackState &pack,
+                                            gl::Buffer *packBuffer,
                                             uint8_t *pixels)
 {
-    const gl::FramebufferAttachment *readAttachment = mState.getReadAttachment();
+    const gl::FramebufferAttachment *readAttachment = mState.getReadPixelsAttachment(format);
     ASSERT(readAttachment);
 
-    gl::Buffer *packBuffer = context->getState().getTargetBuffer(gl::BufferBinding::PixelPack);
     if (packBuffer != nullptr)
     {
         Buffer11 *packBufferStorage      = GetImplAs<Buffer11>(packBuffer);
@@ -265,7 +289,10 @@ angle::Result Framebuffer11::readPixelsImpl(const gl::Context *context,
                                     pack.reverseRowOrder, packBuffer,
                                     reinterpret_cast<ptrdiff_t>(pixels));
 
-        return packBufferStorage->packPixels(context, *readAttachment, packParams);
+        BufferFeedback feedback;
+        ANGLE_TRY(packBufferStorage->packPixels(context, *readAttachment, packParams, &feedback));
+        packBuffer->applyImplFeedback(context, feedback);
+        return angle::Result::Continue;
     }
 
     return mRenderer->readFromAttachment(context, *readAttachment, area, format, type,
@@ -293,6 +320,7 @@ angle::Result Framebuffer11::blitImpl(const gl::Context *context,
 
         const auto &colorAttachments = mState.getColorAttachments();
         const auto &drawBufferStates = mState.getDrawBufferStates();
+        UINT readLayer               = GetAttachmentLayer(readBuffer);
 
         for (size_t colorAttachment = 0; colorAttachment < colorAttachments.size();
              colorAttachment++)
@@ -317,6 +345,12 @@ angle::Result Framebuffer11::blitImpl(const gl::Context *context,
 
                 const bool invertColorDest   = UsePresentPathFast(mRenderer, &drawBuffer);
                 gl::Rectangle actualDestArea = destArea;
+                UINT drawLayer               = GetAttachmentLayer(&drawBuffer);
+
+                const auto &surfaceTextureOffset = mState.getSurfaceTextureOffset();
+                actualDestArea.x                 = actualDestArea.x + surfaceTextureOffset.x;
+                actualDestArea.y                 = actualDestArea.y + surfaceTextureOffset.y;
+
                 if (invertColorDest)
                 {
                     RenderTarget11 *drawRenderTarget11 = GetAs<RenderTarget11>(drawRenderTarget);
@@ -324,9 +358,10 @@ angle::Result Framebuffer11::blitImpl(const gl::Context *context,
                     actualDestArea.height = -destArea.height;
                 }
 
-                ANGLE_TRY(mRenderer->blitRenderbufferRect(
-                    context, actualSourceArea, actualDestArea, readRenderTarget, drawRenderTarget,
-                    filter, scissor, blitRenderTarget, false, false));
+                ANGLE_TRY(mRenderer->blitRenderbufferRect(context, actualSourceArea, actualDestArea,
+                                                          readLayer, drawLayer, readRenderTarget,
+                                                          drawRenderTarget, filter, scissor,
+                                                          blitRenderTarget, false, false));
             }
         }
     }
@@ -365,7 +400,7 @@ angle::Result Framebuffer11::blitImpl(const gl::Context *context,
             actualDestArea.height              = -destArea.height;
         }
 
-        ANGLE_TRY(mRenderer->blitRenderbufferRect(context, actualSourceArea, actualDestArea,
+        ANGLE_TRY(mRenderer->blitRenderbufferRect(context, actualSourceArea, actualDestArea, 0, 0,
                                                   readRenderTarget, drawRenderTarget, filter,
                                                   scissor, false, blitDepth, blitStencil));
     }
@@ -374,17 +409,23 @@ angle::Result Framebuffer11::blitImpl(const gl::Context *context,
     return angle::Result::Continue;
 }
 
-GLenum Framebuffer11::getRenderTargetImplementationFormat(RenderTargetD3D *renderTarget) const
+const gl::InternalFormat &Framebuffer11::getImplementationColorReadFormat(
+    const gl::Context *context) const
 {
-    RenderTarget11 *renderTarget11 = GetAs<RenderTarget11>(renderTarget);
-    return renderTarget11->getFormatSet().format().fboImplementationInternalFormat;
+    Context11 *context11             = GetImplAs<Context11>(context);
+    const Renderer11DeviceCaps &caps = context11->getRenderer()->getRenderer11DeviceCaps();
+    GLenum sizedFormat = mState.getReadAttachment()->getFormat().info->sizedInternalFormat;
+    const angle::Format &angleFormat = d3d11::Format::Get(sizedFormat, caps).format();
+    return gl::GetSizedInternalFormatInfo(angleFormat.fboImplementationInternalFormat);
 }
 
 angle::Result Framebuffer11::syncState(const gl::Context *context,
-                                       const gl::Framebuffer::DirtyBits &dirtyBits)
+                                       GLenum binding,
+                                       const gl::Framebuffer::DirtyBits &dirtyBits,
+                                       gl::Command command)
 {
     ANGLE_TRY(mRenderTargetCache.update(context, mState, dirtyBits));
-    ANGLE_TRY(FramebufferD3D::syncState(context, dirtyBits));
+    ANGLE_TRY(FramebufferD3D::syncState(context, binding, dirtyBits, command));
 
     // Call this last to allow the state manager to take advantage of the cached render targets.
     mRenderer->getStateManager()->invalidateRenderTarget();

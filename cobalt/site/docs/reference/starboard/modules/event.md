@@ -156,39 +156,18 @@ the type of the value pointed to by that data argument, if any.
 
     A user input event, including keyboard, mouse, gesture, or something else.
     SbInputData (from input.h) is passed as the data argument.
-*   `kSbEventTypeUser`
-
-    A user change event, which means a new user signed-in or signed-out, or the
-    current user changed. No data argument.
 *   `kSbEventTypeLink`
 
     A navigational link has come from the system, and the application should
     consider handling it by navigating to the corresponding application
     location. The data argument is an application-specific, null-terminated
     string.
-*   `kSbEventTypeVerticalSync`
-
-    The beginning of a vertical sync has been detected. This event is very
-    timing-sensitive, so as little work as possible should be done on the main
-    thread if the application wants to receive this event in a timely manner. No
-    data argument.
 *   `kSbEventTypeScheduled`
 
     An event type reserved for scheduled callbacks. It will only be sent in
     response to an application call to SbEventSchedule(), and it will call the
     callback directly, so SbEventHandle should never receive this event
     directly. The data type is an internally-defined structure.
-*   `kSbEventTypeAccessibilitySettingsChanged`
-
-    The platform's accessibility settings have changed. The application should
-    query the accessibility settings using the appropriate APIs to get the new
-    settings. Note this excludes captions settings changes, which causes
-    kSbEventTypeAccessibilityCaptionSettingsChanged to fire. If the starboard
-    version has kSbEventTypeAccessib(i)lityTextToSpeechSettingsChanged, then
-    that event should be used to signal text-to-speech settings changes instead;
-    platforms using older starboard versions should use
-    kSbEventTypeAccessib(i)litySettingsChanged for text-to-speech settings
-    changes.
 *   `kSbEventTypeLowMemory`
 
     An optional event that platforms may send to indicate that the application
@@ -200,52 +179,6 @@ the type of the value pointed to by that data argument, if any.
 
     The size or position of a SbWindow has changed. The data is
     SbEventWindowSizeChangedData .
-*   `kSbEventTypeOnScreenKeyboardShown`
-
-    The platform has shown the on screen keyboard. This event is triggered by
-    the system or by the application's OnScreenKeyboard show method. The event
-    has int data representing a ticket. The ticket is used by the application to
-    mark individual calls to the show method as successfully completed. Events
-    triggered by the application have tickets passed in via
-    SbWindowShowOnScreenKeyboard. System-triggered events have ticket value
-    kSbEventOnScreenKeyboardInvalidTicket.
-*   `kSbEventTypeOnScreenKeyboardHidden`
-
-    The platform has hidden the on screen keyboard. This event is triggered by
-    the system or by the application's OnScreenKeyboard hide method. The event
-    has int data representing a ticket. The ticket is used by the application to
-    mark individual calls to the hide method as successfully completed. Events
-    triggered by the application have tickets passed in via
-    SbWindowHideOnScreenKeyboard. System-triggered events have ticket value
-    kSbEventOnScreenKeyboardInvalidTicket.
-*   `kSbEventTypeOnScreenKeyboardFocused`
-
-    The platform has focused the on screen keyboard. This event is triggered by
-    the system or by the application's OnScreenKeyboard focus method. The event
-    has int data representing a ticket. The ticket is used by the application to
-    mark individual calls to the focus method as successfully completed. Events
-    triggered by the application have tickets passed in via
-    SbWindowFocusOnScreenKeyboard. System-triggered events have ticket value
-    kSbEventOnScreenKeyboardInvalidTicket.
-*   `kSbEventTypeOnScreenKeyboardBlurred`
-
-    The platform has blurred the on screen keyboard. This event is triggered by
-    the system or by the application's OnScreenKeyboard blur method. The event
-    has int data representing a ticket. The ticket is used by the application to
-    mark individual calls to the blur method as successfully completed. Events
-    triggered by the application have tickets passed in via
-    SbWindowBlurOnScreenKeyboard. System-triggered events have ticket value
-    kSbEventOnScreenKeyboardInvalidTicket.
-*   `kSbEventTypeReserved1`
-
-    Reserved for deprecated events.
-*   `kSbEventTypeAccessibilityCaptionSettingsChanged`
-
-    One or more of the fields returned by SbAccessibilityGetCaptionSettings has
-    changed.
-*   `kSbEventTypeAccessibilityTextToSpeechSettingsChanged`
-
-    The platform's text-to-speech settings have changed.
 *   `kSbEventTypeOsNetworkDisconnected`
 
     The platform has detected a network disconnection. There are likely to be
@@ -264,6 +197,10 @@ the type of the value pointed to by that data argument, if any.
     The platform has detected a date and/or time configuration change (such as a
     change in the timezone setting). This should trigger the application to re-
     query the relevant APIs to update the date and time.
+*   `kSbEventTypeAccessibilityTextToSpeechSettingsChanged`
+
+    The platform's text-to-speech settings have changed. The data field of this
+    SbEvent type is a boolean indicating if text-to-speech is enabled.
 
 ## Typedefs
 

@@ -258,6 +258,9 @@ ta{
         "America:Chihuahua"{
             ec{"சுவாவா"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"சியுடாட் வாரஸ்"}
+        }
         "America:Coral_Harbour"{
             ec{"அடிகோகன்"}
         }
@@ -1223,6 +1226,9 @@ ta{
         "Pacific:Johnston"{
             ec{"ஜோன்ஸ்டன்"}
         }
+        "Pacific:Kanton"{
+            ec{"கேன்டன்"}
+        }
         "Pacific:Kiritimati"{
             ec{"கிரிடிமாட்டி"}
         }
@@ -1938,10 +1944,9 @@ ta{
             lg{"யேகாடெரின்பர்க் நேரம்"}
             ls{"யேகாடெரின்பர்க் நிலையான நேரம்"}
         }
-        fallbackFormat{"{1} ({0})"}
-        gmtFormat{"GMT{0}"}
-        gmtZeroFormat{"GMT"}
-        hourFormat{"+HH:mm;-HH:mm"}
+        "meta:Yukon"{
+            ls{"யூகோன் நேரம்"}
+        }
         regionFormat{"{0} நேரம்"}
         regionFormatDaylight{"{0} பகலொளி நேரம்"}
         regionFormatStandard{"{0} நிலையான நேரம்"}

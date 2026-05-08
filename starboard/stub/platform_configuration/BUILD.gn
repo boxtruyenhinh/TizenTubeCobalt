@@ -33,10 +33,6 @@ config("platform_configuration") {
     ]
   }
 
-  # if (!cobalt_fastbuild && (is_debug || is_devel)) {
-  #   cflags += ["-g"]
-  # }
-
   if (is_clang) {
     cflags += [
       "-Werror",
@@ -71,11 +67,7 @@ config("platform_configuration") {
 
       # Do not warn about unused function params.
       "-Wno-unused-parameter",
-    ]
-  }
 
-  if (is_clang_16) {
-    cflags += [
       # Do not warn about an implicit conversion from int to float
       "-Wno-implicit-int-float-conversion",
 

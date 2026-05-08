@@ -1,6 +1,8 @@
 {
   "src/common/gen_uniform_type_table.py":
-    "a741cc301b1617ab0e4d29b35f1d3b96",
+    "d59f31f5fd419f9aca8366e9ca1a4ec8",
   "src/common/uniform_type_info_autogen.cpp":
-    "d1cea53e456de010445790b8de94a50e"
+    "53f77d768af043d45cd7de4269df06e1",
+  "src/common/uniform_type_info_autogen.h":
+    "d09c6ea5058a8efe9793b918867e6be7"
 }

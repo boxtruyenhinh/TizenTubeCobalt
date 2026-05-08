@@ -298,6 +298,9 @@ pt{
         ZW{"Zimbábue"}
         ZZ{"Região desconhecida"}
     }
+    Countries%chagos{
+        IO{"Arquipélago de Chagos"}
+    }
     Countries%short{
         UN{"ONU"}
         US{"EUA"}
@@ -307,6 +310,7 @@ pt{
         CG{"Congo"}
         CI{"Côte d’Ivoire"}
         CZ{"República Tcheca"}
+        NZ{"Aotearoa da Nova Zelândia"}
         SZ{"Suazilândia"}
         TL{"República Democrática de Timor-Leste"}
     }

@@ -12,21 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "starboard/nplb/maximum_player_configuration_explorer.h"
+
 #include <set>
 #include <string>
 #include <vector>
 
+#include "starboard/common/check_op.h"
+#include "starboard/common/string.h"
 #include "starboard/nplb/drm_helpers.h"
-#include "starboard/nplb/maximum_player_configuration_explorer.h"
 #include "starboard/nplb/player_test_util.h"
 #include "starboard/shared/starboard/player/video_dmp_reader.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
-using shared::starboard::player::video_dmp::VideoDmpReader;
+using ::starboard::VideoDmpReader;
 using ::testing::Combine;
 using ::testing::ValuesIn;
 
@@ -52,7 +54,7 @@ class MaximumPlayerConfigurationExplorerTest
  protected:
   MaximumPlayerConfigurationExplorerTest() {}
 
-  testing::FakeGraphicsContextProvider fake_graphics_context_provider_;
+  starboard::FakeGraphicsContextProvider fake_graphics_context_provider_;
 };
 
 TEST_P(MaximumPlayerConfigurationExplorerTest, SunnyDay) {
@@ -67,7 +69,7 @@ TEST_P(MaximumPlayerConfigurationExplorerTest, SunnyDay) {
   for (const auto& video_filename : video_test_files) {
     VideoDmpReader dmp_reader(video_filename,
                               VideoDmpReader::kEnableReadOnDemand);
-    SB_DCHECK(dmp_reader.number_of_video_buffers() > 0);
+    SB_DCHECK_GT(dmp_reader.number_of_video_buffers(), static_cast<size_t>(0));
     if (SbMediaCanPlayMimeAndKeySystem(dmp_reader.video_mime_type().c_str(),
                                        key_system)) {
       supported_player_configs.emplace_back(nullptr, video_filename,
@@ -76,9 +78,7 @@ TEST_P(MaximumPlayerConfigurationExplorerTest, SunnyDay) {
   }
 
   if (supported_player_configs.empty()) {
-    // TODO: Use GTEST_SKIP when we have a newer version of gtest.
-    SB_LOG(INFO) << "No supported video codec. Skip the tests.";
-    return;
+    GTEST_SKIP() << "No supported video codec.";
   }
 
   // The test only ensures the explorer doesn't crash and can get result, but
@@ -97,7 +97,7 @@ std::string GetTestConfigName(
   SbPlayerOutputMode output_mode = std::get<0>(config);
   const char* key_system = std::get<1>(config);
 
-  std::string name = FormatString(
+  std::string name = starboard::FormatString(
       "output_%s_key_system_%s",
       output_mode == kSbPlayerOutputModeDecodeToTexture ? "decode_to_texture"
                                                         : "punch_out",
@@ -108,12 +108,11 @@ std::string GetTestConfigName(
   return name;
 }
 
-INSTANTIATE_TEST_CASE_P(MaximumPlayerConfigurationExplorerTests,
-                        MaximumPlayerConfigurationExplorerTest,
-                        Combine(ValuesIn(GetPlayerOutputModes()),
-                                ValuesIn(GetKeySystems())),
-                        GetTestConfigName);
+INSTANTIATE_TEST_SUITE_P(MaximumPlayerConfigurationExplorerTests,
+                         MaximumPlayerConfigurationExplorerTest,
+                         Combine(ValuesIn(GetPlayerOutputModes()),
+                                 ValuesIn(GetKeySystems())),
+                         GetTestConfigName);
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

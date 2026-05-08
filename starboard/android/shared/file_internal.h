@@ -15,12 +15,15 @@
 #ifndef STARBOARD_ANDROID_SHARED_FILE_INTERNAL_H_
 #define STARBOARD_ANDROID_SHARED_FILE_INTERNAL_H_
 
-#include <errno.h>
-
 #include <android/asset_manager.h>
+#include <errno.h>
+#include <jni.h>
 
-#include "starboard/file.h"
+#include <string>
+
+#include "starboard/android/shared/starboard_bridge.h"
 #include "starboard/shared/internal_only.h"
+#include "third_party/jni_zero/jni_zero.h"
 
 struct SbFilePrivate {
   // Note: Only one of these two fields will be valid for any given file.
@@ -35,23 +38,23 @@ struct SbFilePrivate {
 };
 
 namespace starboard {
-namespace android {
-namespace shared {
 
 extern const char* g_app_assets_dir;
 extern const char* g_app_files_dir;
 extern const char* g_app_cache_dir;
 extern const char* g_app_lib_dir;
 
-void SbFileAndroidInitialize();
+void SbFileAndroidInitialize(
+    jni_zero::ScopedJavaGlobalRef<jobject> asset_manager,
+    const std::string& files_dir,
+    const std::string& cache_dir,
+    const std::string& native_library_dir);
 void SbFileAndroidTeardown();
 
 bool IsAndroidAssetPath(const char* path);
 AAsset* OpenAndroidAsset(const char* path);
 AAssetDir* OpenAndroidAssetDir(const char* path);
 
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard
 
 #endif  // STARBOARD_ANDROID_SHARED_FILE_INTERNAL_H_

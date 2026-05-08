@@ -15,27 +15,24 @@
 #ifndef STARBOARD_SHARED_FFMPEG_FFMPEG_AUDIO_DECODER_H_
 #define STARBOARD_SHARED_FFMPEG_FFMPEG_AUDIO_DECODER_H_
 
+#include <memory>
+
 #include "starboard/media.h"
 #include "starboard/shared/internal_only.h"
 #include "starboard/shared/starboard/media/media_util.h"
 #include "starboard/shared/starboard/player/filter/audio_decoder_internal.h"
+#include "starboard/shared/starboard/player/job_queue.h"
 
 namespace starboard {
-namespace shared {
-namespace ffmpeg {
 
-class AudioDecoder : public starboard::player::filter::AudioDecoder {
+class FfmpegAudioDecoder : public AudioDecoder {
  public:
-  typedef starboard::media::AudioStreamInfo AudioStreamInfo;
-
   // Create an audio decoder for the currently loaded ffmpeg library.
-  static AudioDecoder* Create(const AudioStreamInfo& audio_stream_info);
-  // Returns true if the audio decoder is initialized successfully.
-  virtual bool is_valid() const = 0;
+  static std::unique_ptr<FfmpegAudioDecoder> Create(
+      JobQueue* job_queue,
+      const AudioStreamInfo& audio_stream_info);
 };
 
-}  // namespace ffmpeg
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_FFMPEG_FFMPEG_AUDIO_DECODER_H_

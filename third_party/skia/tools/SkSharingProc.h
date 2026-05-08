@@ -14,6 +14,7 @@
 #include "include/core/SkData.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkSerialProcs.h"
+#include "src/core/SkTHash.h"
 
 /**
  * This serial proc serializes each image it encounters only once, using their uniqueId as the
@@ -38,19 +39,21 @@ struct SkSharingSerialContext {
 
     // A map from uniqueID of images referenced by commands to non-texture images
     // collected at the end of each frame.
-    std::unordered_map<uint32_t, sk_sp<SkImage>> fNonTexMap;
+    skia_private::THashMap<uint32_t, sk_sp<SkImage>> fNonTexMap;
+    GrDirectContext* fDirectContext;
 
     // Collects any non-texture images referenced by the picture and stores non-texture copies
     // in the fNonTexMap of the provided SkSharingContext
     static void collectNonTextureImagesFromPicture(
         const SkPicture* pic, SkSharingSerialContext* sharingCtx);
 
+    void setDirectContext(GrDirectContext* ctx);
 
     // --- Data and serialization function for regular use --- //
 
     // A map from the ids from SkImage::uniqueID() to ids used within the file
     // The keys are ids of original images, not of non-texture copies
-    std::unordered_map<uint32_t, uint32_t> fImageMap;
+    skia_private::THashMap<uint32_t, int> fImageMap;
 
     // A serial proc that shares images between subpictures
     // To use this, create an instance of SkSerialProcs and populate it this way.

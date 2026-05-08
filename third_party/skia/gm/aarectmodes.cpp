@@ -10,7 +10,6 @@
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
@@ -22,6 +21,7 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
+#include "src/core/SkColorPriv.h"
 
 static void test4(SkCanvas* canvas) {
     SkPaint paint;
@@ -140,7 +140,7 @@ DEF_SIMPLE_GM(aarectmodes, canvas, 640, 480) {
             for (int alpha = 0; alpha < 4; ++alpha) {
                 canvas->save();
                 canvas->save();
-                for (size_t i = 0; i < SK_ARRAY_COUNT(gModes); ++i) {
+                for (size_t i = 0; i < std::size(gModes); ++i) {
                     if (6 == i) {
                         canvas->restore();
                         canvas->translate(W * 5, 0);

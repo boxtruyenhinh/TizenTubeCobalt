@@ -18,11 +18,11 @@
 #include <string>
 #include <vector>
 
+#include "starboard/common/log.h"
 #include "starboard/elf_loader/file.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace elf_loader {
 
 namespace {
@@ -71,9 +71,6 @@ class DummyFile : public File {
   const std::string& GetName() { return name_; }
 
  private:
-  int file_offset_;
-  const char* buffer_;
-  int size_;
   std::vector<FileChunk> file_chunks_;
   int read_index_;
   std::string name_;
@@ -187,4 +184,3 @@ TEST_F(ProgramTableTest, LoadSegments) {
 
 }  // namespace
 }  // namespace elf_loader
-}  // namespace starboard

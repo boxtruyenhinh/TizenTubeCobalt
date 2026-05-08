@@ -14,48 +14,48 @@
 
 #include "starboard/elf_loader/elf_loader.h"
 
+#include <string.h>
+
 #include <vector>
 
-#include "starboard/atomic.h"
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 #include "starboard/common/paths.h"
+#include "starboard/common/scoped_timer.h"
 #include "starboard/common/time.h"
 #include "starboard/configuration_constants.h"
 #include "starboard/elf_loader/elf_loader_impl.h"
 #include "starboard/elf_loader/evergreen_config.h"
 #include "starboard/elf_loader/file_impl.h"
 #include "starboard/extension/loader_app_metrics.h"
+#include "starboard/extension/memory_mapped_file.h"
 #include "starboard/system.h"
 
-namespace starboard {
 namespace elf_loader {
+using ::starboard::CurrentMonotonicTime;
+using ::starboard::PrependContentPath;
 
-ElfLoader* ElfLoader::g_instance = NULL;
+std::atomic<ElfLoader*> ElfLoader::g_instance{NULL};
 
 ElfLoader::ElfLoader() {
-  ElfLoader* old_instance =
-      reinterpret_cast<ElfLoader*>(SbAtomicAcquire_CompareAndSwapPtr(
-          reinterpret_cast<SbAtomicPtr*>(&g_instance),
-          reinterpret_cast<SbAtomicPtr>(reinterpret_cast<void*>(NULL)),
-          reinterpret_cast<SbAtomicPtr>(this)));
+  ElfLoader* old_instance{NULL};
+  g_instance.compare_exchange_weak(old_instance, this,
+                                   std::memory_order_acquire);
   SB_DCHECK(!old_instance);
 
   impl_.reset(new ElfLoaderImpl());
 }
 
 ElfLoader::~ElfLoader() {
-  ElfLoader* old_instance =
-      reinterpret_cast<ElfLoader*>(SbAtomicAcquire_CompareAndSwapPtr(
-          reinterpret_cast<SbAtomicPtr*>(&g_instance),
-          reinterpret_cast<SbAtomicPtr>(this),
-          reinterpret_cast<SbAtomicPtr>(reinterpret_cast<void*>(NULL))));
+  ElfLoader* old_instance{this};
+  g_instance.compare_exchange_weak(old_instance, NULL,
+                                   std::memory_order_acquire);
   SB_DCHECK(old_instance);
-  SB_DCHECK(old_instance == this);
+  SB_DCHECK_EQ(old_instance, this);
 }
 
 ElfLoader* ElfLoader::Get() {
-  ElfLoader* elf_loader = reinterpret_cast<ElfLoader*>(
-      SbAtomicAcquire_LoadPtr(reinterpret_cast<SbAtomicPtr*>(&g_instance)));
+  ElfLoader* elf_loader = g_instance.load(std::memory_order_acquire);
   SB_DCHECK(elf_loader);
   return elf_loader;
 }
@@ -67,8 +67,8 @@ bool ElfLoader::Load(const std::string& library_path,
                      bool use_compression,
                      bool use_memory_mapped_file) {
   if (is_relative_path) {
-    library_path_ = common::PrependContentPath(library_path);
-    content_path_ = common::PrependContentPath(content_path);
+    library_path_ = PrependContentPath(library_path);
+    content_path_ = PrependContentPath(content_path);
   } else {
     library_path_ = library_path;
     content_path_ = content_path;
@@ -81,12 +81,10 @@ bool ElfLoader::Load(const std::string& library_path,
   EvergreenConfig::Create(library_path_.c_str(), content_path_.c_str(),
                           custom_get_extension);
   SB_LOG(INFO) << "evergreen_config: content_path=" << content_path_;
-  int64_t start_time_us = CurrentMonotonicTime();
+  starboard::ScopedTimer timer("Loading");
   bool res = impl_->Load(library_path_.c_str(), use_compression,
                          use_memory_mapped_file);
-  int64_t end_time_us = CurrentMonotonicTime();
-  int64_t elf_load_duration_us = end_time_us - start_time_us;
-  SB_LOG(INFO) << "Loading took: " << elf_load_duration_us / 1000 << " ms";
+  int64_t elf_load_duration_us = timer.Stop();
   auto metrics_extension =
       static_cast<const StarboardExtensionLoaderAppMetricsApi*>(
           SbSystemGetExtension(kStarboardExtensionLoaderAppMetricsName));
@@ -106,4 +104,3 @@ void* ElfLoader::LookupSymbol(const char* symbol) {
 }
 
 }  // namespace elf_loader
-}  // namespace starboard

@@ -17,30 +17,21 @@
 #include <unistd.h>
 
 #include "starboard/audio_sink.h"
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
-#include "starboard/directory.h"
-#include "starboard/extension/enhanced_audio.h"
 #include "starboard/shared/starboard/media/media_support_internal.h"
 #include "starboard/shared/starboard/media/mime_type.h"
 #include "starboard/shared/starboard/player/filter/player_components.h"
 #include "starboard/shared/starboard/player/filter/stub_player_components_factory.h"
 #include "starboard/shared/starboard/player/video_dmp_reader.h"
-#include "starboard/string.h"
 #include "starboard/system.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
-namespace testing {
 namespace {
 
-using ::starboard::shared::starboard::media::MimeType;
 using ::testing::AssertionFailure;
 using ::testing::AssertionResult;
 using ::testing::AssertionSuccess;
-using video_dmp::VideoDmpReader;
 
 }  // namespace
 
@@ -50,7 +41,7 @@ void StubDeallocateSampleFunc(SbPlayer player,
 
 std::string GetContentTypeFromAudioCodec(SbMediaAudioCodec audio_codec,
                                          const char* mime_attributes) {
-  SB_DCHECK(audio_codec != kSbMediaAudioCodecNone);
+  SB_DCHECK_NE(audio_codec, kSbMediaAudioCodecNone);
 
   std::string content_type;
   switch (audio_codec) {
@@ -66,11 +57,9 @@ std::string GetContentTypeFromAudioCodec(SbMediaAudioCodec audio_codec,
     case kSbMediaAudioCodecEac3:
       content_type = "audio/mp4; codecs=\"ec-3\"";
       break;
-#if SB_API_VERSION >= 15
     case kSbMediaAudioCodecIamf:
       content_type = "audio/mp4; codecs=\"iamf\"";
       break;
-#endif  // SB_API_VERSION >= 15
     default:
       SB_NOTREACHED();
   }
@@ -111,10 +100,8 @@ std::vector<const char*> GetSupportedAudioTestFiles(
                               "beneath_the_canopy_opus_stereo.dmp",
                               "beneath_the_canopy_opus_mono.dmp",
                               "heaac.dmp",
-#if SB_API_VERSION >= 15
                               "iamf_base_profile_stereo_ambisonics.dmp",
                               "iamf_simple_profile_5_1.dmp",
-#endif  // SB_API_VERSION >= 15
                               "sintel_329_ec3.dmp",
                               "sintel_381_ac3.dmp"};
 
@@ -125,7 +112,7 @@ std::vector<const char*> GetSupportedAudioTestFiles(
     audio_file_info_cache.reserve(SB_ARRAY_SIZE_INT(kFilenames));
     for (auto filename : kFilenames) {
       VideoDmpReader dmp_reader(filename, VideoDmpReader::kEnableReadOnDemand);
-      SB_DCHECK(dmp_reader.number_of_audio_buffers() > 0);
+      SB_DCHECK_GT(dmp_reader.number_of_audio_buffers(), 0U);
 
       audio_file_info_cache.push_back(
           {filename, dmp_reader.audio_codec(),
@@ -148,9 +135,10 @@ std::vector<const char*> GetSupportedAudioTestFiles(
     // Filter files of unsupported codec.
     const std::string audio_mime = GetContentTypeFromAudioCodec(
         audio_file_info.audio_codec, extra_mime_attributes);
-    const MimeType audio_mime_type(audio_mime.c_str());
-    if (!SbMediaIsAudioSupported(audio_file_info.audio_codec, &audio_mime_type,
-                                 audio_file_info.bitrate)) {
+    auto audio_mime_type = MimeType::Create(audio_mime);
+    if (!audio_mime_type ||
+        !MediaIsAudioSupported(audio_file_info.audio_codec, &*audio_mime_type,
+                               audio_file_info.bitrate)) {
       continue;
     }
 
@@ -181,7 +169,7 @@ std::vector<VideoTestParam> GetSupportedVideoTests() {
 
   for (auto filename : kFilenames) {
     VideoDmpReader dmp_reader(filename, VideoDmpReader::kEnableReadOnDemand);
-    SB_DCHECK(dmp_reader.number_of_video_buffers() > 0);
+    SB_DCHECK_GT(dmp_reader.number_of_video_buffers(), 0U);
 
     for (auto output_mode : kOutputModes) {
       if (!PlayerComponents::Factory::OutputModeSupported(
@@ -191,8 +179,8 @@ std::vector<VideoTestParam> GetSupportedVideoTests() {
 
       const auto& video_stream_info = dmp_reader.video_stream_info();
       const std::string video_mime = dmp_reader.video_mime_type();
-      const MimeType video_mime_type(video_mime.c_str());
-      // SbMediaIsVideoSupported may return false for gpu based decoder that in
+      auto video_mime_type = MimeType::Create(video_mime);
+      // MediaIsVideoSupported may return false for gpu based decoder that in
       // fact supports av1 or/and vp9 because the system can make async
       // initialization at startup.
       // To minimize probability of false negative we check result few times
@@ -202,12 +190,13 @@ std::vector<VideoTestParam> GetSupportedVideoTests() {
       bool need_to_check_with_wait = video_codec == kSbMediaVideoCodecAv1 ||
                                      video_codec == kSbMediaVideoCodecVp9;
       do {
-        if (SbMediaIsVideoSupported(
-                video_codec, video_mime.size() > 0 ? &video_mime_type : nullptr,
-                -1, -1, 8, kSbMediaPrimaryIdUnspecified,
+        if (MediaIsVideoSupported(
+                video_codec, video_mime_type ? &*video_mime_type : nullptr, -1,
+                -1, 8, kSbMediaPrimaryIdUnspecified,
                 kSbMediaTransferIdUnspecified, kSbMediaMatrixIdUnspecified,
-                video_stream_info.frame_width, video_stream_info.frame_height,
-                dmp_reader.video_bitrate(), dmp_reader.video_fps(), false)) {
+                video_stream_info.frame_size.width,
+                video_stream_info.frame_size.height, dmp_reader.video_bitrate(),
+                dmp_reader.video_fps(), false)) {
           test_params.push_back(std::make_tuple(filename, output_mode));
           break;
         } else if (need_to_check_with_wait && !decoder_has_been_checked_once) {
@@ -228,7 +217,8 @@ std::vector<VideoTestParam> GetSupportedVideoTests() {
 
 bool CreateAudioComponents(
     bool using_stub_decoder,
-    const media::AudioStreamInfo& audio_stream_info,
+    JobQueue* job_queue,
+    const AudioStreamInfo& audio_stream_info,
     std::unique_ptr<AudioDecoder>* audio_decoder,
     std::unique_ptr<AudioRendererSink>* audio_renderer_sink) {
   SB_CHECK(audio_decoder);
@@ -238,7 +228,7 @@ bool CreateAudioComponents(
   audio_decoder->reset();
 
   PlayerComponents::Factory::CreationParameters creation_parameters(
-      audio_stream_info);
+      audio_stream_info, job_queue);
 
   std::unique_ptr<PlayerComponents::Factory> factory;
   if (using_stub_decoder) {
@@ -246,10 +236,10 @@ bool CreateAudioComponents(
   } else {
     factory = PlayerComponents::Factory::Create();
   }
-  std::string error_message;
-  if (factory->CreateSubComponents(creation_parameters, audio_decoder,
-                                   audio_renderer_sink, nullptr, nullptr,
-                                   nullptr, &error_message)) {
+  auto sub_components = factory->CreateSubComponents(creation_parameters);
+  if (sub_components) {
+    *audio_decoder = std::move(sub_components->audio.decoder);
+    *audio_renderer_sink = std::move(sub_components->audio.renderer_sink);
     SB_CHECK(*audio_decoder);
     return true;
   }
@@ -268,8 +258,8 @@ AssertionResult AlmostEqualTime(int64_t time1, int64_t time2) {
          << "time " << time1 << " doesn't match with time " << time2;
 }
 
-media::VideoStreamInfo CreateVideoStreamInfo(SbMediaVideoCodec codec) {
-  shared::starboard::media::VideoStreamInfo video_stream_info = {};
+VideoStreamInfo CreateVideoStreamInfo(SbMediaVideoCodec codec) {
+  VideoStreamInfo video_stream_info = {};
 
   video_stream_info.codec = codec;
   video_stream_info.mime = "";
@@ -281,23 +271,17 @@ media::VideoStreamInfo CreateVideoStreamInfo(SbMediaVideoCodec codec) {
   video_stream_info.color_metadata.matrix = kSbMediaMatrixIdBt709;
   video_stream_info.color_metadata.range = kSbMediaRangeIdLimited;
 
-  video_stream_info.frame_width = 1920;
-  video_stream_info.frame_height = 1080;
+  video_stream_info.frame_size = {1920, 1080};
 
   return video_stream_info;
 }
 
 bool IsPartialAudioSupported() {
-#if SB_API_VERSION >= 15
   return true;
-#else   // SB_API_VERSION >= 15
-  return SbSystemGetExtension(kCobaltExtensionEnhancedAudioName) != nullptr;
-#endif  // SB_API_VERSION >= 15
 }
 
-scoped_refptr<InputBuffer> GetAudioInputBuffer(
-    video_dmp::VideoDmpReader* dmp_reader,
-    size_t index) {
+scoped_refptr<InputBuffer> GetAudioInputBuffer(VideoDmpReader* dmp_reader,
+                                               size_t index) {
   SB_DCHECK(dmp_reader);
 
   auto player_sample_info =
@@ -307,47 +291,20 @@ scoped_refptr<InputBuffer> GetAudioInputBuffer(
 }
 
 scoped_refptr<InputBuffer> GetAudioInputBuffer(
-    video_dmp::VideoDmpReader* dmp_reader,
+    VideoDmpReader* dmp_reader,
     size_t index,
     int64_t discarded_duration_from_front,
     int64_t discarded_duration_from_back) {
   SB_DCHECK(dmp_reader);
   auto player_sample_info =
       dmp_reader->GetPlayerSampleInfo(kSbMediaTypeAudio, index);
-#if SB_API_VERSION >= 15
   player_sample_info.audio_sample_info.discarded_duration_from_front =
       discarded_duration_from_front;
   player_sample_info.audio_sample_info.discarded_duration_from_back =
       discarded_duration_from_back;
   auto input_buffer = new InputBuffer(StubDeallocateSampleFunc, nullptr,
                                       nullptr, player_sample_info);
-#else   // SB_API_VERSION >= 15
-  media::AudioSampleInfo audio_sample_info(
-      player_sample_info.audio_sample_info);
-  audio_sample_info.discarded_duration_from_front =
-      discarded_duration_from_front;
-  audio_sample_info.discarded_duration_from_back = discarded_duration_from_back;
-
-  CobaltExtensionEnhancedAudioPlayerSampleInfo enhanced_audio_sample_info;
-  enhanced_audio_sample_info.type = player_sample_info.type;
-  enhanced_audio_sample_info.buffer = player_sample_info.buffer;
-  enhanced_audio_sample_info.buffer_size = player_sample_info.buffer_size;
-  enhanced_audio_sample_info.timestamp = player_sample_info.timestamp;
-  enhanced_audio_sample_info.side_data = player_sample_info.side_data;
-  enhanced_audio_sample_info.side_data_count =
-      player_sample_info.side_data_count;
-  audio_sample_info.ConvertTo(&enhanced_audio_sample_info.audio_sample_info);
-  enhanced_audio_sample_info.drm_info = player_sample_info.drm_info;
-
-  auto input_buffer = new InputBuffer(StubDeallocateSampleFunc, nullptr,
-                                      nullptr, enhanced_audio_sample_info);
-#endif  // SB_API_VERSION >= 15
   return input_buffer;
 }
 
-}  // namespace testing
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

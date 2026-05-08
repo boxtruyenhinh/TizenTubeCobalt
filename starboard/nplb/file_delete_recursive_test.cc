@@ -14,19 +14,17 @@
 
 #include <sys/stat.h>
 
+#include <cstddef>
 #include <string>
 
 #include "starboard/common/file.h"
 #include "starboard/configuration_constants.h"
-#include "starboard/directory.h"
-#include "starboard/file.h"
 #include "starboard/nplb/file_helpers.h"
-#include "starboard/types.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
+using ::starboard::SbFileDeleteRecursive;
 
 const size_t kDirectoryCount = 3;
 const size_t kFileCount = 3;
@@ -44,16 +42,6 @@ const char* kFiles[kFileCount] = {
     "test1/file2",
     "test2/file3",
 };
-
-bool FileExists(const char* path) {
-  struct stat info;
-  return stat(path, &info) == 0;
-}
-
-bool DirectoryExists(const char* path) {
-  struct stat info;
-  return stat(path, &info) == 0 && S_ISDIR(info.st_mode);
-}
 
 TEST(SbFileDeleteRecursiveTest, SunnyDayDeleteExistingPath) {
   std::string path;
@@ -128,4 +116,3 @@ TEST(SbFileDeleteRecursiveTest, RainyDayNonExistentPathErrors) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

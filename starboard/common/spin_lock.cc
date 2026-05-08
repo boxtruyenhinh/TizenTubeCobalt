@@ -12,22 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <sched.h>
-
 #include "starboard/common/spin_lock.h"
+
+#include <sched.h>
 
 namespace starboard {
 
-void SpinLockAcquire(SbAtomic32* atomic) {
-  while (SbAtomicAcquire_CompareAndSwap(atomic, kSpinLockStateReleased,
-                                        kSpinLockStateAcquired) ==
-         kSpinLockStateAcquired) {
+void SpinLockAcquire(std::atomic<int32_t>* atomic) {
+  int expected{kSpinLockStateReleased};
+  while (!atomic->compare_exchange_weak(expected, kSpinLockStateAcquired,
+                                        std::memory_order_acquire)) {
+    expected = kSpinLockStateReleased;
     sched_yield();
   }
 }
 
-void SpinLockRelease(SbAtomic32* atomic) {
-  SbAtomicRelease_Store(atomic, kSpinLockStateReleased);
+void SpinLockRelease(std::atomic<int32_t>* atomic) {
+  atomic->store(kSpinLockStateReleased, std::memory_order_release);
 }
 
 SpinLock::SpinLock() : atomic_(kSpinLockStateReleased) {}
@@ -42,7 +43,7 @@ void SpinLock::Release() {
   SpinLockRelease(&atomic_);
 }
 
-ScopedSpinLock::ScopedSpinLock(SbAtomic32* atomic) : atomic_(atomic) {
+ScopedSpinLock::ScopedSpinLock(std::atomic<int32_t>* atomic) : atomic_(atomic) {
   SpinLockAcquire(atomic_);
 }
 

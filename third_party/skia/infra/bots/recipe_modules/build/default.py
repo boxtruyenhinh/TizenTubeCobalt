@@ -6,17 +6,7 @@
 from . import util
 
 
-def build_command_buffer(api, chrome_dir, skia_dir, out):
-  api.run(api.python, 'build command_buffer',
-      script=skia_dir.join('tools', 'build_command_buffer.py'),
-      args=[
-        '--chrome-dir', chrome_dir,
-        '--output-dir', out,
-        '--extra-gn-args', 'mac_sdk_min="10.13"',
-        '--no-sync', '--no-hooks', '--make-output-dir'])
-
-
-def compile_swiftshader(api, extra_tokens, swiftshader_root, cc, cxx, out):
+def compile_swiftshader(api, extra_tokens, swiftshader_root, ninja_root, cc, cxx, out):
   """Build SwiftShader with CMake.
 
   Building SwiftShader works differently from any other Skia third_party lib.
@@ -24,6 +14,7 @@ def compile_swiftshader(api, extra_tokens, swiftshader_root, cc, cxx, out):
 
   Args:
     swiftshader_root: root of the SwiftShader checkout.
+    ninja_root: A folder containing a ninja binary
     cc, cxx: compiler binaries to use
     out: target directory for libvk_swiftshader.so
   """
@@ -32,11 +23,11 @@ def compile_swiftshader(api, extra_tokens, swiftshader_root, cc, cxx, out):
       '-DSWIFTSHADER_WARNINGS_AS_ERRORS=OFF',
       '-DREACTOR_ENABLE_MEMORY_SANITIZER_INSTRUMENTATION=OFF',  # Way too slow.
   ]
-  cmake_bin = str(api.vars.workdir.join('cmake_linux', 'bin'))
+  cmake_bin = str(api.vars.workdir.joinpath('cmake_linux', 'bin'))
   env = {
       'CC': cc,
       'CXX': cxx,
-      'PATH': '%%(PATH)s:%s' % cmake_bin,
+      'PATH': '%s:%%(PATH)s:%s' % (ninja_root, cmake_bin),
       # We arrange our MSAN/TSAN prebuilts a little differently than
       # SwiftShader's CMakeLists.txt expects, so we'll just keep our custom
       # setup (everything mentioning libcxx below) and point SwiftShader's
@@ -51,7 +42,7 @@ def compile_swiftshader(api, extra_tokens, swiftshader_root, cc, cxx, out):
 
   if san:
     short,full = san
-    clang_linux = str(api.vars.workdir.join('clang_linux'))
+    clang_linux = str(api.vars.workdir.joinpath('clang_linux'))
     libcxx = clang_linux + '/' + short
     cflags = ' '.join([
       '-fsanitize=' + full,
@@ -78,84 +69,64 @@ def compile_swiftshader(api, extra_tokens, swiftshader_root, cc, cxx, out):
     api.run(api.step, 'swiftshader ninja', cmd=['ninja', '-C', out, 'vk_swiftshader'])
 
 
-def compile_fn(api, checkout_root, out_dir):
-  skia_dir      = checkout_root.join('skia')
+def get_compile_flags(api, checkout_root, out_dir, workdir):
+  skia_dir      = checkout_root.joinpath('skia')
   compiler      = api.vars.builder_cfg.get('compiler',      '')
   configuration = api.vars.builder_cfg.get('configuration', '')
   extra_tokens  = api.vars.extra_tokens
   os            = api.vars.builder_cfg.get('os',            '')
   target_arch   = api.vars.builder_cfg.get('target_arch',   '')
 
-  clang_linux      = str(api.vars.workdir.join('clang_linux'))
-  win_toolchain    = str(api.vars.workdir.join('win_toolchain'))
+  clang_linux      = str(workdir.joinpath('clang_linux'))
+  if 'MSAN' in extra_tokens:
+    clang_linux = str(workdir.joinpath('clang_ubuntu_noble'))
+  win_toolchain    = str(workdir.joinpath('win_toolchain'))
+  dwritecore       = str(workdir.joinpath('dwritecore'))
 
   cc, cxx, ccache = None, None, None
   extra_cflags = []
   extra_ldflags = []
-  args = {'werror': 'true'}
+  args = {
+      'is_trivial_abi': 'true',
+      'link_pool_depth': '2',
+      'werror': 'true',
+  }
   env = {}
 
-  if os == 'Mac':
-    # XCode build is listed in parentheses after the version at
-    # https://developer.apple.com/news/releases/, or on Wikipedia here:
-    # https://en.wikipedia.org/wiki/Xcode#Version_comparison_table
-    # Use lowercase letters.
-    # https://chrome-infra-packages.appspot.com/p/infra_internal/ios/xcode
-    XCODE_BUILD_VERSION = '12c33'
-    if compiler == 'Xcode11.4.1':
-      XCODE_BUILD_VERSION = '11e503a'
+  if os == 'Mac' or os == 'Mac10.15.7':
     extra_cflags.append(
-        '-DREBUILD_IF_CHANGED_xcode_build_version=%s' % XCODE_BUILD_VERSION)
-    mac_toolchain_cmd = api.vars.workdir.join(
-        'mac_toolchain', 'mac_toolchain')
-    xcode_app_path = api.vars.cache_dir.join('Xcode.app')
-    # Copied from
-    # https://chromium.googlesource.com/chromium/tools/build/+/e19b7d9390e2bb438b566515b141ed2b9ed2c7c2/scripts/slave/recipe_modules/ios/api.py#322
-    with api.step.nest('ensure xcode') as step_result:
-      step_result.presentation.step_text = (
-          'Ensuring Xcode version %s in %s' % (
-              XCODE_BUILD_VERSION, xcode_app_path))
-      install_xcode_cmd = [
-          mac_toolchain_cmd, 'install',
-          # "ios" is needed for simulator builds
-          # (Build-Mac-Clang-x64-Release-iOS).
-          '-kind', 'ios',
-          '-xcode-version', XCODE_BUILD_VERSION,
-          '-output-dir', xcode_app_path,
-      ]
-      api.step('install xcode', install_xcode_cmd)
-      api.step('select xcode', [
-          'sudo', 'xcode-select', '-switch', xcode_app_path])
-      if 'iOS' in extra_tokens:
-        # Our current min-spec for Skia is iOS 11
-        env['IPHONEOS_DEPLOYMENT_TARGET'] = '11.0'
-        args['ios_min_target'] = '"11.0"'
-      else:
-        # We have some bots on 10.13.
-        env['MACOSX_DEPLOYMENT_TARGET'] = '10.13'
-
-  if 'CheckGeneratedFiles' in extra_tokens:
-    compiler = 'Clang'
-    args['skia_compile_processors'] = 'true'
-    args['skia_compile_sksl_tests'] = 'true'
-    args['skia_generate_workarounds'] = 'true'
+        '-DREBUILD_IF_CHANGED_xcode_build_version=%s' % api.xcode.version)
+    if 'iOS12' in extra_tokens:
+      # Ganesh has a lower minimum iOS version than Graphite but there are dedicated jobs that
+      # test with the lower SDK.
+      env['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+      args['ios_min_target'] = '"12.0"'
+    elif 'iOS18' in extra_tokens:
+      env['IPHONEOS_DEPLOYMENT_TARGET'] = '18.2'
+      args['ios_min_target'] = '"18.0"'
+    elif 'iOS' in extra_tokens:
+      env['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      args['ios_min_target'] = '"13.0"'
+    else:
+      # We have some machines on 10.15.
+      env['MACOSX_DEPLOYMENT_TARGET'] = '10.15'
 
   # ccache + clang-tidy.sh chokes on the argument list.
   if (api.vars.is_linux or os == 'Mac' or os == 'Mac10.15.5' or os == 'Mac10.15.7') and 'Tidy' not in extra_tokens:
     if api.vars.is_linux:
-      ccache = api.vars.workdir.join('ccache_linux', 'bin', 'ccache')
+      ccache = workdir.joinpath('ccache_linux', 'bin', 'ccache')
       # As of 2020-02-07, the sum of each Debian10-Clang-x86
       # non-flutter/android/chromebook build takes less than 75G cache space.
       env['CCACHE_MAXSIZE'] = '75G'
     else:
-      ccache = api.vars.workdir.join('ccache_mac', 'bin', 'ccache')
+      ccache = workdir.joinpath('ccache_mac', 'bin', 'ccache')
       # As of 2020-02-10, the sum of each Build-Mac-Clang- non-android build
       # takes ~30G cache space.
       env['CCACHE_MAXSIZE'] = '50G'
 
     args['cc_wrapper'] = '"%s"' % ccache
 
-    env['CCACHE_DIR'] = api.vars.cache_dir.join('ccache')
+    env['CCACHE_DIR'] = workdir.joinpath('cache', 'ccache')
     env['CCACHE_MAXFILES'] = '0'
     # Compilers are unpacked from cipd with bogus timestamps, only contribute
     # compiler content to hashes. If Ninja ever uses absolute paths to changing
@@ -175,15 +146,24 @@ def compile_fn(api, checkout_root, out_dir):
 
   elif compiler == 'Clang':
     cc, cxx = 'clang', 'clang++'
+  elif compiler == 'GCC':
+    cc, cxx = 'gcc', 'g++'
+    # Newer GCC includes tons and tons of debugging symbols. This seems to
+    # negatively affect our bots (potentially only in combination with other
+    # bugs in Swarming or recipe code). Use g1 to reduce it a bit.
+    extra_cflags.append('-g1')
 
   if 'Tidy' in extra_tokens:
     # Swap in clang-tidy.sh for clang++, but update PATH so it can find clang++.
-    cxx = skia_dir.join("tools/clang-tidy.sh")
+    cxx = skia_dir.joinpath("tools/clang-tidy.sh")
     env['PATH'] = '%s:%%(PATH)s' % (clang_linux + '/bin')
     # Increase ClangTidy code coverage by enabling features.
     args.update({
       'skia_enable_fontmgr_empty':     'true',
+      'skia_enable_graphite':          'true',
       'skia_enable_pdf':               'true',
+      'skia_use_cpp20':                'true',
+      'skia_use_dawn':                 'true',
       'skia_use_expat':                'true',
       'skia_use_freetype':             'true',
       'skia_use_vulkan':               'true',
@@ -199,6 +179,15 @@ def compile_fn(api, checkout_root, out_dir):
 
   if compiler != 'MSVC' and configuration == 'Debug':
     extra_cflags.append('-O1')
+  if compiler != 'MSVC' and configuration == 'OptimizeForSize':
+    # build IDs are required for Bloaty if we want to use strip to ignore debug symbols.
+    # https://github.com/google/bloaty/blob/master/doc/using.md#debugging-stripped-binaries
+    extra_ldflags.append('-Wl,--build-id=sha1')
+    args.update({
+      'skia_use_runtime_icu': 'true',
+      'skia_enable_optimize_size': 'true',
+      'skia_use_jpeg_gainmaps': 'false',
+    })
 
   if 'Exceptions' in extra_tokens:
     extra_cflags.append('/EHsc')
@@ -216,50 +205,58 @@ def compile_fn(api, checkout_root, out_dir):
     extra_ldflags.append('-L' + clang_linux + '/msan')
   elif 'TSAN' in extra_tokens:
     extra_ldflags.append('-L' + clang_linux + '/tsan')
-  elif api.vars.is_linux:
+  elif api.vars.is_linux and compiler == 'Clang':
     extra_ldflags.append('-L' + clang_linux + '/lib')
 
   if configuration != 'Debug':
     args['is_debug'] = 'false'
   if 'Dawn' in extra_tokens:
-    args['skia_use_dawn'] = 'true'
-    args['skia_use_gl'] = 'false'
-    # Dawn imports jinja2, which imports markupsafe. Along with DEPS, make it
-    # importable.
-    env['PYTHONPATH'] = api.path.pathsep.join([
-        str(skia_dir.join('third_party', 'externals')), '%%(PYTHONPATH)s'])
+    util.set_dawn_args_and_env(args, env, api, extra_tokens, skia_dir)
+    args['skia_use_cpp20'] = 'true'
   if 'ANGLE' in extra_tokens:
     args['skia_use_angle'] = 'true'
+    args['skia_use_cpp20'] = 'true'
   if 'SwiftShader' in extra_tokens:
-    swiftshader_root = skia_dir.join('third_party', 'externals', 'swiftshader')
-    swiftshader_out = out_dir.join('swiftshader_out')
-    compile_swiftshader(api, extra_tokens, swiftshader_root, cc, cxx, swiftshader_out)
+    swiftshader_root = skia_dir.joinpath('third_party', 'externals', 'swiftshader')
+    # Swiftshader will need to make ninja be on the path
+    ninja_root = skia_dir.joinpath('third_party', 'ninja')
+    swiftshader_out = out_dir.joinpath('swiftshader_out')
+    compile_swiftshader(api, extra_tokens, swiftshader_root, ninja_root, cc, cxx, swiftshader_out)
     args['skia_use_vulkan'] = 'true'
     extra_cflags.extend(['-DSK_GPU_TOOLS_VK_LIBRARY_NAME=%s' %
-        api.vars.swarming_out_dir.join('swiftshader_out', 'libvk_swiftshader.so'),
+        api.vars.swarming_out_dir.joinpath('swiftshader_out', 'libvk_swiftshader.so'),
     ])
-  if 'CommandBuffer' in extra_tokens:
-    # CommandBuffer runs against GLES version of CommandBuffer also, so
-    # include both.
-    args.update({
-      'skia_gl_standard': '""',
-    })
-    chrome_dir = checkout_root
-    api.run.run_once(build_command_buffer, api, chrome_dir, skia_dir, out_dir)
   if 'MSAN' in extra_tokens:
     args['skia_use_fontconfig'] = 'false'
   if 'ASAN' in extra_tokens:
     args['skia_enable_spirv_validation'] = 'false'
+  if 'NoPrecompile' in extra_tokens:
+    args['skia_enable_precompile'] = 'false'
   if 'Graphite' in extra_tokens:
     args['skia_enable_graphite'] = 'true'
-    args['skia_use_metal'] = 'true'
-    if 'NoGpu' in extra_tokens:
-      args['skia_enable_gpu'] = 'false'
+  if 'Vello' in extra_tokens:
+    args['skia_enable_vello_shaders'] = 'true'
+  if 'Fontations' in extra_tokens:
+    args['skia_use_fontations'] = 'true'
+    args['skia_use_freetype'] = 'true' # we compare with freetype in tests
+    args['skia_use_system_freetype2'] = 'false'
+  if 'RustPNG' in extra_tokens:
+    args['skia_use_rust_png_decode'] = 'true'
+    args['skia_use_rust_png_encode'] = 'true'
+    args['skia_use_libpng_decode'] = 'false'
+    # TODO(b/356875275) set skia_use_libpng_encode to false also
+  if 'FreeType' in extra_tokens:
+    args['skia_use_freetype'] = 'true'
+    args['skia_use_system_freetype2'] = 'false'
+    extra_cflags.extend(['-DSK_USE_FREETYPE_EMBOLDEN'])
+
+  if 'NoGPU' in extra_tokens:
+    args['skia_enable_ganesh'] = 'false'
   if 'NoDEPS' in extra_tokens:
     args.update({
       'is_official_build':             'true',
       'skia_enable_fontmgr_empty':     'true',
-      'skia_enable_gpu':               'true',
+      'skia_enable_ganesh':            'true',
 
       'skia_enable_pdf':               'false',
       'skia_use_expat':                'false',
@@ -273,11 +270,21 @@ def compile_fn(api, checkout_root, out_dir):
       'skia_use_libwebp_decode':       'false',
       'skia_use_libwebp_encode':       'false',
       'skia_use_vulkan':               'false',
+      'skia_use_wuffs':                'false',
       'skia_use_zlib':                 'false',
     })
+  elif configuration != 'OptimizeForSize':
+    args.update({
+      'skia_use_client_icu': 'true',
+      'skia_use_libgrapheme': 'true',
+    })
+
+  if 'Fontations' in extra_tokens:
+    args['skia_use_icu4x'] = 'true'
+
   if 'Shared' in extra_tokens:
     args['is_component_build'] = 'true'
-  if 'Vulkan' in extra_tokens and not 'Android' in extra_tokens:
+  if 'Vulkan' in extra_tokens and not 'Android' in extra_tokens and not 'Dawn' in extra_tokens:
     args['skia_use_vulkan'] = 'true'
     args['skia_enable_vulkan_debug_layers'] = 'true'
     # When running TSAN with Vulkan on NVidia, we experienced some timeouts. We found
@@ -286,21 +293,21 @@ def compile_fn(api, checkout_root, out_dir):
       args['skia_use_gl'] = 'true'
     else:
       args['skia_use_gl'] = 'false'
-  if 'Direct3D' in extra_tokens:
+  if 'Direct3D' in extra_tokens and not 'Dawn' in extra_tokens:
     args['skia_use_direct3d'] = 'true'
     args['skia_use_gl'] = 'false'
-  if 'Metal' in extra_tokens:
+  if 'Metal' in extra_tokens and not 'Dawn' in extra_tokens:
     args['skia_use_metal'] = 'true'
     args['skia_use_gl'] = 'false'
-  if 'iOS' in extra_tokens:
+  if 'iOS' in extra_tokens or 'iOS18' in extra_tokens:
     # Bots use Chromium signing cert.
-    args['skia_ios_identity'] = '".*GS9WA.*"'
+    args['skia_ios_identity'] = '".*83FNP.*"'
     # Get mobileprovision via the CIPD package.
-    args['skia_ios_profile'] = '"%s"' % api.vars.workdir.join(
+    args['skia_ios_profile'] = '"%s"' % workdir.joinpath(
         'provisioning_profile_ios',
-        'Upstream_Testing_Provisioning_Profile.mobileprovision')
+        'Upstream_Com_Testing_Provisioning_Profile.mobileprovision')
   if compiler == 'Clang' and 'Win' in os:
-    args['clang_win'] = '"%s"' % api.vars.workdir.join('clang_win')
+    args['clang_win'] = '"%s"' % workdir.joinpath('clang_win')
     extra_cflags.append('-DPLACEHOLDER_clang_win_version=%s' %
                         api.run.asset_version('clang_win', skia_dir))
 
@@ -318,43 +325,69 @@ def compile_fn(api, checkout_root, out_dir):
   if 'Wuffs' in extra_tokens:
     args['skia_use_wuffs'] = 'true'
 
+  if 'AVIF' in extra_tokens:
+    args['skia_use_libavif'] = 'true'
+
   for (k,v) in {
     'cc':  cc,
     'cxx': cxx,
     'sanitize': sanitize,
     'target_cpu': target_arch,
-    'target_os': 'ios' if 'iOS' in extra_tokens else '',
+    'target_os': 'ios' if ('iOS' in extra_tokens or 'iOS18' in extra_tokens) else '',
     'win_sdk': win_toolchain + '/win_sdk' if 'Win' in os else '',
     'win_vc': win_toolchain + '/VC' if 'Win' in os else '',
+    'skia_dwritecore_sdk': dwritecore if 'DWriteCore' in extra_tokens else '',
   }.items():
     if v:
       args[k] = '"%s"' % v
   if extra_cflags:
-    args['extra_cflags'] = repr(extra_cflags).replace("'", '"')
+    args['extra_cflags'] = extra_cflags
   if extra_ldflags:
-    args['extra_ldflags'] = repr(extra_ldflags).replace("'", '"')
+    args['extra_ldflags'] = extra_ldflags
 
-  gn_args = ' '.join('%s=%s' % (k,v) for (k,v) in sorted(args.items()))
-  gn = skia_dir.join('bin', 'gn')
+  return args, env, ccache
+
+
+def finalize_gn_flags(args):
+  if args.get('extra_cflags'):
+    args['extra_cflags'] = repr(args['extra_cflags']).replace("'", '"')
+  if args.get('extra_ldflags'):
+    args['extra_ldflags'] = repr(args['extra_ldflags']).replace("'", '"')
+  return ' '.join('%s=%s' % (k,v) for (k,v) in sorted(args.items()))
+
+
+def compile_fn(api, checkout_root, out_dir):
+  skia_dir      = checkout_root.joinpath('skia')
+  extra_tokens  = api.vars.extra_tokens
 
   with api.context(cwd=skia_dir):
-    api.run(api.python,
-            'fetch-gn',
-            script=skia_dir.join('bin', 'fetch-gn'),
+    api.run(api.step, 'fetch-gn',
+            cmd=['python3', skia_dir.joinpath('bin', 'fetch-gn')],
             infra_step=True)
-    if 'CheckGeneratedFiles' in extra_tokens:
-      env['PATH'] = '%s:%%(PATH)s' % skia_dir.join('bin')
-      api.run(api.python,
-              'fetch-clang-format',
-              script=skia_dir.join('bin', 'fetch-clang-format'),
-              infra_step=True)
 
+    api.run(api.step, 'fetch-ninja',
+            cmd=['python3', skia_dir.joinpath('bin', 'fetch-ninja')],
+            infra_step=True)
+
+  if api.vars.builder_cfg.get('os', '') in ('Mac', 'Mac10.15.7'):
+    api.xcode.install()
+
+  workdir = api.path.start_dir
+  args, env, ccache = get_compile_flags(api, checkout_root, out_dir, workdir)
+  gn_args = finalize_gn_flags(args)
+  gn = skia_dir.joinpath('bin', 'gn')
+  ninja = skia_dir.joinpath('third_party', 'ninja', 'ninja')
+
+  with api.context(cwd=skia_dir):
     with api.env(env):
       if ccache:
         api.run(api.step, 'ccache stats-start', cmd=[ccache, '-s'])
       api.run(api.step, 'gn gen',
               cmd=[gn, 'gen', out_dir, '--args=' + gn_args])
-      api.run(api.step, 'ninja', cmd=['ninja', '-C', out_dir])
+      if 'Fontations' in extra_tokens:
+        api.run(api.step, 'gn clean',
+              cmd=[gn, 'clean', out_dir])
+      api.run(api.step, 'ninja', cmd=[ninja, '-C', out_dir])
       if ccache:
         api.run(api.step, 'ccache stats-end', cmd=[ccache, '-s'])
 
@@ -363,12 +396,16 @@ def copy_build_products(api, src, dst):
   util.copy_listed_files(api, src, dst, util.DEFAULT_BUILD_PRODUCTS)
   extra_tokens  = api.vars.extra_tokens
   os            = api.vars.builder_cfg.get('os', '')
+  configuration = api.vars.builder_cfg.get('configuration', '')
 
   if 'SwiftShader' in extra_tokens:
     util.copy_listed_files(api,
-        src.join('swiftshader_out'),
-        api.vars.swarming_out_dir.join('swiftshader_out'),
+        src.joinpath('swiftshader_out'),
+        api.vars.swarming_out_dir.joinpath('swiftshader_out'),
         util.DEFAULT_BUILD_PRODUCTS)
+
+  if configuration == 'OptimizeForSize':
+    util.copy_listed_files(api, src, dst, ['skottie_tool_cpu', 'skottie_tool_gpu'])
 
   if os == 'Mac' and any('SAN' in t for t in extra_tokens):
     # The XSAN dylibs are in
@@ -376,12 +413,13 @@ def copy_build_products(api, src, dst):
     # /clang/11.0.0/lib/darwin, where 11.0.0 could change in future versions.
     xcode_clang_ver_dirs = api.file.listdir(
         'find XCode Clang version',
-        api.vars.cache_dir.join(
+        api.vars.cache_dir.joinpath(
             'Xcode.app', 'Contents', 'Developer', 'Toolchains',
             'XcodeDefault.xctoolchain', 'usr', 'lib', 'clang'),
         test_data=['11.0.0'])
-    assert len(xcode_clang_ver_dirs) == 1
-    dylib_dir = xcode_clang_ver_dirs[0].join('lib', 'darwin')
+    # Allow both clang/16 and clang/16.0.0, so long as they are equivalent.
+    assert len({api.path.realpath(d) for d in xcode_clang_ver_dirs}) == 1
+    dylib_dir = xcode_clang_ver_dirs[0].joinpath('lib', 'darwin')
     dylibs = api.file.glob_paths('find xSAN dylibs', dylib_dir,
                                  'libclang_rt.*san_osx_dynamic.dylib',
                                  test_data=[

@@ -17,19 +17,20 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <queue>
 
-#include "starboard/android/shared/audio_decoder.h"
 #include "starboard/android/shared/audio_track_bridge.h"
 #include "starboard/android/shared/drm_system.h"
-#include "starboard/atomic.h"
-#include "starboard/common/mutex.h"
+#include "starboard/common/pass_key.h"
 #include "starboard/common/ref_counted.h"
+#include "starboard/common/result.h"
 #include "starboard/drm.h"
 #include "starboard/media.h"
 #include "starboard/shared/internal_only.h"
 #include "starboard/shared/starboard/media/media_util.h"
 #include "starboard/shared/starboard/player/decoded_audio_internal.h"
+#include "starboard/shared/starboard/player/filter/audio_decoder_internal.h"
 #include "starboard/shared/starboard/player/filter/audio_renderer_internal.h"
 #include "starboard/shared/starboard/player/filter/common.h"
 #include "starboard/shared/starboard/player/filter/media_time_provider.h"
@@ -38,26 +39,25 @@
 #include "starboard/shared/starboard/player/job_thread.h"
 
 namespace starboard {
-namespace android {
-namespace shared {
 
 // TODO: The audio receiver often requires some warm up time to switch the
 //       output to eac3.  Consider pushing some silence at the very beginning so
 //       the sound at the very beginning won't get lost during the switching.
-class AudioRendererPassthrough
-    : public ::starboard::shared::starboard::player::filter::AudioRenderer,
-      public ::starboard::shared::starboard::player::filter::MediaTimeProvider,
-      private ::starboard::shared::starboard::player::JobQueue::JobOwner {
+class AudioRendererPassthrough : public AudioRenderer,
+                                 public MediaTimeProvider,
+                                 private JobQueue::JobOwner {
  public:
-  typedef ::starboard::shared::starboard::media::AudioStreamInfo
-      AudioStreamInfo;
+  static NonNullResult<std::unique_ptr<AudioRendererPassthrough>> Create(
+      JobQueue* job_queue,
+      const AudioStreamInfo& audio_stream_info,
+      SbDrmSystem drm_system,
+      bool enable_flush_during_seek);
 
-  AudioRendererPassthrough(const AudioStreamInfo& audio_stream_info,
-                           SbDrmSystem drm_system,
-                           bool enable_flush_during_seek);
+  AudioRendererPassthrough(PassKey<AudioRendererPassthrough>,
+                           JobQueue* job_queue,
+                           const AudioStreamInfo& audio_stream_info,
+                           std::unique_ptr<AudioDecoder> decoder);
   ~AudioRendererPassthrough() override;
-
-  bool is_valid() const { return decoder_ != nullptr; }
 
   // AudioRenderer methods
   void Initialize(const ErrorCB& error_cb,
@@ -83,10 +83,6 @@ class AudioRendererPassthrough
                               double* playback_rate) override;
 
  private:
-  typedef ::starboard::shared::starboard::player::DecodedAudio DecodedAudio;
-  typedef ::starboard::shared::starboard::player::JobThread JobThread;
-  typedef ::starboard::shared::starboard::player::JobQueue::JobToken JobToken;
-
   struct AudioTrackState {
     double volume = 1.0;
     bool paused = true;
@@ -107,8 +103,7 @@ class AudioRendererPassthrough
   // TODO: Revisit to encapsulate the AudioDecoder as a SbDrmSystemPrivate
   //       instead.  This would need to turn SbDrmSystemPrivate::Decrypt() into
   //       asynchronous, which comes with extra risks.
-  std::unique_ptr<::starboard::shared::starboard::player::filter::AudioDecoder>
-      decoder_;
+  const std::unique_ptr<AudioDecoder> decoder_;
 
   // The following three variables are set in Initialize().
   ErrorCB error_cb_;
@@ -116,13 +111,13 @@ class AudioRendererPassthrough
   EndedCB ended_cb_;
 
   int frames_per_input_buffer_ = 0;  // Set once before all uses.
-  atomic_bool can_accept_more_data_{true};
-  atomic_bool prerolled_;
-  atomic_bool end_of_stream_played_;
+  std::atomic_bool can_accept_more_data_{true};
+  std::atomic_bool prerolled_{false};
+  std::atomic_bool end_of_stream_played_{false};
 
   bool end_of_stream_written_ = false;  // Only accessed on PlayerWorker thread.
 
-  Mutex mutex_;
+  mutable std::mutex mutex_;
   bool stop_called_ = false;
   int64_t total_frames_written_ = 0;
   int64_t playback_head_position_when_stopped_ = 0;
@@ -138,7 +133,7 @@ class AudioRendererPassthrough
   // after |audio_track_thread_| is destroyed (in Seek()).
   scoped_refptr<DecodedAudio> decoded_audio_writing_in_progress_;
   int decoded_audio_writing_offset_ = 0;
-  JobToken update_status_and_write_data_token_;
+  JobQueue::JobToken update_status_and_write_data_token_;
   int64_t total_frames_written_on_audio_track_thread_ = 0;
 
   std::atomic_bool audio_track_paused_{true};
@@ -147,11 +142,9 @@ class AudioRendererPassthrough
   // ensure the thread completes all tasks before |audio_track_bridge_| is
   // invalidated.
   std::unique_ptr<AudioTrackBridge> audio_track_bridge_;
-  starboard::shared::starboard::player::ScopedJobThreadPtr audio_track_thread_;
+  std::unique_ptr<JobThread> audio_track_thread_;
 };
 
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard
 
 #endif  // STARBOARD_ANDROID_SHARED_AUDIO_RENDERER_PASSTHROUGH_H_

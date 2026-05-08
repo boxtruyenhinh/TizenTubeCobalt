@@ -19,14 +19,10 @@
 #include "starboard/shared/starboard/audio_sink/audio_sink_internal.h"
 
 namespace starboard {
-namespace shared {
-namespace pulse {
 
-void PlatformInitialize();
-void PlatformTearDown();
+void PulseAudioPlatformInitialize();
+void PulseAudioPlatformTearDown();
 
-}  // namespace pulse
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_PULSE_PULSE_AUDIO_SINK_TYPE_H_

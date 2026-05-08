@@ -24,14 +24,14 @@ namespace base {
 enum {
   PATH_STARBOARD_START = 500,
 
-  DIR_CACHE,    // Directory where to put cache data.  Note this is
-                // *not* where the browser cache lives, but the
-                // browser cache can be a subdirectory.
+  DIR_CACHE,  // Directory where to put cache data.  Note this is
+              // *not* where the browser cache lives, but the
+              // browser cache can be a subdirectory.
 
-  DIR_SYSTEM_FONTS,                // Directory where system font files can be
-                                   // be found. This is only specified on
-                                   // platforms that provide fonts usable by
-                                   // Starboard applications.
+  DIR_SYSTEM_FONTS,  // Directory where system font files can be
+                     // be found. This is only specified on
+                     // platforms that provide fonts usable by
+                     // Starboard applications.
 
   DIR_SYSTEM_FONTS_CONFIGURATION,  // Directory where system font configuration
                                    // metadata can be found. May be the same

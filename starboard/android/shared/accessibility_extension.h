@@ -18,19 +18,12 @@
 #include "starboard/extension/accessibility.h"
 
 namespace starboard {
-namespace android {
-namespace shared {
-
-namespace accessibility {
 bool GetTextToSpeechSettings(SbAccessibilityTextToSpeechSettings* out_setting);
 bool GetDisplaySettings(SbAccessibilityDisplaySettings* out_setting);
 bool GetCaptionSettings(SbAccessibilityCaptionSettings* caption_settings);
 bool SetCaptionsEnabled(bool enabled);
-}  // namespace accessibility
 
 const void* GetAccessibilityApi();
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard
 
 #endif  // STARBOARD_ANDROID_SHARED_ACCESSIBILITY_EXTENSION_H_

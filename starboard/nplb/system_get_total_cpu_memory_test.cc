@@ -16,7 +16,6 @@
 #include "starboard/system.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -31,12 +30,10 @@ TEST(SbSystemGetTotalCPUMemoryTest, PrintValues) {
 
   std::stringstream ss;
   ss << "\n"
-     << "SbSystemGetTotalCPUMemory() = " << SbSystemGetTotalCPUMemory() << "\n"
-     << "SbSystemGetUsedCPUMemory()  = " << SbSystemGetUsedCPUMemory()
-     << "\n\n";
+     << "SbSystemGetTotalCPUMemory() = " << bytes_reserved << "\n"
+     << "SbSystemGetUsedCPUMemory()  = " << bytes_in_use << "\n\n";
   SbLogRaw(ss.str().c_str());
 }
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

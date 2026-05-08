@@ -5,23 +5,35 @@
  * found in the LICENSE file.
  */
 
-#include "tests/RecordTestUtils.h"
-#include "tests/Test.h"
-
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkColorFilter.h"
+#include "include/core/SkImageFilter.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkSurface.h"
 #include "include/effects/SkImageFilters.h"
 #include "src/core/SkRecord.h"
+#include "src/core/SkRecordCanvas.h"
 #include "src/core/SkRecordOpts.h"
-#include "src/core/SkRecorder.h"
 #include "src/core/SkRecords.h"
+#include "tests/RecordTestUtils.h"
+#include "tests/Test.h"
+
+#include <array>
+#include <cstddef>
 
 static const int W = 1920, H = 1080;
 
 DEF_TEST(RecordOpts_NoopDraw, r) {
     SkRecord record;
-    SkRecorder recorder(&record, W, H);
+    SkRecordCanvas recorder(&record, W, H);
 
     recorder.drawRect(SkRect::MakeWH(200, 200), SkPaint());
     recorder.drawRect(SkRect::MakeWH(300, 300), SkPaint());
@@ -36,7 +48,7 @@ DEF_TEST(RecordOpts_NoopDraw, r) {
 
 DEF_TEST(RecordOpts_SingleNoopSaveRestore, r) {
     SkRecord record;
-    SkRecorder recorder(&record, W, H);
+    SkRecordCanvas recorder(&record, W, H);
 
     recorder.save();
         recorder.clipRect(SkRect::MakeWH(200, 200));
@@ -50,7 +62,7 @@ DEF_TEST(RecordOpts_SingleNoopSaveRestore, r) {
 
 DEF_TEST(RecordOpts_NoopSaveRestores, r) {
     SkRecord record;
-    SkRecorder recorder(&record, W, H);
+    SkRecordCanvas recorder(&record, W, H);
 
     // The second pass will clean up this pair after the first pass noops all the innards.
     recorder.save();
@@ -73,7 +85,7 @@ DEF_TEST(RecordOpts_NoopSaveRestores, r) {
 
 DEF_TEST(RecordOpts_SaveSaveLayerRestoreRestore, r) {
     SkRecord record;
-    SkRecorder recorder(&record, W, H);
+    SkRecordCanvas recorder(&record, W, H);
 
     // A previous bug NoOp'd away the first 3 commands.
     recorder.save();
@@ -131,7 +143,7 @@ static void assert_savelayer_draw_restore(skiatest::Reporter* r,
 
 DEF_TEST(RecordOpts_NoopSaveLayerDrawRestore, r) {
     SkRecord record;
-    SkRecorder recorder(&record, W, H);
+    SkRecordCanvas recorder(&record, W, H);
 
     SkRect bounds = SkRect::MakeWH(100, 200);
     SkRect   draw = SkRect::MakeWH(50, 60);
@@ -212,7 +224,7 @@ static void assert_merge_svg_opacity_and_filter_layers(skiatest::Reporter* r,
 
 DEF_TEST(RecordOpts_MergeSvgOpacityAndFilterLayers, r) {
     SkRecord record;
-    SkRecorder recorder(&record, W, H);
+    SkRecordCanvas recorder(&record, W, H);
 
     SkRect bounds = SkRect::MakeWH(SkIntToScalar(100), SkIntToScalar(200));
     SkRect clip = SkRect::MakeWH(SkIntToScalar(50), SkIntToScalar(60));
@@ -258,10 +270,10 @@ DEF_TEST(RecordOpts_MergeSvgOpacityAndFilterLayers, r) {
         for (auto outerF : filters) {
             bool outerNoOped = !outerF;
             for (auto innerF : filters) {
-                for (size_t i = 0; i < SK_ARRAY_COUNT(firstBounds); ++ i) {
-                    for (size_t j = 0; j < SK_ARRAY_COUNT(firstPaints); ++j) {
-                        for (size_t k = 0; k < SK_ARRAY_COUNT(secondBounds); ++k) {
-                            for (size_t m = 0; m < SK_ARRAY_COUNT(secondPaints); ++m) {
+                for (size_t i = 0; i < std::size(firstBounds); ++ i) {
+                    for (size_t j = 0; j < std::size(firstPaints); ++j) {
+                        for (size_t k = 0; k < std::size(secondBounds); ++k) {
+                            for (size_t m = 0; m < std::size(secondPaints); ++m) {
                                 bool innerNoOped = !secondBounds[k] && !secondPaints[m] && !innerF;
 
                                 recorder.saveLayer({firstBounds[i], firstPaints[j], outerF, 0});
@@ -305,7 +317,7 @@ DEF_TEST(RecordOpts_MergeSvgOpacityAndFilterLayers, r) {
         { &alphaOnlyLayerPaint, &colorFilterPaint }
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(noChangeTests); ++i) {
+    for (size_t i = 0; i < std::size(noChangeTests); ++i) {
         recorder.saveLayer(nullptr, noChangeTests[i].firstPaint);
         recorder.save();
         recorder.clipRect(clip);
@@ -378,8 +390,8 @@ static bool is_equal(SkSurface* a, SkSurface* b) {
 //
 static void do_savelayer_srcmode(skiatest::Reporter* r, SkColor color) {
     for (int doPicture = 0; doPicture <= 1; ++doPicture) {
-        sk_sp<SkSurface> surf0 = SkSurface::MakeRasterN32Premul(10, 10);
-        sk_sp<SkSurface> surf1 = SkSurface::MakeRasterN32Premul(10, 10);
+        sk_sp<SkSurface> surf0 = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(10, 10));
+        sk_sp<SkSurface> surf1 = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(10, 10));
         SkCanvas* c0 = surf0->getCanvas();
         SkCanvas* c1 = surf1->getCanvas();
 

@@ -15,12 +15,10 @@
 #include <pthread.h>
 
 #include "starboard/configuration.h"
-#include "testing/gtest/include/gtest/gtest.h"
-
 #include "starboard/nplb/posix_compliance/posix_thread_helpers.h"
 #include "starboard/thread.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -32,7 +30,7 @@ struct TestContext {
 };
 
 void* EntryPoint(void* parameter) {
-  pthread_setname_np(pthread_self(), posix::kThreadName);
+  pthread_setname_np(pthread_self(), kThreadName);
   TestContext* context = static_cast<TestContext*>(parameter);
   context->was_locked_ = (pthread_mutex_trylock(context->mutex_) == 0);
   return NULL;
@@ -73,4 +71,3 @@ TEST(PosixMutexAcquireTryTest, RainyDayReentrant) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

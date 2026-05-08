@@ -22,9 +22,6 @@
 #include "starboard/common/file.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
 
 class FileCacheReader {
  public:
@@ -65,9 +62,6 @@ class FileCacheReader {
   std::vector<char> file_cache_;
 };
 
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_FILE_CACHE_READER_H_

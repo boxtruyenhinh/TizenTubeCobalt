@@ -15,17 +15,20 @@
 #ifndef STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_AUDIO_RENDERER_INTERNAL_PCM_H_
 #define STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_AUDIO_RENDERER_INTERNAL_PCM_H_
 
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
-#include <vector>
 
-#include "starboard/common/atomic.h"
 #include "starboard/common/log.h"
-#include "starboard/common/mutex.h"
-#include "starboard/common/optional.h"
 #include "starboard/media.h"
 #include "starboard/shared/internal_only.h"
+#include "starboard/shared/starboard/experimental_features.h"
 #include "starboard/shared/starboard/media/media_util.h"
 #include "starboard/shared/starboard/player/decoded_audio_internal.h"
 #include "starboard/shared/starboard/player/filter/audio_decoder_internal.h"
@@ -37,17 +40,12 @@
 #include "starboard/shared/starboard/player/filter/media_time_provider.h"
 #include "starboard/shared/starboard/player/input_buffer_internal.h"
 #include "starboard/shared/starboard/player/job_queue.h"
-#include "starboard/types.h"
 
 // Uncomment the following statement to log the media time stats with deviation
 // when GetCurrentMediaTime() is called.
 // #define SB_LOG_MEDIA_TIME_STATS 1
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 const int kFramesInBufferBeginUnderflow = 1024;
 
@@ -66,11 +64,13 @@ class AudioRendererPcm : public AudioRenderer,
   //    longer accept more data.
   // |min_frames_per_append| is the min number of frames that the audio renderer
   // tries to append to the sink buffer at once.
-  AudioRendererPcm(std::unique_ptr<AudioDecoder> decoder,
+  AudioRendererPcm(JobQueue* job_queue,
+                   std::unique_ptr<AudioDecoder> decoder,
                    std::unique_ptr<AudioRendererSink> audio_renderer_sink,
-                   const media::AudioStreamInfo& audio_stream_info,
+                   const AudioStreamInfo& audio_stream_info,
                    int max_cached_frames,
-                   int min_frames_per_append);
+                   int min_frames_per_append,
+                   const ExperimentalFeatures& experimental_features);
   ~AudioRendererPcm() override;
 
   void Initialize(const ErrorCB& error_cb,
@@ -106,6 +106,7 @@ class AudioRendererPcm : public AudioRenderer,
 
   const int max_cached_frames_;
   const int min_frames_per_append_;
+  const ExperimentalFeatures experimental_features_;
   // |buffered_frames_to_start_| would be initialized in OnFirstOutput().
   // Before it's initialized, set it to a large number.
   int buffered_frames_to_start_ = 48 * 1024;
@@ -114,7 +115,7 @@ class AudioRendererPcm : public AudioRenderer,
   PrerolledCB prerolled_cb_;
   EndedCB ended_cb_;
 
-  Mutex mutex_;
+  mutable std::mutex mutex_;
 
   bool paused_ = true;
   bool consume_frames_called_ = false;
@@ -162,7 +163,7 @@ class AudioRendererPcm : public AudioRenderer,
   const int bytes_per_frame_;
 
   std::unique_ptr<AudioResampler> resampler_;
-  optional<int> decoder_sample_rate_;
+  std::optional<int> decoder_sample_rate_;
   AudioTimeStretcher time_stretcher_;
 
   std::vector<uint8_t> frame_buffer_;
@@ -181,7 +182,7 @@ class AudioRendererPcm : public AudioRenderer,
   // and can thus avoid doing a full reset.
   bool first_input_written_ = false;
 
-  std::unique_ptr<AudioRendererSink> audio_renderer_sink_;
+  const std::unique_ptr<AudioRendererSink> audio_renderer_sink_;
   bool is_eos_reached_on_sink_thread_ = false;
   bool is_playing_on_sink_thread_ = false;
   int64_t frames_in_buffer_on_sink_thread_ = 0;
@@ -191,9 +192,9 @@ class AudioRendererPcm : public AudioRenderer,
   int64_t silence_frames_written_after_eos_on_sink_thread_ = 0;
 
 #if SB_LOG_MEDIA_TIME_STATS
-  int64_t system_and_media_time_offset_ = -1;  // microseconds
-  int64_t min_drift_ = kSbInt64Max;            // microseconds
-  int64_t max_drift_ = 0;                      // microseconds
+  int64_t system_and_media_time_offset_ = -1;                // microseconds
+  int64_t min_drift_ = std::numeric_limits<int64_t>::max();  // microseconds
+  int64_t max_drift_ = 0;                                    // microseconds
   int64_t total_frames_consumed_ = 0;
 #endif  // SB_LOG_MEDIA_TIME_STATS
 
@@ -206,14 +207,10 @@ class AudioRendererPcm : public AudioRenderer,
   static const int64_t kCheckAudioSinkStatusInterval = 1'000'000;  // 1 second
   void CheckAudioSinkStatus();
 
-  atomic_int32_t sink_callbacks_since_last_check_;
+  std::atomic<int32_t> sink_callbacks_since_last_check_{0};
 #endif  // SB_PLAYER_FILTER_ENABLE_STATE_CHECK
 };
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_AUDIO_RENDERER_INTERNAL_PCM_H_

@@ -9,9 +9,23 @@
 #ifdef SK_SUPPORT_PDF
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkDocument.h"
 #include "include/core/SkFont.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
 #include "include/core/SkStream.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTypeface.h"
 #include "include/docs/SkPDFDocument.h"
+#include "include/docs/SkPDFJpegHelpers.h"
+#include "src/pdf/SkPDFUtils.h"
+#include "tools/fonts/FontToolUtils.h"
+
+#include <memory>
+#include <utility>
+#include <vector>
 
 using PDFTag = SkPDF::StructureElementNode;
 
@@ -31,10 +45,12 @@ DEF_TEST(SkPDF_tagged_table, r) {
     SkPDF::Metadata metadata;
     metadata.fTitle = "Example Tagged Table PDF";
     metadata.fCreator = "Skia";
-    SkTime::DateTime now;
-    SkTime::GetDateTime(&now);
+    SkPDF::DateTime now;
+    SkPDFUtils::GetDateTime(&now);
     metadata.fCreation = now;
     metadata.fModified = now;
+    metadata.jpegDecoder = SkPDF::JPEG::Decode;
+    metadata.jpegEncoder = SkPDF::JPEG::Encode;
 
     constexpr int kRowCount = 5;
     constexpr int kColCount = 4;
@@ -113,7 +129,7 @@ DEF_TEST(SkPDF_tagged_table, r) {
             document->beginPage(pageSize.width(),
                                 pageSize.height());
     SkPDF::SetNodeId(canvas, 2);
-    SkFont font(nullptr, 36);
+    SkFont font(ToolUtils::DefaultTypeface(), 36);
     canvas->drawString("Tagged PDF Table", 72, 72, font, paint);
 
     font.setSize(14);

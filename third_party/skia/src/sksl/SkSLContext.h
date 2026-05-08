@@ -8,36 +8,26 @@
 #ifndef SKSL_CONTEXT
 #define SKSL_CONTEXT
 
-#include <memory>
-
-#include "src/sksl/SkSLBuiltinTypes.h"
-#include "src/sksl/SkSLUtil.h"
-#include "src/sksl/ir/SkSLType.h"
+#include "include/private/base/SkAssert.h"
 
 namespace SkSL {
 
-class BuiltinMap;
+class BuiltinTypes;
 class ErrorReporter;
-class Mangler;
-class ModifiersPool;
+struct Module;
 struct ProgramConfig;
+class SymbolTable;
 
 /**
- * Contains compiler-wide objects, which currently means the core types.
+ * Contains compiler-wide objects and state.
  */
 class Context {
 public:
-    Context(ErrorReporter& errors, const ShaderCaps& caps, Mangler& mangler);
+    Context(const BuiltinTypes& types, ErrorReporter& errors);
     ~Context();
 
-    // The Context holds all of the built-in types.
-    BuiltinTypes fTypes;
-
-    // The Context holds a reference to our shader caps bits.
-    const ShaderCaps& fCaps;
-
-    // The Context holds a pointer to our pool of modifiers.
-    ModifiersPool* fModifiersPool = nullptr;
+    // The Context holds a reference to all of the built-in types.
+    const BuiltinTypes& fTypes;
 
     // The Context holds a pointer to the configuration of the program being compiled.
     ProgramConfig* fConfig = nullptr;
@@ -45,11 +35,17 @@ public:
     // The Context holds a pointer to our error reporter.
     ErrorReporter* fErrors;
 
-    // The Context holds a pointer to the shared name-mangler.
-    Mangler* fMangler = nullptr;
+    void setErrorReporter(ErrorReporter* e) {
+        SkASSERT(e);
+        fErrors = e;
+    }
 
-    // Symbols which have definitions in the include files.
-    BuiltinMap* fBuiltins = nullptr;
+    // The Context holds a pointer to our module with built-in declarations.
+    const Module* fModule = nullptr;
+
+    // This is the current symbol table of the code we are processing, and therefore changes during
+    // compilation.
+    SymbolTable* fSymbolTable = nullptr;
 };
 
 }  // namespace SkSL

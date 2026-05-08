@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/system.h"
+// clang-format on
 
 #include "starboard/linux/x64x11/system_get_property_impl.h"
 
 bool SbSystemGetProperty(SbSystemPropertyId property_id,
                          char* out_value,
                          int value_length) {
-  return starboard::x64x11::GetSystemProperty(property_id, out_value,
-                                              value_length);
+  return starboard::GetSystemPropertyLinux(property_id, out_value,
+                                           value_length);
 }

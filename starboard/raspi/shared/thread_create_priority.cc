@@ -12,16 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "starboard/shared/pthread/thread_create_priority.h"
+// clang-format off
+#include "starboard/thread.h"
+// clang-format on
 
 #include <sched.h>
 #include <sys/resource.h>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
+#include "starboard/configuration_constants.h"
 
-namespace starboard {
-namespace shared {
-namespace pthread {
+namespace {
 
 // This is the maximum priority that will be passed to SetRoundRobinScheduler().
 const int kMaxRoundRobinPriority = 2;
@@ -47,14 +49,14 @@ void SetIdleScheduler() {
   struct sched_param thread_sched_param;
   thread_sched_param.sched_priority = 0;
   int result = sched_setscheduler(0, SCHED_IDLE, &thread_sched_param);
-  SB_CHECK(result == 0) << kSchedulerErrorMessage;
+  SB_CHECK_EQ(result, 0) << kSchedulerErrorMessage;
 }
 
 void SetOtherScheduler() {
   struct sched_param thread_sched_param;
   thread_sched_param.sched_priority = 0;
   int result = sched_setscheduler(0, SCHED_OTHER, &thread_sched_param);
-  SB_CHECK(result == 0) << kSchedulerErrorMessage;
+  SB_CHECK_EQ(result, 0) << kSchedulerErrorMessage;
 }
 
 // Here |priority| is a number >= 0, where the higher the number, the
@@ -95,12 +97,15 @@ void SetRoundRobinScheduler(int priority) {
   thread_sched_param.sched_priority = std::min(
       min_priority + priority, static_cast<int>(rlimit_rtprio.rlim_cur));
   int result = sched_setscheduler(0, SCHED_RR, &thread_sched_param);
-  SB_CHECK(result == 0) << kSchedulerErrorMessage;
+  SB_CHECK_EQ(result, 0) << kSchedulerErrorMessage;
 }
 
-void ThreadSetPriority(SbThreadPriority priority) {
-  if (!kSbHasThreadPrioritySupport)
-    return;
+}  // namespace
+
+bool SbThreadSetPriority(SbThreadPriority priority) {
+  if (!kSbHasThreadPrioritySupport) {
+    return false;
+  }
 
   // Use different schedulers according to priority. This is preferred over
   // using SCHED_RR for all threads because the scheduler time slice is too
@@ -127,14 +132,6 @@ void ThreadSetPriority(SbThreadPriority priority) {
       SB_NOTREACHED();
       break;
   }
-}
-
-}  // namespace pthread
-}  // namespace shared
-}  // namespace starboard
-
-bool SbThreadSetPriority(SbThreadPriority priority) {
-  ::starboard::shared::pthread::ThreadSetPriority(priority);
   return true;
 }
 

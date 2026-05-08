@@ -24,8 +24,8 @@
 
 #include <sys/mman.h>
 
-#if defined(__linux__) && !defined(STARBOARD)
-
+#include "build/build_config.h"
+#if defined(__linux__) && !BUILDFLAG(IS_COBALT_HERMETIC_BUILD)
 #include <sys/types.h>
 #ifdef __BIONIC__
 #include <sys/syscall.h>
@@ -72,7 +72,7 @@ namespace base_internal {
 // Platform specific logic extracted from
 // https://chromium.googlesource.com/linux-syscall-support/+/master/linux_syscall_support.h
 inline void* DirectMmap(void* start, size_t length, int prot, int flags, int fd,
-                        off64_t offset) noexcept {
+                        off_t offset) noexcept {
 #if defined(__i386__) || defined(__ARM_ARCH_3__) || defined(__ARM_EABI__) || \
     defined(__m68k__) || defined(__sh__) ||                                  \
     (defined(__hppa__) && !defined(__LP64__)) ||                             \
@@ -102,7 +102,7 @@ inline void* DirectMmap(void* start, size_t length, int prot, int flags, int fd,
 #else
   return reinterpret_cast<void*>(
       syscall(SYS_mmap2, start, length, prot, flags, fd,
-              static_cast<off_t>(offset / pagesize)));
+              static_cast<unsigned long>(offset / pagesize)));  // NOLINT
 #endif
 #elif defined(__s390x__)
   // On s390x, mmap() arguments are passed in memory.

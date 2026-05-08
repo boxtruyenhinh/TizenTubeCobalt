@@ -14,11 +14,11 @@
 
 #include "starboard/elf_loader/elf_header.h"
 
+#include <string.h>
+
 #include "starboard/common/log.h"
 #include "starboard/elf_loader/log.h"
-#include "starboard/memory.h"
 
-namespace starboard {
 namespace elf_loader {
 
 ElfHeader::ElfHeader() {
@@ -73,4 +73,3 @@ const Ehdr* ElfHeader::GetHeader() {
 }
 
 }  // namespace elf_loader
-}  // namespace starboard

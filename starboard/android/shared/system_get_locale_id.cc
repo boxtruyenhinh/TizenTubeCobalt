@@ -12,17 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/system.h"
+// clang-format on
 
 #include <string>
 
-#include "starboard/android/shared/jni_env_ext.h"
-#include "starboard/android/shared/jni_utils.h"
+#include "base/android/jni_string.h"
+#include "starboard/android/shared/starboard_bridge.h"
 #include "starboard/common/once.h"
 #include "starboard/common/string.h"
+#include "third_party/jni_zero/jni_zero.h"
 
-using starboard::android::shared::JniEnvExt;
-using starboard::android::shared::ScopedLocalJavaRef;
+namespace starboard {
 
 namespace {
 
@@ -33,17 +35,18 @@ class LocaleInfo {
   std::string locale_id;
 
   LocaleInfo() {
-    JniEnvExt* env = JniEnvExt::Get();
+    JNIEnv* env = jni_zero::AttachCurrentThread();
 
-    ScopedLocalJavaRef<jstring> result(env->CallStarboardObjectMethodOrAbort(
-        "systemGetLocaleId", "()Ljava/lang/String;"));
-    locale_id = env->GetStringStandardUTFOrAbort(result.Get());
+    jni_zero::ScopedJavaLocalRef<jstring> result =
+        StarboardBridge::GetInstance()->GetSystemLocaleId(env);
+    locale_id = base::android::ConvertJavaStringToUTF8(env, result.obj());
   }
 };
 
-SB_ONCE_INITIALIZE_FUNCTION(LocaleInfo, GetLocale);
+SB_ONCE_INITIALIZE_FUNCTION(LocaleInfo, GetLocale)
 }  // namespace
+}  // namespace starboard
 
 const char* SbSystemGetLocaleId() {
-  return GetLocale()->locale_id.c_str();
+  return starboard::GetLocale()->locale_id.c_str();
 }

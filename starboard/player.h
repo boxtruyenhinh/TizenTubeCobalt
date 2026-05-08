@@ -19,13 +19,14 @@
 #ifndef STARBOARD_PLAYER_H_
 #define STARBOARD_PLAYER_H_
 
-#include "starboard/configuration.h"
+#include <stddef.h>
+#include <stdint.h>
 
+#include "starboard/configuration.h"
 #include "starboard/decode_target.h"
 #include "starboard/drm.h"
 #include "starboard/export.h"
 #include "starboard/media.h"
-#include "starboard/types.h"
 #include "starboard/window.h"
 
 #ifdef __cplusplus
@@ -105,7 +106,6 @@ typedef struct SbPlayerCreationParam {
   // encrypted portions.
   SbDrmSystem drm_system;
 
-#if SB_API_VERSION >= 15
   // Contains a populated SbMediaAudioStreamInfo if |audio_stream_info.codec|
   // isn't |kSbMediaAudioCodecNone|. When |audio_stream_info.codec| is
   // |kSbMediaAudioCodecNone|, the video doesn't have an audio track.
@@ -114,16 +114,6 @@ typedef struct SbPlayerCreationParam {
   // isn't |kSbMediaVideoCodecNone|. When |video_stream_info.codec| is
   // |kSbMediaVideoCodecNone|, the video is audio only.
   SbMediaVideoStreamInfo video_stream_info;
-#else   // SB_API_VERSION >= 15
-  // Contains a populated SbMediaAudioSampleInfo if |audio_sample_info.codec|
-  // isn't |kSbMediaAudioCodecNone|. When |audio_sample_info.codec| is
-  // |kSbMediaAudioCodecNone|, the video doesn't have an audio track.
-  SbMediaAudioSampleInfo audio_sample_info;
-  // Contains a populated SbMediaVideoSampleInfo if |video_sample_info.codec|
-  // isn't |kSbMediaVideoCodecNone|. When |video_sample_info.codec| is
-  // |kSbMediaVideoCodecNone|, the video is audio only.
-  SbMediaVideoSampleInfo video_sample_info;
-#endif  // SB_API_VERSION >= 15
 
   // Selects how the decoded video frames will be output. For example,
   // |kSbPlayerOutputModePunchOut| indicates that the decoded video frames will
@@ -188,11 +178,7 @@ typedef struct SbPlayerSampleInfo {
 } SbPlayerSampleInfo;
 
 // Information about the current media playback state.
-#if SB_API_VERSION >= 15
 typedef struct SbPlayerInfo {
-#else   // SB_API_VERSION >= 15
-typedef struct SbPlayerInfo2 {
-#endif  // SB_API_VERSION >= 15
   // The position of the playback head, as precisely as possible, in
   // microseconds.
   int64_t current_media_timestamp;
@@ -237,11 +223,7 @@ typedef struct SbPlayerInfo2 {
   // is played in a slower than normal speed. Negative speeds are not
   // supported.
   double playback_rate;
-#if SB_API_VERSION >= 15
 } SbPlayerInfo;
-#else   // SB_API_VERSION >= 15
-} SbPlayerInfo2;
-#endif  // SB_API_VERSION >= 15
 
 // An opaque handle to an implementation-private structure representing a
 // player.
@@ -306,16 +288,12 @@ typedef void (*SbPlayerDeallocateSampleFunc)(SbPlayer player,
 // Well-defined value for an invalid player.
 #define kSbPlayerInvalid ((SbPlayer)NULL)
 
-#if SB_API_VERSION >= 15
-
 // The audio write duration when all the audio connectors are local.
 #define kSbPlayerWriteDurationLocal (1000000 / 2)  // 0.5 seconds
 
 // The audio write duration when at least one of the audio connectors are
 // remote.
 #define kSbPlayerWriteDurationRemote (1000000 * 10)  // 10 seconds
-
-#endif  // SB_API_VERSION >= 15
 
 // Returns whether the given player handle is valid.
 static inline bool SbPlayerIsValid(SbPlayer player) {
@@ -333,9 +311,6 @@ static inline bool SbPlayerIsValid(SbPlayer player) {
 // - The associated decoder of the returned player should be assumed to not be
 //   in |kSbPlayerDecoderStateNeedsData| until SbPlayerSeek() has been called
 //   on it.
-// - It is expected either that the thread that calls SbPlayerCreate is the same
-//   thread that calls the other |SbPlayer| functions for that player, or that
-//   there is a mutex guarding calls into each |SbPlayer| instance.
 // - If there is a platform limitation on how many players can coexist
 //   simultaneously, then calls made to this function that attempt to exceed
 //   that limit must return |kSbPlayerInvalid|. Multiple calls to SbPlayerCreate
@@ -489,15 +464,9 @@ SB_EXPORT void SbPlayerDestroy(SbPlayer player);
 // when SbPlayerSeek was called. To be very specific, once SbPlayerSeek has
 // been called with ticket X, a client should ignore all
 // |SbPlayerDecoderStatusFunc| calls that do not pass in ticket X.
-#if SB_API_VERSION >= 15
 SB_EXPORT void SbPlayerSeek(SbPlayer player,
                             int64_t seek_to_timestamp,
                             int ticket);
-#else   // SB_API_VERSION >= 15
-SB_EXPORT void SbPlayerSeek2(SbPlayer player,
-                             int64_t seek_to_timestamp,
-                             int ticket);
-#endif  // SB_API_VERSION >= 15
 
 // Writes samples of the given media type to |player|'s input stream. The
 // lifetime of |sample_infos|, and the members of its elements like |buffer|,
@@ -525,11 +494,7 @@ SB_EXPORT void SbPlayerSeek2(SbPlayer player,
 // |number_of_sample_infos|: Specify the number of samples contained inside
 // |sample_infos|. It has to be at least one, and at most the return value
 // of SbPlayerGetMaximumNumberOfSamplesPerWrite().
-#if SB_API_VERSION >= 15
 SB_EXPORT void SbPlayerWriteSamples(SbPlayer player,
-#else   // SB_API_VERSION >= 15
-SB_EXPORT void SbPlayerWriteSample2(SbPlayer player,
-#endif  // SB_API_VERSION >= 15
                                     SbMediaType sample_type,
                                     const SbPlayerSampleInfo* sample_infos,
                                     int number_of_sample_infos);
@@ -570,7 +535,7 @@ SB_EXPORT void SbPlayerWriteEndOfStream(SbPlayer player,
 // This function is called on every graphics frame that changes the video
 // bounds. For example, if the video bounds are being animated, then this will
 // be called at up to 60 Hz. Since the function could be called up to once per
-// frame, implementors should take care to avoid related performance concerns
+// frame, implementers should take care to avoid related performance concerns
 // with such frequent calls.
 //
 // |player|: The player that is being resized. Must not be |kSbPlayerInvalid|.
@@ -618,19 +583,14 @@ SB_EXPORT bool SbPlayerSetPlaybackRate(SbPlayer player, double playback_rate);
 SB_EXPORT void SbPlayerSetVolume(SbPlayer player, double volume);
 
 // Gets a snapshot of the current player state and writes it to
-// |out_player_info|. This function may be called very frequently and is
-// expected to be inexpensive.
+// |out_player_info|. This function may be called very frequently from arbitrary
+// threads and is expected to be inexpensive and thread safe.
 //
 // |player|: The player about which information is being retrieved. Must not be
 // |kSbPlayerInvalid|.
 //
 // |out_player_info|: The information retrieved for the player.
-#if SB_API_VERSION >= 15
 SB_EXPORT void SbPlayerGetInfo(SbPlayer player, SbPlayerInfo* out_player_info);
-#else   // SB_API_VERSION >= 15
-SB_EXPORT void SbPlayerGetInfo2(SbPlayer player,
-                                SbPlayerInfo2* out_player_info2);
-#endif  // SB_API_VERSION >= 15
 
 // Given a player created with the kSbPlayerOutputModeDecodeToTexture
 // output mode, it will return a SbDecodeTarget representing the current frame
@@ -696,12 +656,10 @@ SB_EXPORT SbDecodeTarget SbPlayerGetCurrentFrame(SbPlayer player);
 //
 // |out_audio_configuration|: The information about the audio output, refer to
 // |SbMediaAudioConfiguration| for more details. Must not be NULL.
-#if SB_API_VERSION >= 15
 SB_EXPORT bool SbPlayerGetAudioConfiguration(
     SbPlayer player,
     int index,
     SbMediaAudioConfiguration* out_audio_configuration);
-#endif  // SB_API_VERSION >= 15
 
 #ifdef __cplusplus
 }  // extern "C"

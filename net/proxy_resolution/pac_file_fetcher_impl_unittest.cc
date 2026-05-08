@@ -4,6 +4,7 @@
 
 #include "net/proxy_resolution/pac_file_fetcher_impl.h"
 
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -14,7 +15,6 @@
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/strings/string_util.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/scoped_feature_list.h"
@@ -24,7 +24,6 @@
 #include "net/base/load_flags.h"
 #include "net/base/network_delegate_impl.h"
 #include "net/base/test_completion_callback.h"
-#include "net/cert/ct_policy_enforcer.h"
 #include "net/cert/mock_cert_verifier.h"
 #include "net/cert/multi_log_ct_verifier.h"
 #include "net/disk_cache/disk_cache.h"
@@ -51,7 +50,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 using net::test::IsError;
 using net::test::IsOk;
@@ -77,11 +75,7 @@ struct FetchResult {
 // Get a file:// url relative to net/data/proxy/pac_file_fetcher_unittest.
 GURL GetTestFileUrl(const std::string& relpath) {
   base::FilePath path;
-#if defined(STARBOARD)
-  base::PathService::Get(base::DIR_TEST_DATA, &path);
-#else
-  base::PathService::Get(base::DIR_SOURCE_ROOT, &path);
-#endif
+  base::PathService::Get(base::DIR_SRC_TEST_DATA_ROOT, &path);
   path = path.AppendASCII("net");
   path = path.AppendASCII("data");
   path = path.AppendASCII("pac_file_fetcher_unittest");
@@ -172,7 +166,7 @@ TEST_F(PacFileFetcherImplTest, HttpMimeType) {
                                     TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
-    EXPECT_EQ(u"-pac.txt-", base::CollapseWhitespace(text, true));
+    EXPECT_EQ(u"-pac.txt-\n", text);
   }
   {  // Fetch a PAC with mime type "text/html"
     GURL url(test_server_.GetURL("/pac.html"));
@@ -182,7 +176,7 @@ TEST_F(PacFileFetcherImplTest, HttpMimeType) {
                                     TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
-    EXPECT_EQ(u"-pac.html-", base::CollapseWhitespace(text, true));
+    EXPECT_EQ(u"-pac.html-\n", text);
   }
   {  // Fetch a PAC with mime type "application/x-ns-proxy-autoconfig"
     GURL url(test_server_.GetURL("/pac.nsproxy"));
@@ -192,7 +186,7 @@ TEST_F(PacFileFetcherImplTest, HttpMimeType) {
                                     TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
-    EXPECT_EQ(u"-pac.nsproxy-", base::CollapseWhitespace(text, true));
+    EXPECT_EQ(u"-pac.nsproxy-\n", text);
   }
 }
 
@@ -239,19 +233,15 @@ TEST_F(PacFileFetcherImplTest, ContentDisposition) {
                                   TRAFFIC_ANNOTATION_FOR_TESTS);
   EXPECT_THAT(result, IsError(ERR_IO_PENDING));
   EXPECT_THAT(callback.WaitForResult(), IsOk());
-  EXPECT_EQ(u"-downloadable.pac-", base::CollapseWhitespace(text, true));
+  EXPECT_EQ(u"-downloadable.pac-\n", text);
 }
 
 // Verifies that fetches are made using the fetcher's IsolationInfo, by checking
 // the DNS cache.
 TEST_F(PacFileFetcherImplTest, IsolationInfo) {
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeatures(
-      // enabled_features
-      {features::kPartitionConnectionsByNetworkIsolationKey,
-       features::kSplitHostCacheByNetworkIsolationKey},
-      // disabled_features
-      {});
+  feature_list.InitAndEnableFeature(
+      features::kPartitionConnectionsByNetworkIsolationKey);
   const char kHost[] = "foo.test";
 
   ASSERT_TRUE(test_server_.Start());
@@ -264,7 +254,7 @@ TEST_F(PacFileFetcherImplTest, IsolationInfo) {
   int result = pac_fetcher->Fetch(url, &text, callback.callback(),
                                   TRAFFIC_ANNOTATION_FOR_TESTS);
   EXPECT_THAT(callback.GetResult(result), IsOk());
-  EXPECT_EQ(u"-downloadable.pac-", base::CollapseWhitespace(text, true));
+  EXPECT_EQ(u"-downloadable.pac-\n", text);
 
   // Check that the URL in kDestination is in the HostCache, with
   // the fetcher's IsolationInfo / NetworkAnonymizationKey, and no others.
@@ -308,7 +298,7 @@ TEST_F(PacFileFetcherImplTest, NoCache) {
                                     TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
-    EXPECT_EQ(u"-cacheable_1hr.pac-", base::CollapseWhitespace(text, true));
+    EXPECT_EQ(u"-cacheable_1hr.pac-\n", text);
   }
 
   // Kill the HTTP server.
@@ -362,7 +352,7 @@ TEST_F(PacFileFetcherImplTest, TooLarge) {
                                     TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
-    EXPECT_EQ( u"-pac.nsproxy-", base::CollapseWhitespace(text, true));
+    EXPECT_EQ(u"-pac.nsproxy-\n", text);
   }
 }
 
@@ -415,7 +405,7 @@ TEST_F(PacFileFetcherImplTest, Hang) {
                                     TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
-    EXPECT_EQ(u"-pac.nsproxy-", base::CollapseWhitespace(text, true));
+    EXPECT_EQ(u"-pac.nsproxy-\n", text);
   }
 }
 
@@ -436,7 +426,7 @@ TEST_F(PacFileFetcherImplTest, Encodings) {
                                     TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
-    EXPECT_EQ(u"This data was gzipped.", base::CollapseWhitespace(text, true));
+    EXPECT_EQ(u"This data was gzipped.\n", text);
   }
 
   // Test a response that was served as UTF-16 (BE). It should
@@ -449,7 +439,7 @@ TEST_F(PacFileFetcherImplTest, Encodings) {
                                     TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
-    EXPECT_EQ(u"This was encoded as UTF-16BE.", base::CollapseWhitespace(text, true));
+    EXPECT_EQ(u"This was encoded as UTF-16BE.\n", text);
   }
 
   // Test a response that lacks a charset, however starts with a UTF8 BOM.
@@ -461,7 +451,7 @@ TEST_F(PacFileFetcherImplTest, Encodings) {
                                     TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
-    EXPECT_EQ(u"/* UTF8 */", base::CollapseWhitespace(text, true));
+    EXPECT_EQ(u"/* UTF8 */\n", text);
   }
 }
 
@@ -487,7 +477,7 @@ TEST_F(PacFileFetcherImplTest, DataURLs) {
     int result = pac_fetcher->Fetch(url, &text, callback.callback(),
                                     TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsOk());
-    EXPECT_EQ(base::CollapseWhitespace(kPacScript, true), base::CollapseWhitespace(text, true));
+    EXPECT_EQ(kPacScript, text);
   }
 
   const char kEncodedUrlBroken[] =

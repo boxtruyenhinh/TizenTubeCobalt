@@ -7,7 +7,7 @@
 #pragma once
 
 #include "include/core/SkString.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 #include "tools/flags/CommandLineFlags.h"
 
 namespace CommonFlags {
@@ -23,32 +23,7 @@ namespace CommonFlags {
  *  - If |dir| is a single file, assume the user is deliberately testing this image,
  *    regardless of file type.
  */
-bool CollectImages(CommandLineFlags::StringArray dir, SkTArray<SkString>* output);
-
-/**
- *  Helper to set GrContextOptions from common GPU flags, including
- *     --gpuThreads
- *     --cachePathMasks
- *     --allPathsVolatile
- *     --(no)gs
- *     --(no)ts
- *     --maxTessellationSegments
- *     --pr
- *     --internalSamples
- *     --disableDriverCorrectnessWorkarounds
- *     --reduceOpsTaskSplitting
- *     --dontReduceOpsTaskSplitting
- */
-void SetCtxOptions(struct GrContextOptions*);
-
-/**
- *  Enable, disable, or force analytic anti-aliasing using --analyticAA and --forceAnalyticAA.
- */
-void SetAnalyticAA();
-
-/**
- *  Turn on portable (--nonativeFonts) or GDI font rendering (--gdi).
- */
-void SetDefaultFontMgr();
+bool CollectImages(const CommandLineFlags::StringArray& dir,
+                   skia_private::TArray<SkString>* output);
 
 }  // namespace CommonFlags

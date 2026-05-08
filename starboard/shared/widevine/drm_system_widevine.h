@@ -15,23 +15,22 @@
 #ifndef STARBOARD_SHARED_WIDEVINE_DRM_SYSTEM_WIDEVINE_H_
 #define STARBOARD_SHARED_WIDEVINE_DRM_SYSTEM_WIDEVINE_H_
 
+#include <atomic>
 #include <limits>
 #include <map>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
-#include "starboard/common/atomic.h"
-#include "starboard/common/optional.h"
-#include "starboard/mutex.h"
+#include "build/build_config.h"
 #include "starboard/shared/starboard/drm/drm_system_internal.h"
 #include "starboard/shared/starboard/thread_checker.h"
 #include "starboard/thread.h"
 #include "third_party/internal/ce_cdm/cdm/include/cdm.h"
 
 namespace starboard {
-namespace shared {
-namespace widevine {
 
 // Adapts Widevine's |Content Decryption Module v 3.5| to Starboard's
 // |SbDrmSystem|.
@@ -154,7 +153,7 @@ class DrmSystemWidevine : public SbDrmSystemPrivate,
                                 const std::string& sb_drm_session_id,
                                 const std::string& message);
 
-  ::starboard::shared::starboard::ThreadChecker thread_checker_;
+  ThreadChecker thread_checker_;
   void* const context_;
   const SbDrmSessionUpdateRequestFunc session_update_request_callback_;
   const SbDrmSessionUpdatedFunc session_updated_callback_;
@@ -189,21 +188,17 @@ class DrmSystemWidevine : public SbDrmSystemPrivate,
 
   bool is_server_certificate_set_ = false;
 
-  volatile bool quitting_ = false;
+  std::mutex unblock_key_retry_mutex_;
+  std::optional<int64_t> unblock_key_retry_start_time_;
 
-  Mutex unblock_key_retry_mutex_;
-  optional<int64_t> unblock_key_retry_start_time_;
-
-#if !defined(COBALT_BUILD_TYPE_GOLD)
+#if !BUILDFLAG(COBALT_IS_RELEASE_BUILD)
   int number_of_session_updates_sent_ = 0;
   int maximum_number_of_session_updates_ = std::numeric_limits<int>::max();
-#endif  // !defined(COBALT_BUILD_TYPE_GOLD)
+#endif  // !BUILDFLAG(COBALT_IS_RELEASE_BUILD)
 
-  atomic_bool first_update_session_received_{false};
+  std::atomic_bool first_update_session_received_{false};
 };
 
-}  // namespace widevine
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_WIDEVINE_DRM_SYSTEM_WIDEVINE_H_

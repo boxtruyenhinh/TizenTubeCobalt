@@ -258,6 +258,9 @@ mr{
         "America:Chihuahua"{
             ec{"चिहुआहुआ"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"सिउदाद हुआरेझ"}
+        }
         "America:Coral_Harbour"{
             ec{"अॅटिकोकन"}
         }
@@ -1223,6 +1226,9 @@ mr{
         "Pacific:Johnston"{
             ec{"जोहान्स्टन"}
         }
+        "Pacific:Kanton"{
+            ec{"कँटन"}
+        }
         "Pacific:Kiritimati"{
             ec{"किरितिमाती"}
         }
@@ -1938,10 +1944,11 @@ mr{
             lg{"येकतरिनबर्ग वेळ"}
             ls{"येकतरिनबर्ग प्रमाण वेळ"}
         }
-        fallbackFormat{"{1} ({0})"}
+        "meta:Yukon"{
+            ls{"युकोन वेळ"}
+        }
         gmtFormat{"[GMT]{0}"}
         gmtZeroFormat{"[GMT]"}
-        hourFormat{"+HH:mm;-HH:mm"}
         regionFormat{"{0} वेळ"}
         regionFormatDaylight{"{0} सूर्यप्रकाश वेळ"}
         regionFormatStandard{"{0} प्रमाण वेळ"}

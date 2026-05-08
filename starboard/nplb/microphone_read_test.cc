@@ -19,7 +19,6 @@
 #include "starboard/thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -100,7 +99,7 @@ TEST(SbMicrophoneReadTest, SunnyDayOpenSleepCloseAndOpenRead) {
     int read_bytes =
         SbMicrophoneRead(microphone, &audio_data[0], audio_data.size());
     EXPECT_GE(read_bytes, 0);
-    EXPECT_LE(read_bytes, audio_data.size());
+    EXPECT_LE(read_bytes, static_cast<int>(audio_data.size()));
 
     SbMicrophoneDestroy(microphone);
   }
@@ -122,7 +121,7 @@ TEST(SbMicrophoneReadTest, RainyDayAudioBufferIsNULL) {
     EXPECT_TRUE(SbMicrophoneOpen(microphone));
 
     int read_bytes = SbMicrophoneRead(microphone, NULL, 0);
-    EXPECT_EQ(read_bytes, 0);
+    EXPECT_EQ(read_bytes, -1);
 
     EXPECT_TRUE(SbMicrophoneClose(microphone));
     SbMicrophoneDestroy(microphone);
@@ -238,4 +237,3 @@ TEST(SbMicrophoneReadTest, RainyDayMicrophoneIsInvalid) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

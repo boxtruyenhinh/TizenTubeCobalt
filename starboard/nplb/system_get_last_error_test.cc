@@ -14,19 +14,17 @@
 
 #include <fcntl.h>
 
-#include "starboard/file.h"
 #include "starboard/nplb/file_helpers.h"
 #include "starboard/system.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
 TEST(SbSystemGetLastErrorTest, SunnyDay) {
   // Opening a non-existent file should generate an error on all platforms.
   ScopedRandomFile random_file(ScopedRandomFile::kDontCreate);
-  int file = open(random_file.filename().c_str(), O_RDONLY, S_IRUSR | S_IWUSR);
+  open(random_file.filename().c_str(), O_RDONLY);
 
   SbSystemError error = SbSystemGetLastError();
   EXPECT_NE(0, error);
@@ -34,4 +32,3 @@ TEST(SbSystemGetLastErrorTest, SunnyDay) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

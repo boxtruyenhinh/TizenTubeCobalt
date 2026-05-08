@@ -23,11 +23,12 @@
 #include "include/core/SkVertices.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/private/SkTDArray.h"
-#include "include/utils/SkRandom.h"
+#include "include/private/base/SkTDArray.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkVerticesPriv.h"
 #include "src/shaders/SkLocalMatrixShader.h"
 #include "src/utils/SkPatchUtils.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
 
@@ -44,15 +45,13 @@ static sk_sp<SkShader> make_shader1(SkScalar shaderScale) {
     const SkMatrix localMatrix = SkMatrix::Scale(shaderScale, shaderScale);
 
     sk_sp<SkShader> grad = SkGradientShader::MakeLinear(pts, colors, nullptr,
-                                                        SK_ARRAY_COUNT(colors),
+                                                        std::size(colors),
                                                         SkTileMode::kMirror, 0,
                                                         &localMatrix);
     // Throw in a couple of local matrix wrappers for good measure.
-    return shaderScale == 1
-        ? grad
-        : sk_make_sp<SkLocalMatrixShader>(
-              sk_make_sp<SkLocalMatrixShader>(std::move(grad), SkMatrix::Translate(-10, 0)),
-              SkMatrix::Translate(10, 0));
+    return shaderScale == 1 ? grad
+                            : grad->makeWithLocalMatrix(SkMatrix::Translate(-10, 0))
+                                       ->makeWithLocalMatrix(SkMatrix::Translate(10, 0));
 }
 
 static sk_sp<SkShader> make_shader2() {
@@ -71,7 +70,7 @@ static constexpr uint16_t kMeshFan[] = {
         0, 1, 2, 5, 8, 7, 6, 3, 0
 };
 
-static const int kMeshIndexCnt = (int)SK_ARRAY_COUNT(kMeshFan);
+static const int kMeshIndexCnt = (int)std::size(kMeshFan);
 static const int kMeshVertexCnt = 9;
 
 static void fill_mesh(SkPoint pts[kMeshVertexCnt], SkPoint texs[kMeshVertexCnt],
@@ -124,7 +123,7 @@ protected:
         fColorFilter = make_color_filter();
     }
 
-    SkString onShortName() override {
+    SkString getName() const override {
         SkString name("vertices");
         if (fShaderScale != 1) {
             name.append("_scaled_shader");
@@ -132,9 +131,7 @@ protected:
         return name;
     }
 
-    SkISize onISize() override {
-        return SkISize::Make(975, 1175);
-    }
+    SkISize getISize() override { return SkISize::Make(975, 1175); }
 
     void onDraw(SkCanvas* canvas) override {
         const SkBlendMode modes[] = {
@@ -172,7 +169,6 @@ protected:
         SkPaint paint;
 
         canvas->translate(4, 4);
-        int x = 0;
         for (auto mode : modes) {
             canvas->save();
             for (float alpha : {1.0f, 0.5f}) {
@@ -194,7 +190,6 @@ protected:
                                                           kMeshIndexCnt, kMeshFan);
                             canvas->drawVertices(v, mode, paint);
                             canvas->translate(40, 0);
-                            ++x;
                         }
                     }
                 }
@@ -226,9 +221,9 @@ static void draw_batching(SkCanvas* canvas) {
     fill_mesh(pts, texs, colors, 1);
 
     SkTDArray<SkMatrix> matrices;
-    matrices.push()->reset();
-    matrices.push()->setTranslate(0, 40);
-    matrices.push()
+    matrices.append()->reset();
+    matrices.append()->setTranslate(0, 40);
+    matrices.append()
             ->setRotate(45, kMeshSize / 2, kMeshSize / 2)
             .postScale(1.2f, .8f, kMeshSize / 2, kMeshSize / 2)
             .postTranslate(0, 80);
@@ -310,4 +305,45 @@ DEF_SIMPLE_GM(vertices_perspective, canvas, 256, 256) {
     canvas->concat(persp);
     canvas->drawVertices(verts, SkBlendMode::kModulate, paint);
     canvas->restore();
+}
+
+DEF_SIMPLE_GM(skbug_13047, canvas, 200, 200) {
+    auto image = ToolUtils::GetResourceAsImage("images/mandrill_128.png");
+
+    const float w = image->width();
+    const float h = image->height();
+
+    SkPoint verts[] = {{0, 0}, {200, 0}, {200, 200}, {0, 200}};
+    SkPoint texs[] = {{0, 0}, {w, 0}, {w, h}, {0, h}};
+    uint16_t indices[] = {0, 1, 2, 2, 3, 0};
+
+    auto v = SkVertices::MakeCopy(
+            SkVertices::kTriangles_VertexMode, 4, verts, texs, nullptr, 6, indices);
+
+    auto m = SkMatrix::Scale(2, 2);  // ignored in CPU ???
+    auto s = image->makeShader(SkSamplingOptions(SkFilterMode::kLinear), &m);
+
+    SkPaint p;
+    p.setShader(s);
+
+    canvas->drawVertices(v, SkBlendMode::kModulate, p);
+}
+
+// Makes sure that drawVertices allows for triangles with "collapsed" UVs, where all three vertices
+// have the same texture coordinate. b/40044794
+DEF_SIMPLE_GM_BG(vertices_collapsed, canvas, 50, 50, SK_ColorWHITE) {
+    SkPoint verts[] = {{5, 5}, {45, 5}, {45, 45}, {5, 45}};
+    SkPoint texs[] = {{0, 0}, {0, 0}, {0, 0}, {0, 0}};
+    uint16_t indices[] = {0, 1, 2, 2, 3, 0};
+
+    sk_sp<SkVertices> v = SkVertices::MakeCopy(
+            SkVertices::kTriangles_VertexMode, 4, verts, texs, nullptr, 6, indices);
+
+    sk_sp<SkSurface> surf = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(1, 1));
+    surf->getCanvas()->clear(SK_ColorGREEN);
+    sk_sp<SkShader> shader = surf->makeImageSnapshot()->makeShader(SkSamplingOptions{});
+    SkPaint paint;
+    paint.setShader(shader);
+
+    canvas->drawVertices(v, SkBlendMode::kDst, paint);
 }

@@ -21,14 +21,18 @@
 #include <algorithm>
 #include <cstring>
 #include <iomanip>
+#include <map>
 #include <sstream>
 
 #include "starboard/common/string.h"
 #include "starboard/system.h"
 #include "starboard/thread.h"
 
+#if defined(ANDROID)
+#include <sys/prctl.h>
+#endif
+
 namespace starboard {
-namespace logging {
 namespace {
 #if SB_LOGGING_IS_OFFICIAL_BUILD
 SbLogPriority g_min_log_level = kSbLogPriorityFatal;
@@ -71,6 +75,21 @@ SbLogPriority StringToLogLevel(const std::string& log_level) {
   }
 
   return SB_LOG_INFO;
+}
+
+SbLogPriority ChromiumIntToStarboardLogLevel(const std::string& log_level) {
+  static const std::map<int, SbLogPriority> kLogLevelToSbLogPriority = {
+      {0, SB_LOG_INFO},
+      {1, SB_LOG_INFO},
+      {2, SB_LOG_WARNING},
+      {3, SB_LOG_ERROR},
+      {4, SB_LOG_FATAL}};
+
+  const auto log_level_as_int = std::stoi(log_level);
+  if (kLogLevelToSbLogPriority.count(log_level_as_int) == 0) {
+    return SB_LOG_INFO;  // Replicate StringToLogLevel() behaviour.
+  }
+  return kLogLevelToSbLogPriority.at(log_level_as_int);
 }
 
 void Break() {
@@ -126,14 +145,8 @@ std::ostream& operator<<(std::ostream& out, const std::wstring& wstr) {
   return out << wstr.c_str();
 }
 
-#if defined(__cplusplus_winrt)
-std::ostream& operator<<(std::ostream& out, ::Platform::String ^ str) {
-  return out << std::wstring(str->Begin(), str->End());
-}
-#endif
-
 LogMessage::LogMessage(const char* file, int line, SbLogPriority priority)
-    : priority_(priority), file_(file), line_(line) {
+    : priority_(priority) {
   Init(file, line);
 }
 
@@ -169,7 +182,11 @@ void LogMessage::Init(const char* file, int line) {
     filename.erase(0, last_slash_pos + 1);
   }
   char name[128] = {0};
+#if defined(__ANDROID_API__) && __ANDROID_API__ < 26
+  prctl(PR_GET_NAME, name, 0L, 0L, 0L);
+#else
   pthread_getname_np(pthread_self(), name, SB_ARRAY_SIZE_INT(name));
+#endif  // __ANDROID_API__ < 26
   stream_ << '[';
   stream_ << name << '/' << SbThreadGetId() << ':';
   struct timeval tv;
@@ -190,5 +207,4 @@ LogMessageVoidify::LogMessageVoidify() {}
 
 void LogMessageVoidify::operator&(std::ostream&) {}
 
-}  // namespace logging
 }  // namespace starboard

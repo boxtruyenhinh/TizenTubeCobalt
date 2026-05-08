@@ -22,15 +22,16 @@
 #include "perfetto/base/build_config.h"
 #include "perfetto/base/export.h"
 
-#if defined(STARBOARD)
-#include "starboard/thread.h"  // nogncheck
-#elif PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
 extern "C" {
 // Prototype extracted from the Windows SDK to avoid including windows.h.
 __declspec(dllimport) unsigned long __stdcall GetCurrentThreadId();
 }
 #elif PERFETTO_BUILDFLAG(PERFETTO_OS_FUCHSIA)
 #include <zircon/types.h>
+#elif PERFETTO_BUILDFLAG(PERFETTO_OS_QNX)
+#include <sys/types.h>
+#include <unistd.h>
 #elif PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
 #include <sys/syscall.h>
@@ -43,12 +44,8 @@ __declspec(dllimport) unsigned long __stdcall GetCurrentThreadId();
 namespace perfetto {
 namespace base {
 
-#if defined(STARBOARD)
-using PlatformThreadId = SbThreadId;
-inline PlatformThreadId GetThreadId() {
-  return SbThreadGetId();
-}
-#elif PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
+    PERFETTO_BUILDFLAG(PERFETTO_OS_QNX)
 using PlatformThreadId = pid_t;
 inline PlatformThreadId GetThreadId() {
   return gettid();

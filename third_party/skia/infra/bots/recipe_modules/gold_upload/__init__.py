@@ -8,7 +8,7 @@ DEPS = [
   'recipe_engine/json',
   'recipe_engine/context',
   'recipe_engine/file',
-  'recipe_engine/python',
+  'recipe_engine/platform',
   'recipe_engine/properties',
   'recipe_engine/step',
   'recipe_engine/time',

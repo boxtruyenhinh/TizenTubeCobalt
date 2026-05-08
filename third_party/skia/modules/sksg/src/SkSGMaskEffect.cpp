@@ -7,14 +7,23 @@
 
 #include "modules/sksg/include/SkSGMaskEffect.h"
 
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkPaint.h"
 #include "include/effects/SkLumaColorFilter.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkTo.h"
+#include "modules/sksg/include/SkSGNode.h"
+
+class SkMatrix;
+struct SkPoint;
 
 namespace sksg {
 
 static bool is_inverted(sksg::MaskEffect::Mode mode) {
     return static_cast<uint32_t>(mode) & 1;
-};
+}
 
 static bool is_luma(sksg::MaskEffect::Mode mode) {
     return static_cast<uint32_t>(mode) & 2;

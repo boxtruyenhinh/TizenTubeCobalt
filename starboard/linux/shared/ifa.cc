@@ -14,21 +14,20 @@
 
 #include "starboard/linux/shared/ifa.h"
 
-#include "starboard/extension/ifa.h"
-
 #include "starboard/common/string.h"
+#include "starboard/extension/ifa.h"
 #include "starboard/shared/environment.h"
 
 namespace starboard {
-namespace shared {
 
 namespace {
 
 bool CopyStringAndTestIfSuccess(char* out_value,
                                 int value_length,
                                 const char* from_value) {
-  if (strlen(from_value) + 1 > value_length)
+  if (strlen(from_value) + 1 > value_length) {
     return false;
+  }
   starboard::strlcpy(out_value, from_value, value_length);
   return true;
 }
@@ -61,5 +60,4 @@ const void* GetIfaApi() {
   return &kIfaApi;
 }
 
-}  // namespace shared
 }  // namespace starboard

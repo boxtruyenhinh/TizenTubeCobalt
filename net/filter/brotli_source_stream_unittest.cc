@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include <string>
 #include <utility>
 
@@ -13,7 +18,6 @@
 #include "base/run_loop.h"
 #include "net/base/io_buffer.h"
 #include "net/base/test_completion_callback.h"
-#include "net/cert/pki/string_util.h"
 #include "net/filter/brotli_source_stream.h"
 #include "net/filter/mock_source_stream.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -26,6 +30,16 @@ namespace {
 const size_t kDefaultBufferSize = 4096;
 const size_t kSmallBufferSize = 128;
 
+// Get the path of data directory.
+base::FilePath GetTestDataDir() {
+  base::FilePath data_dir;
+  base::PathService::Get(base::DIR_SRC_TEST_DATA_ROOT, &data_dir);
+  data_dir = data_dir.AppendASCII("net");
+  data_dir = data_dir.AppendASCII("data");
+  data_dir = data_dir.AppendASCII("filter_unittests");
+  return data_dir;
+}
+
 }  // namespace
 
 class BrotliSourceStreamTest : public PlatformTest {
@@ -34,21 +48,12 @@ class BrotliSourceStreamTest : public PlatformTest {
     PlatformTest::SetUp();
 
     // Get the path of data directory.
-    base::FilePath data_dir;
-  #if defined(STARBOARD)
-    base::PathService::Get(base::DIR_TEST_DATA, &data_dir);
-  #else
-    base::PathService::Get(base::DIR_SOURCE_ROOT, &data_dir);
-  #endif
-    data_dir = data_dir.AppendASCII("net");
-    data_dir = data_dir.AppendASCII("data");
-    data_dir = data_dir.AppendASCII("filter_unittests");
+    base::FilePath data_dir = GetTestDataDir();
 
     // Read data from the original file into buffer.
     base::FilePath file_path;
     file_path = data_dir.AppendASCII("google.txt");
     ASSERT_TRUE(base::ReadFileToString(file_path, &source_data_));
-    source_data_ = net::string_util::FindAndReplace(source_data_, "\r\n", "\n");
     ASSERT_GE(kDefaultBufferSize, source_data_.size());
 
     // Read data from the encoded file into buffer.
@@ -84,7 +89,7 @@ class BrotliSourceStreamTest : public PlatformTest {
   scoped_refptr<IOBufferWithSize> out_buffer_;
 
  private:
-  raw_ptr<MockSourceStream> source_;
+  raw_ptr<MockSourceStream, DanglingUntriaged> source_;
   std::unique_ptr<SourceStream> brotli_stream_;
   std::unique_ptr<base::RunLoop> loop_;
 
@@ -354,6 +359,45 @@ TEST_F(BrotliSourceStreamTest, DecodeEmptyData) {
   int bytes_read = ReadStream(callback.callback());
   EXPECT_EQ(OK, bytes_read);
   EXPECT_EQ("BROTLI", brotli_stream()->Description());
+}
+
+TEST_F(BrotliSourceStreamTest, WithDictionary) {
+  std::string encoded_buffer;
+  std::string dictionary_data;
+
+  base::FilePath data_dir = GetTestDataDir();
+  // Read data from the encoded file into buffer.
+  base::FilePath encoded_file_path;
+  encoded_file_path = data_dir.AppendASCII("google.sbr");
+  ASSERT_TRUE(base::ReadFileToString(encoded_file_path, &encoded_buffer));
+
+  // Read data from the dictionary file into buffer.
+  base::FilePath dictionary_file_path;
+  dictionary_file_path = data_dir.AppendASCII("test.dict");
+  ASSERT_TRUE(base::ReadFileToString(dictionary_file_path, &dictionary_data));
+
+  scoped_refptr<net::IOBuffer> dictionary_buffer =
+      base::MakeRefCounted<net::StringIOBuffer>(dictionary_data);
+
+  scoped_refptr<IOBufferWithSize> out_buffer =
+      base::MakeRefCounted<IOBufferWithSize>(kDefaultBufferSize);
+
+  auto source = std::make_unique<MockSourceStream>();
+  source->AddReadResult(encoded_buffer.c_str(), encoded_buffer.size(), OK,
+                        MockSourceStream::SYNC);
+
+  std::unique_ptr<SourceStream> brotli_stream =
+      CreateBrotliSourceStreamWithDictionary(
+          std::move(source), dictionary_buffer, dictionary_data.size());
+
+  TestCompletionCallback callback;
+  int bytes_read = brotli_stream->Read(out_buffer.get(), kDefaultBufferSize,
+                                       callback.callback());
+
+  EXPECT_EQ(static_cast<int>(source_data_len()), bytes_read);
+  EXPECT_EQ(
+      0, memcmp(out_buffer->data(), source_data().c_str(), source_data_len()));
+  EXPECT_EQ("BROTLI", brotli_stream->Description());
 }
 
 }  // namespace net

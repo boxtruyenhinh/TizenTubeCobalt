@@ -1,13 +1,15 @@
-load("//bazel:macros.bzl", "generated_cc_atom")
+load("//bazel:skia_rules.bzl", "skia_filegroup")
 
-generated_cc_atom(
-    name = "SkCGUtils_hdr",
-    hdrs = ["SkCGUtils.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//include/core:SkImageInfo_hdr",
-        "//include/core:SkImage_hdr",
-        "//include/core:SkPixmap_hdr",
-        "//include/core:SkSize_hdr",
+package(
+    default_applicable_licenses = ["//:license"],
+)
+
+licenses(["notice"])
+
+skia_filegroup(
+    name = "public_hdrs",
+    srcs = [
+        "SkCGUtils.h",
     ],
+    visibility = ["//src/utils/mac:__pkg__"],
 )

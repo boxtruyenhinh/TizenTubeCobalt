@@ -21,7 +21,6 @@
 #include "starboard/nplb/posix_compliance/posix_socket_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -45,14 +44,9 @@ TEST(PosixErrnoTest, ConnectUnavailableAddress) {
   ASSERT_TRUE(socket_fd > 0);
 
   sockaddr_in6 address = {};
-#if SB_HAS(IPV6)
   EXPECT_TRUE(
       PosixGetLocalAddressIPv4(reinterpret_cast<sockaddr*>(&address)) == 0 ||
       PosixGetLocalAddressIPv6(reinterpret_cast<sockaddr*>(&address)) == 0);
-#else
-  EXPECT_TRUE(PosixGetLocalAddressIPv4(reinterpret_cast<sockaddr*>(&address)) ==
-              0);
-#endif
 
   // Attempt to connect to an address where we expect connection to be refused
   connect(socket_fd, (struct sockaddr*)&address, sizeof(address));
@@ -66,4 +60,3 @@ TEST(PosixErrnoTest, ConnectUnavailableAddress) {
 }
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

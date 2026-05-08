@@ -1,4 +1,4 @@
-// Copyright 2024 The Cobalt Authors. All Rights Reserved.
+// Copyright 2025 The Cobalt Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,97 +20,64 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/time/time.h"
 #include "starboard/extension/loader_app_metrics.h"
+#include "starboard/system.h"
 
 namespace cobalt {
 namespace browser {
 
 namespace {
 
-void RecordLoaderAppTimeMetrics(
-    const StarboardExtensionLoaderAppMetricsApi* metrics_extension) {
-  int64_t elf_load_duration_us =
-      metrics_extension->GetElfLoadDurationMicroseconds();
-  int64_t elf_decompression_duration_us =
-      metrics_extension->GetElfDecompressionDurationMicroseconds();
+const StarboardExtensionLoaderAppMetricsApi* GetLoaderAppMetricsExtension() {
+  const auto* loader_app_metrics =
+      static_cast<const StarboardExtensionLoaderAppMetricsApi*>(
+          SbSystemGetExtension(kStarboardExtensionLoaderAppMetricsName));
 
-  if (elf_load_duration_us < 0) {
-    return;
-  }
-  if (elf_decompression_duration_us < 0) {
-    return;
-  }
-  if (elf_decompression_duration_us > elf_load_duration_us) {
-    // The decompression duration is considered to be contained within the ELF
-    // load duration, so this inequality is unexpected.
-    return;
+  if (!loader_app_metrics) {
+    LOG(WARNING) << "LoaderAppMetrics: Extension not found.";
+    return nullptr;
   }
 
-  int64_t unexplained_duration_us =
-      elf_load_duration_us - elf_decompression_duration_us;
-
-  base::UmaHistogramTimes(
-      "Cobalt.LoaderApp.ElfLoadDuration",
-      base::TimeDelta::FromMicroseconds(elf_load_duration_us));
-  base::UmaHistogramTimes(
-      "Cobalt.LoaderApp.ElfDecompressionDuration",
-      base::TimeDelta::FromMicroseconds(elf_decompression_duration_us));
-
-  // "Unexplained" just means means that we haven't yet attempted to break this
-  // chunk of time into its components. It's included here to give context for
-  // the other durations, as recommended by
-  // https://chromium.googlesource.com/chromium/src/+/lkgr/docs/speed/diagnostic_metrics.md#summation-diagnostics.
-  base::UmaHistogramTimes(
-      "Cobalt.LoaderApp.ElfLoadUnexplainedDuration",
-      base::TimeDelta::FromMicroseconds(unexplained_duration_us));
-
-  LOG(INFO) << "Recorded samples for Cobalt.LoaderApp duration metrics";
-}
-
-void RecordLoaderAppSpaceMetrics(
-    const StarboardExtensionLoaderAppMetricsApi* metrics_extension) {
-  if (metrics_extension->GetMaxSampledUsedCpuBytesDuringElfLoad() < 0) {
-    return;
+  if (strcmp(loader_app_metrics->name,
+             kStarboardExtensionLoaderAppMetricsName) != 0) {
+    LOG(ERROR) << "LoaderAppMetrics: Extension name mismatch.";
+    return nullptr;
   }
-
-  base::UmaHistogramMemoryMB(
-      "Cobalt.LoaderApp.MaxSampledUsedCPUMemoryDuringELFLoad",
-      metrics_extension->GetMaxSampledUsedCpuBytesDuringElfLoad() / 1000000);
-  LOG(INFO) << "Recorded sample for "
-            << "Cobalt.LoaderApp.MaxSampledUsedCPUMemoryDuringELFLoad";
+  return loader_app_metrics;
 }
 
 }  // namespace
 
-void RecordLoaderAppMetrics(
-    const StarboardExtensionLoaderAppMetricsApi* metrics_extension) {
-  if (metrics_extension &&
-      strcmp(metrics_extension->name,
-             kStarboardExtensionLoaderAppMetricsName) == 0) {
-    if (metrics_extension->version >= 1) {
-      base::UmaHistogramEnumeration(
-          "Cobalt.LoaderApp.CrashpadInstallationStatus",
-          metrics_extension->GetCrashpadInstallationStatus());
-      LOG(INFO) << "Recorded sample for "
-                << "Cobalt.LoaderApp.CrashpadInstallationStatus";
-    }
-    if (metrics_extension->version >= 2) {
-      if (!metrics_extension->GetElfLibraryStoredCompressed()) {
-        // We're only interested in load performance when the ELF library is
-        // stored compressed and must therefore be decompressed at load time.
-        return;
-      }
-
-      RecordLoaderAppTimeMetrics(metrics_extension);
-      RecordLoaderAppSpaceMetrics(metrics_extension);
-    }
-    if (metrics_extension->version >= 3) {
-      base::UmaHistogramEnumeration(
-          "Cobalt.LoaderApp.SlotSelectionStatus",
-          metrics_extension->GetSlotSelectionStatus());
-      LOG(INFO) << "Recorded sample for "
-                << "Cobalt.LoaderApp.SlotSelectionStatus";
-    }
+void RecordLoaderAppMetrics() {
+  const auto* loader_app_metrics = GetLoaderAppMetricsExtension();
+  if (!loader_app_metrics) {
+    return;
   }
+
+  if (loader_app_metrics->version < 2) {
+    LOG(WARNING) << "LoaderAppMetrics: Extension version too low ("
+                 << loader_app_metrics->version << "). Need at least 2.";
+    return;
+  }
+
+  if (!loader_app_metrics->GetElfLibraryStoredCompressed()) {
+    LOG(INFO) << "LoaderAppMetrics: ELF was not stored compressed. Skipping "
+                 "decompression metric.";
+    return;
+  }
+
+  int64_t elf_decompression_duration_us =
+      loader_app_metrics->GetElfDecompressionDurationMicroseconds();
+
+  if (elf_decompression_duration_us < 0) {
+    LOG(ERROR) << "LoaderAppMetrics: Decompression duration is negative, "
+                  "not logging.";
+    return;
+  }
+
+  base::UmaHistogramTimes("Cobalt.LoaderApp.ElfDecompressionDuration",
+                          base::Microseconds(elf_decompression_duration_us));
+  LOG(INFO) << "LoaderAppMetrics: Logging ELF Decompression Duration: "
+            << elf_decompression_duration_us << " us";
 }
 
 }  // namespace browser

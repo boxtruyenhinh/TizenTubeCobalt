@@ -42,9 +42,8 @@ cd "${CURRENT_WORKING_DIRECTORY}"
 
 echo "Updating the SDK..."
 
-# Accept all SDK licenses non-interactively
-yes | ${SDK_MANAGER_TOOL} --sdk_root=${ANDROID_SDK_ROOT} --update || true
-yes | ${SDK_MANAGER_TOOL} --sdk_root=${ANDROID_SDK_ROOT} --licenses || true
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+export JAVA_HOME="${SCRIPT_DIR}/../../../third_party/jdk/current"
 
 # Update the installation
 ${SDK_MANAGER_TOOL} --sdk_root=${ANDROID_SDK_ROOT} \

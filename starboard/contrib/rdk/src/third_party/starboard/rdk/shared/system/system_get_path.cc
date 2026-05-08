@@ -27,7 +27,6 @@
 #include "starboard/configuration_constants.h"
 #include "starboard/common/log.h"
 #include "starboard/common/string.h"
-#include "starboard/directory.h"
 #if SB_IS(EVERGREEN_COMPATIBLE)
 #include "starboard/elf_loader/evergreen_config.h"
 #endif
@@ -41,8 +40,8 @@ namespace {
 // on the Evergreen binary executed.
 // Returns false if it failed.
 bool GetEvergreenContentPathOverride(char* out_path, int path_size) {
-  const starboard::elf_loader::EvergreenConfig* evergreen_config =
-      starboard::elf_loader::EvergreenConfig::GetInstance();
+  const elf_loader::EvergreenConfig* evergreen_config =
+     elf_loader::EvergreenConfig::GetInstance();
   if (!evergreen_config) {
     return true;
   }
@@ -57,80 +56,6 @@ bool GetEvergreenContentPathOverride(char* out_path, int path_size) {
   return true;
 }
 #endif
-
-bool GetContentDirectory(char* out_path, int path_size)
-{
-  const char* paths = std::getenv("COBALT_CONTENT_DIR");
-  if (paths) {
-    // Treat the environment variable as PATH-like search variable
-    std::stringstream pathsStream(paths);
-    const std::string testFilePath = "/fonts/fonts.xml";
-    std::string contentPath;
-    while(getline(pathsStream, contentPath,':')){
-      //check if fonts/fonts.xml file exists, if not, evaluate another path.
-      std::string tmp = contentPath + testFilePath;
-      struct stat info;
-      if(stat(tmp.c_str(), &info) == 0){
-        return (starboard::strlcat<char>(out_path, contentPath.c_str(), path_size) < path_size);
-      }
-    }
-#if !SB_IS(EVERGREEN_COMPATIBLE)
-    // Don't return false and let EvergreenConfig override the path
-    return false;
-#endif
-  }
-
-  // Default to /usr/share/content/data if COBALT_CONTENT_PATH is not set
-  return (starboard::strlcat<char>(out_path, "/usr/share/content/data", path_size) < path_size);
-}
-
-// Gets the path to the cache directory, using the home directory.
-bool GetCacheDirectory(char* out_path, int path_size) {
-  std::vector<char> home_path(kSbFileMaxPath + 1);
-  if (!starboard::shared::starboard::GetHomeDirectory(home_path.data(),
-                                                      kSbFileMaxPath)) {
-    return false;
-  }
-  int result = snprintf(out_path, path_size, "%s/.cache", home_path.data());
-  if (result < 0 || result >= path_size) {
-    out_path[0] = '\0';
-    return false;
-  }
-  struct stat info;
-  return mkdir(out_path, 0700) == 0 ||
-         (stat(out_path, &info) == 0 && S_ISDIR(info.st_mode));
-}
-
-// Gets path to the storage directory, using the home directory.
-bool GetStorageDirectory(char* out_path, int path_size) {
-
-  const char* storage_path = std::getenv("COBALT_STORAGE_DIR");
-  if (storage_path) {
-    if (starboard::strlcat<char>(out_path, storage_path, path_size) < path_size) {
-      struct stat info;
-      return mkdir(out_path, 0700) == 0 ||
-         (stat(out_path, &info) == 0 && S_ISDIR(info.st_mode));
-    }
-    else
-      SB_LOG(ERROR) << "GetStorageDirectory: out_path exceeds max file path size";
-  }
-
-  std::vector<char> home_path(kSbFileMaxPath + 1);
-  if (!starboard::shared::starboard::GetHomeDirectory(home_path.data(),
-                                                      kSbFileMaxPath)) {
-    return false;
-  }
-
-  int result = snprintf(out_path, path_size, "%s/.cobalt_storage", home_path.data());
-  if (result < 0 || result >= path_size) {
-    out_path[0] = '\0';
-    return false;
-  }
-  SB_LOG(INFO) << "SbSysGetPath: StorageDirectoy = " << std::string(out_path);
-  struct stat info;
-  return mkdir(out_path, 0700) == 0 ||
-         (stat(out_path, &info) == 0 && S_ISDIR(info.st_mode));
-}
 
 // Places up to |path_size| - 1 characters of the path to the current
 // executable in |out_path|, ensuring it is NULL-terminated. Returns success
@@ -174,6 +99,128 @@ bool GetExecutableDirectory(char* out_path, int path_size) {
 
   *last_slash = '\0';
   return true;
+}
+
+// Checks if content directory is valid.
+bool IsValidContentDirectory(const char* path) {
+  if (!path || path[0] == '\0') {
+    return false;
+  }
+
+  // The content directory is assummed valid if it contains fonts/fonts.xml file.
+  // TODO: we need to find better way to validate content directory since
+  // below checking is just an assumption not a standard.
+  const std::string testFontsFullPath = std::string(path) + "/fonts/fonts.xml";
+  struct stat info;
+  return (stat(testFontsFullPath.c_str(), &info) == 0);
+}
+
+// Gets the path to the content directory.
+bool GetContentDirectory(char* out_path, int path_size) {
+  // `COBALT_CONTENT_DIR` is used to provide the path of content directory in
+  // PATH-like format. This is not a evergreen standard but required for RDK
+  // plugin environment where cobalt plugin uses `COBALT_CONTENT_DIR` env to
+  // set the content path.
+  const char* paths = std::getenv("COBALT_CONTENT_DIR");
+  if (paths && paths[0] != '\0') {
+    // Treat the environment variable as PATH-like search variable
+    std::stringstream pathsStream(paths);
+    std::string contentPath;
+    while (getline(pathsStream, contentPath, ':')) {
+      if (IsValidContentDirectory(contentPath.c_str())) {
+        return (starboard::strlcat<char>(out_path, contentPath.c_str(),
+                                         path_size) < path_size);
+      }
+    }
+    SB_LOG(WARNING) << "GetContentDirectory: COBALT_CONTENT_DIR=" << paths
+                    << " don't have cobalt libs";
+  }
+
+  if (GetExecutableDirectory(out_path, path_size) &&
+      IsValidContentDirectory(out_path)) {
+    return true;
+  }
+
+  out_path[0] = '\0';
+  // Default path as expected by cobalt plugin
+  return (starboard::strlcat<char>(out_path, "/usr/share/content/data",
+                                   path_size) < path_size);
+}
+
+// Gets the path to the cache directory, using the home directory.
+bool GetCacheDirectory(char* out_path, int path_size) {
+  std::vector<char> home_path(kSbFileMaxPath + 1);
+  if (!starboard::GetHomeDirectory(home_path.data(), kSbFileMaxPath)) {
+    return false;
+  }
+  int result = snprintf(out_path, path_size, "%s/.cache", home_path.data());
+  if (result < 0 || result >= path_size) {
+    out_path[0] = '\0';
+    return false;
+  }
+  struct stat info;
+  return mkdir(out_path, 0700) == 0 ||
+         (stat(out_path, &info) == 0 && S_ISDIR(info.st_mode));
+}
+
+// Gets path to the storage directory, using the home directory.
+bool GetStorageDirectory(char* out_path, int path_size) {
+
+  const char* storage_path = std::getenv("COBALT_STORAGE_DIR");
+  if (storage_path) {
+    if (starboard::strlcat<char>(out_path, storage_path, path_size) < path_size) {
+      struct stat info;
+      return mkdir(out_path, 0700) == 0 ||
+         (stat(out_path, &info) == 0 && S_ISDIR(info.st_mode));
+    }
+    else
+      SB_LOG(ERROR) << "GetStorageDirectory: out_path exceeds max file path size";
+  }
+
+  std::vector<char> home_path(kSbFileMaxPath + 1);
+  if (!starboard::GetHomeDirectory(home_path.data(), kSbFileMaxPath)) {
+    return false;
+  }
+
+  int result = snprintf(out_path, path_size, "%s/.cobalt_storage", home_path.data());
+  if (result < 0 || result >= path_size) {
+    out_path[0] = '\0';
+    return false;
+  }
+  SB_LOG(INFO) << "SbSysGetPath: StorageDirectoy = " << std::string(out_path);
+  struct stat info;
+  return mkdir(out_path, 0700) == 0 ||
+         (stat(out_path, &info) == 0 && S_ISDIR(info.st_mode));
+}
+
+// Gets path to the files directory, using the home directory.
+bool GetFilesDirectory(char* out_path, int path_size) {
+
+  const char* files_path = std::getenv("COBALT_FILES_DIR");
+  if (files_path) {
+    if (starboard::strlcat<char>(out_path, files_path, path_size) < path_size) {
+      struct stat info;
+      return mkdir(out_path, 0700) == 0 ||
+         (stat(out_path, &info) == 0 && S_ISDIR(info.st_mode));
+    }
+    else
+      SB_LOG(ERROR) << "GetFilesDirectory: out_path exceeds max file path size";
+  }
+
+  std::vector<char> home_path(kSbFileMaxPath + 1);
+  if (!starboard::GetHomeDirectory(home_path.data(), kSbFileMaxPath)) {
+    return false;
+  }
+
+  int result = snprintf(out_path, path_size, "%s/.cobalt_files", home_path.data());
+  if (result < 0 || result >= path_size) {
+    out_path[0] = '\0';
+    return false;
+  }
+  SB_LOG(INFO) << "SbSysGetPath: FilesDirectoy = " << std::string(out_path);
+  struct stat info;
+  return mkdir(out_path, 0700) == 0 ||
+         (stat(out_path, &info) == 0 && S_ISDIR(info.st_mode));
 }
 
 // Gets only the name portion of the current executable.
@@ -287,6 +334,13 @@ bool SbSystemGetPath(SbSystemPathId path_id, char* out_path, int path_size) {
           return false;
       }
       break;
+
+    case kSbSystemPathFilesDirectory: {
+      if (!GetFilesDirectory(path, kPathSize)) {
+        return false;
+      }
+      break;
+    }
 
     default:
       SB_NOTIMPLEMENTED() << "SbSystemGetPath not implemented for " << path_id;

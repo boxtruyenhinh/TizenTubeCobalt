@@ -5,13 +5,30 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGpu.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
+
+#include <cstdint>
+
+struct GrContextOptions;
 
 static bool check_read(skiatest::Reporter* reporter, const SkBitmap& bitmap) {
     bool result = true;
@@ -19,24 +36,27 @@ static bool check_read(skiatest::Reporter* reporter, const SkBitmap& bitmap) {
         const uint32_t srcPixel = *bitmap.getAddr32(x, 0);
         if (srcPixel != SK_ColorGREEN) {
             ERRORF(reporter, "Expected color of Green, but got 0x%08x, at pixel (%d, 0).",
-                   x, srcPixel);
+                   srcPixel, x);
             result = false;
         }
     }
     return result;
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(OpsTaskFlushCount, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(OpsTaskFlushCount,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
     GrGpu* gpu = context->priv().getGpu();
 
     SkImageInfo imageInfo = SkImageInfo::Make(1000, 1, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
 
-    sk_sp<SkSurface> surface1 = SkSurface::MakeRenderTarget(context, SkBudgeted::kYes, imageInfo);
+    sk_sp<SkSurface> surface1 = SkSurfaces::RenderTarget(context, skgpu::Budgeted::kYes, imageInfo);
     if (!surface1) {
         return;
     }
-    sk_sp<SkSurface> surface2 = SkSurface::MakeRenderTarget(context, SkBudgeted::kYes, imageInfo);
+    sk_sp<SkSurface> surface2 = SkSurfaces::RenderTarget(context, skgpu::Budgeted::kYes, imageInfo);
     if (!surface2) {
         return;
     }

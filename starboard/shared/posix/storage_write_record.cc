@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/common/storage.h"
+// clang-format on
 
 #include <fcntl.h>
 
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 #include "starboard/common/file.h"
@@ -36,8 +39,8 @@ bool SbStorageWriteRecord(SbStorageRecord record,
 
   const char* name = record->name.c_str();
   std::vector<char> original_file_path(kSbFileMaxPath);
-  if (!starboard::shared::starboard::GetStorageFilePath(
-          name, original_file_path.data(), kSbFileMaxPath)) {
+  if (!starboard::GetStorageFilePath(name, original_file_path.data(),
+                                     kSbFileMaxPath)) {
     return false;
   }
 
@@ -57,8 +60,8 @@ bool SbStorageWriteRecord(SbStorageRecord record,
   const char* source = data;
   int64_t to_write = data_size;
   while (to_write > 0) {
-    int to_write_max =
-        static_cast<int>(std::min(to_write, static_cast<int64_t>(kSbInt32Max)));
+    int to_write_max = static_cast<int>(std::min(
+        to_write, static_cast<int64_t>(std::numeric_limits<int32_t>::max())));
     int bytes_written = write(temp_file, source, to_write_max);
     if (bytes_written < 0) {
       close(temp_file);

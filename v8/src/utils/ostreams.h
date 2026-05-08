@@ -8,10 +8,9 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
-#include <ostream>  // NOLINT
+#include <ostream>
 #include <streambuf>
 
-#include "include/v8config.h"
 #include "src/base/macros.h"
 #include "src/base/platform/mutex.h"
 #include "src/common/globals.h"
@@ -19,7 +18,6 @@
 namespace v8 {
 namespace internal {
 
-#if !defined(V8_OS_STARBOARD)
 class V8_EXPORT_PRIVATE OFStreamBase : public std::streambuf {
  public:
   explicit OFStreamBase(FILE* f);
@@ -32,7 +30,6 @@ class V8_EXPORT_PRIVATE OFStreamBase : public std::streambuf {
   int_type overflow(int_type c) override;
   std::streamsize xsputn(const char* s, std::streamsize n) override;
 };
-#endif  // !defined(V8_OS_STARBOARD)
 
 // Output buffer and stream writing into debugger's command window.
 class V8_EXPORT_PRIVATE DbgStreamBuf : public std::streambuf {
@@ -63,9 +60,7 @@ class V8_EXPORT_PRIVATE OFStream : public std::ostream {
   ~OFStream() override = default;
 
  private:
-#if !defined(V8_OS_STARBOARD)
   OFStreamBase buf_;
-#endif  // !defined(V8_OS_STARBOARD)
 };
 
 #if defined(ANDROID) && !defined(V8_ANDROID_LOG_STDOUT)
@@ -85,6 +80,8 @@ class StdoutStream : public std::ostream {
   StdoutStream() : std::ostream(&stream_) {}
 
  private:
+  friend class StderrStream;
+
   static V8_EXPORT_PRIVATE base::RecursiveMutex* GetStdoutMutex();
 
   AndroidLogStream stream_;
@@ -93,20 +90,25 @@ class StdoutStream : public std::ostream {
 #else
 class StdoutStream : public OFStream {
  public:
-#if defined(STARBOARD)
-  StdoutStream() : OFStream(nullptr) {}
-#else
   StdoutStream() : OFStream(stdout) {}
-#endif
 
  private:
+  friend class StderrStream;
   static V8_EXPORT_PRIVATE base::RecursiveMutex* GetStdoutMutex();
 
   base::RecursiveMutexGuard mutex_guard_{GetStdoutMutex()};
 };
 #endif
 
-// Wrappers to disambiguate uint16_t and uc16.
+class StderrStream : public OFStream {
+ public:
+  StderrStream() : OFStream(stderr) {}
+
+ private:
+  base::RecursiveMutexGuard mutex_guard_{StdoutStream::GetStdoutMutex()};
+};
+
+// Wrappers to disambiguate uint16_t and base::uc16.
 struct AsUC16 {
   explicit AsUC16(uint16_t v) : value(v) {}
   uint16_t value;
@@ -157,19 +159,33 @@ struct AsHexBytes {
 };
 
 template <typename T>
+  requires requires(T t, std::ostream& os) { os << *t; }
 struct PrintIteratorRange {
   T start;
   T end;
+  const char* separator = ", ";
+  const char* startBracket = "[";
+  const char* endBracket = "]";
+
   PrintIteratorRange(T start, T end) : start(start), end(end) {}
+  PrintIteratorRange& WithoutBrackets() {
+    startBracket = "";
+    endBracket = "";
+    return *this;
+  }
+  PrintIteratorRange& WithSeparator(const char* new_separator) {
+    this->separator = new_separator;
+    return *this;
+  }
 };
 
 // Print any collection which can be iterated via std::begin and std::end.
 // {Iterator} is the common type of {std::begin} and {std::end} called on a
 // {const T&}. This function is only instantiable if that type exists.
-template <typename T, typename Iterator = typename std::common_type<
-                          decltype(std::begin(std::declval<const T&>())),
-                          decltype(std::end(std::declval<const T&>()))>::type>
-PrintIteratorRange<Iterator> PrintCollection(const T& collection) {
+template <typename T>
+auto PrintCollection(const T& collection)
+    -> PrintIteratorRange<std::common_type_t<decltype(std::begin(collection)),
+                                             decltype(std::end(collection))>> {
   return {std::begin(collection), std::end(collection)};
 }
 
@@ -196,12 +212,12 @@ V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
 
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const PrintIteratorRange<T>& range) {
-  const char* comma = "";
-  os << "[";
-  for (T it = range.start; it != range.end; ++it, comma = ", ") {
-    os << comma << *it;
+  const char* separator = "";
+  os << range.startBracket;
+  for (T it = range.start; it != range.end; ++it, separator = range.separator) {
+    os << separator << *it;
   }
-  os << "]";
+  os << range.endBracket;
   return os;
 }
 

@@ -15,15 +15,14 @@
 #ifndef STARBOARD_SHARED_STARBOARD_MEDIA_MIME_TYPE_H_
 #define STARBOARD_SHARED_STARBOARD_MEDIA_MIME_TYPE_H_
 
+#include <iosfwd>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "starboard/shared/internal_only.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace media {
 
 // This class can be used to parse a content type for media in the form of
 // "type/subtype; param1=value1; param2="value2".  For example, the content type
@@ -69,9 +68,7 @@ class MimeType {
   // Expose the function as a helper function to parse a mime attribute.
   static bool ParseParamString(const std::string& param_string, Param* param);
 
-  explicit MimeType(const std::string& content_type);
-
-  bool is_valid() const { return is_valid_; }
+  static std::optional<MimeType> Create(const std::string& content_type);
 
   const std::string& type() const { return type_; }
   const std::string& subtype() const { return subtype_; }
@@ -107,23 +104,24 @@ class MimeType {
                                const std::string& pattern = "") const;
   bool ValidateBoolParameter(const char* name) const;
 
-  std::string ToString() const;
+  friend std::ostream& operator<<(std::ostream& os, const MimeType& mime_type);
 
  private:
   // Use std::vector as the number of components are usually small and we'd like
   // to keep the order of components.
-  typedef std::vector<Param> Params;
+  using Params = std::vector<Param>;
 
-  bool is_valid_ = false;
-  std::string type_;
-  std::string subtype_;
-  std::vector<std::string> codecs_;
-  Params params_;
+  MimeType(std::string type,
+           std::string subtype,
+           std::vector<std::string> codecs,
+           Params params);
+
+  const std::string type_;
+  const std::string subtype_;
+  const std::vector<std::string> codecs_;
+  const Params params_;
 };
 
-}  // namespace media
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_MEDIA_MIME_TYPE_H_

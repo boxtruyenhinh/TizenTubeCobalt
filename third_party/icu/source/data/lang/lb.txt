@@ -456,7 +456,6 @@ lb{
         ro_MD{"Moldawesch"}
         rof{"Rombo"}
         rom{"Romani"}
-        root{"Root"}
         rtm{"Rotumanesch"}
         ru{"Russesch"}
         rue{"Russinesch"}
@@ -619,6 +618,7 @@ lb{
     }
     Languages%short{
         en_GB{"Englesch (UK)"}
+        en_US{"Englesch (US)"}
     }
     Scripts{
         Arab{"Arabesch"}
@@ -757,8 +757,6 @@ lb{
             gregorian{"Gregorianesche Kalenner"}
             hebrew{"Hebräesche Kalenner"}
             indian{"Indeschen Nationalkalenner"}
-            islamic{"Islamesche Kalenner"}
-            islamic-civil{"Biergerlechen islamesche Kalenner"}
             iso8601{"ISO-8601-Kalenner"}
             japanese{"Japanesche Kalenner"}
             persian{"Persesche Kalenner"}
@@ -877,10 +875,5 @@ lb{
         language{"Sprooch: {0}"}
         script{"Schrëft: {0}"}
         territory{"Regioun: {0}"}
-    }
-    localeDisplayPattern{
-        keyTypePattern{"{0}: {1}"}
-        pattern{"{0} ({1})"}
-        separator{"{0}, {1}"}
     }
 }

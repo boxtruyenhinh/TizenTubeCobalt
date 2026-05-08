@@ -179,7 +179,7 @@ gl{
         LY{"Libia"}
         MA{"Marrocos"}
         MC{"Mónaco"}
-        MD{"Moldavia"}
+        MD{"República Moldova"}
         ME{"Montenegro"}
         MF{"Saint Martin"}
         MG{"Madagascar"}
@@ -280,7 +280,7 @@ gl{
         UY{"O Uruguai"}
         UZ{"Uzbekistán"}
         VA{"Cidade do Vaticano"}
-        VC{"San Vicente e As Granadinas"}
+        VC{"San Vicente e as Granadinas"}
         VE{"Venezuela"}
         VG{"Illas Virxes Británicas"}
         VI{"Illas Virxes Estadounidenses"}
@@ -298,6 +298,9 @@ gl{
         ZW{"Zimbabwe"}
         ZZ{"Rexión descoñecida"}
     }
+    Countries%chagos{
+        IO{"Arquipélago de Chagos"}
+    }
     Countries%short{
         GB{"RU"}
         UN{"ONU"}
@@ -308,6 +311,7 @@ gl{
         CG{"Congo (RC)"}
         CI{"Costa do Marfil"}
         CZ{"República Checa"}
+        NZ{"Aotearoa (Nova Zelandia)"}
         SZ{"Swazilandia"}
     }
 }

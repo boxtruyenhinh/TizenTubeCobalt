@@ -298,6 +298,9 @@ de{
         ZW{"Simbabwe"}
         ZZ{"Unbekannte Region"}
     }
+    Countries%chagos{
+        IO{"Chagos-Archipel"}
+    }
     Countries%short{
         GB{"UK"}
         UN{"UN"}
@@ -308,6 +311,7 @@ de{
         CG{"Kongo (Republik)"}
         CI{"Elfenbeinküste"}
         CZ{"Tschechische Republik"}
+        NZ{"Aotearoa (Neuseeland)"}
         SZ{"Swasiland"}
         TL{"Osttimor"}
     }

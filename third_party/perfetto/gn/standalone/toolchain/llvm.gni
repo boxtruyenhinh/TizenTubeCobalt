@@ -12,11 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-if (use_cobalt_customizations) {
-import("../sanitizers/vars.gni")
-} else {
 import("//gn/standalone/sanitizers/vars.gni")
-}
 
 declare_args() {
   is_hermetic_clang = is_clang && (is_linux_host || is_win_host)
@@ -42,9 +38,9 @@ if (is_linux_host) {
     _linux_llvm_dir = _find_llvm_out[0]
     linux_clang_bin = _find_llvm_out[1]
     linux_clangxx_bin = _find_llvm_out[2]
-    linux_clang_linker = "gold"
+    linux_clang_linker = "ld"  # Use the default system linker (bfd)
   }
-} else if (is_mac_host && is_clang && !use_cobalt_customizations && !is_system_compiler) {
+} else if (is_mac_host && is_clang && !is_system_compiler) {
   _mac_toolchain_dirs = exec_script("mac_find_llvm.py", [], "list lines")
 
   # _mac_toolchain_dirs[0] contains the mac toolchain dir.

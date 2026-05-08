@@ -17,8 +17,9 @@
 #include "starboard/extension/accessibility.h"
 #include "starboard/extension/configuration.h"
 #include "starboard/extension/crash_handler.h"
-#include "starboard/extension/cwrappers.h"
-#include "starboard/extension/enhanced_audio.h"
+#include "starboard/extension/experimental/media_buffer_pool.h"
+#include "starboard/extension/experimental_features.h"
+#include "starboard/extension/features.h"
 #include "starboard/extension/font.h"
 #include "starboard/extension/free_space.h"
 #include "starboard/extension/graphics.h"
@@ -27,22 +28,19 @@
 #include "starboard/extension/javascript_cache.h"
 #include "starboard/extension/loader_app_metrics.h"
 #include "starboard/extension/media_session.h"
-#include "starboard/extension/media_settings.h"
 #include "starboard/extension/memory_mapped_file.h"
 #include "starboard/extension/platform_info.h"
 #include "starboard/extension/platform_service.h"
 #include "starboard/extension/player_configuration.h"
 #include "starboard/extension/player_set_max_video_input_size.h"
-#include "starboard/extension/socket_receive_multi_msg.h"
+#include "starboard/extension/player_set_video_surface_view.h"
 #include "starboard/extension/system_info.h"
-#include "starboard/extension/time_zone.h"
 #include "starboard/extension/updater_notification.h"
 #include "starboard/extension/url_fetcher_observer.h"
 #include "starboard/system.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace starboard {
-namespace extension {
 
 TEST(ExtensionTest, PlatformService) {
   typedef CobaltExtensionPlatformServiceApi ExtensionApi;
@@ -237,32 +235,16 @@ TEST(ExtensionTest, CrashHandler) {
 
   EXPECT_STREQ(extension_api->name, kExtensionName);
   EXPECT_GE(extension_api->version, 1u);
-  EXPECT_LE(extension_api->version, 2u);
+  EXPECT_LE(extension_api->version, 3u);
   EXPECT_NE(extension_api->OverrideCrashpadAnnotations, nullptr);
 
   if (extension_api->version >= 2) {
     EXPECT_NE(extension_api->SetString, nullptr);
   }
 
-  const ExtensionApi* second_extension_api =
-      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
-  EXPECT_EQ(second_extension_api, extension_api)
-      << "Extension struct should be a singleton";
-}
-
-TEST(ExtensionTest, CWrappers) {
-  typedef CobaltExtensionCWrappersApi ExtensionApi;
-  const char* kExtensionName = kCobaltExtensionCWrappersName;
-
-  const ExtensionApi* extension_api =
-      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
-  if (!extension_api) {
-    return;
+  if (extension_api->version >= 3) {
+    EXPECT_NE(extension_api->RegisterSetStringCallback, nullptr);
   }
-
-  EXPECT_STREQ(extension_api->name, kExtensionName);
-  EXPECT_EQ(extension_api->version, 1u);
-  EXPECT_NE(extension_api->PowWrapper, nullptr);
 
   const ExtensionApi* second_extension_api =
       static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
@@ -394,38 +376,6 @@ TEST(ExtensionTest, FreeSpace) {
       << "Extension struct should be a singleton";
 }
 
-TEST(ExtensionTest, EnhancedAudio) {
-  typedef CobaltExtensionEnhancedAudioApi ExtensionApi;
-  const char* kExtensionName = kCobaltExtensionEnhancedAudioName;
-
-  const ExtensionApi* extension_api =
-      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
-  if (!extension_api) {
-    return;
-  }
-
-#if SB_API_VERSION >= 15
-  ASSERT_FALSE(extension_api)
-      << "EnhancedAudio extension shouldn't be used under SB_API_VERSION "
-      << SB_API_VERSION
-      << ", the features are supported by the current SbPlayer api by default."
-      << "\nTo upgrade the EnhancedAudio extension based implementation from"
-      << " a previous Starboard version, please rename the `PlayerWriteSamples`"
-      << " implementation to `SbPlayerWriteSample()` (as they are compatible"
-      << " at abi level) and disable the EnhancedAudio extension from"
-      << " `SbSystemGetExtension()`.";
-#endif  // SB_API_VERSION >= 15
-
-  EXPECT_STREQ(extension_api->name, kExtensionName);
-  EXPECT_EQ(extension_api->version, 1u);
-  EXPECT_NE(extension_api->PlayerWriteSamples, nullptr);
-
-  const ExtensionApi* second_extension_api =
-      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
-  EXPECT_EQ(second_extension_api, extension_api)
-      << "Extension struct should be a singleton";
-}
-
 TEST(ExtensionTest, PlatformInfo) {
   typedef CobaltExtensionPlatformInfoApi ExtensionApi;
   const char* kExtensionName = kCobaltExtensionPlatformInfoName;
@@ -441,26 +391,6 @@ TEST(ExtensionTest, PlatformInfo) {
   EXPECT_NE(extension_api->GetFirmwareVersionDetails, nullptr);
   EXPECT_NE(extension_api->GetOsExperience, nullptr);
   EXPECT_NE(extension_api->GetCoreServicesVersion, nullptr);
-
-  const ExtensionApi* second_extension_api =
-      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
-  EXPECT_EQ(second_extension_api, extension_api)
-      << "Extension struct should be a singleton";
-}
-
-TEST(ExtensionTest, TimeZone) {
-  typedef StarboardExtensionTimeZoneApi ExtensionApi;
-  const char* kExtensionName = kStarboardExtensionTimeZoneName;
-
-  const ExtensionApi* extension_api =
-      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
-  if (!extension_api) {
-    return;
-  }
-
-  EXPECT_STREQ(extension_api->name, kExtensionName);
-  EXPECT_EQ(extension_api->version, 1u);
-  EXPECT_NE(extension_api->SetTimeZone, nullptr);
 
   const ExtensionApi* second_extension_api =
       static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
@@ -503,6 +433,46 @@ TEST(ExtensionTest, PlayerSetMaxVideoInputSize) {
   EXPECT_STREQ(extension_api->name, kExtensionName);
   EXPECT_EQ(extension_api->version, 1u);
   EXPECT_NE(extension_api->SetMaxVideoInputSizeForCurrentThread, nullptr);
+
+  const ExtensionApi* second_extension_api =
+      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
+  EXPECT_EQ(second_extension_api, extension_api)
+      << "Extension struct should be a singleton";
+}
+
+TEST(ExtensionTest, PlayerSetVideoSurfaceView) {
+  typedef StarboardExtensionPlayerSetVideoSurfaceViewApi ExtensionApi;
+  const char* kExtensionName = kStarboardExtensionPlayerSetVideoSurfaceViewName;
+
+  const ExtensionApi* extension_api =
+      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
+  if (!extension_api) {
+    return;
+  }
+
+  EXPECT_STREQ(extension_api->name, kExtensionName);
+  EXPECT_EQ(extension_api->version, 1u);
+  EXPECT_NE(extension_api->SetVideoSurfaceViewForCurrentThread, nullptr);
+
+  const ExtensionApi* second_extension_api =
+      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
+  EXPECT_EQ(second_extension_api, extension_api)
+      << "Extension struct should be a singleton";
+}
+
+TEST(ExtensionTest, ExperimentalFeatures) {
+  typedef StarboardExtensionExperimentalFeaturesConfigurationApi ExtensionApi;
+  const char* kExtensionName =
+      kStarboardExtensionExperimentalFeaturesConfigurationName;
+
+  const ExtensionApi* extension_api =
+      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
+  if (!extension_api) {
+    return;
+  }
+
+  EXPECT_STREQ(extension_api->name, kExtensionName);
+  EXPECT_NE(extension_api->SetExperimentalFeaturesForCurrentThread, nullptr);
 
   const ExtensionApi* second_extension_api =
       static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
@@ -574,33 +544,6 @@ TEST(ExtensionTest, PlayerConfiguration) {
   }
 }
 
-TEST(ExtensionTest, MediaSettings) {
-  typedef StarboardExtensionMediaSettingsApi ExtensionApi;
-  const char* kExtensionName = kStarboardExtensionMediaSettingsName;
-
-  const ExtensionApi* extension_api =
-      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
-  if (!extension_api) {
-    return;
-  }
-
-  EXPECT_STREQ(extension_api->name, kExtensionName);
-
-  EXPECT_GE(extension_api->version, 1u);
-  EXPECT_LE(extension_api->version, 3u);
-  EXPECT_NE(extension_api->EnableAsyncReleaseMediaCodecBridge, nullptr);
-
-  if (extension_api->version >= 2) {
-    EXPECT_NE(extension_api->SetAsyncReleaseMediaCodecBridgeTimeoutSeconds,
-              nullptr);
-  }
-
-  const ExtensionApi* second_extension_api =
-      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
-  EXPECT_EQ(second_extension_api, extension_api)
-      << "Extension struct should be a singleton";
-}
-
 TEST(ExtensionTest, CobaltAccessibilityExtension) {
   typedef StarboardExtensionAccessibilityApi ExtensionApi;
   const char* kExtensionName = kStarboardExtensionAccessibilityName;
@@ -617,28 +560,6 @@ TEST(ExtensionTest, CobaltAccessibilityExtension) {
   EXPECT_NE(extension_api->GetDisplaySettings, nullptr);
   EXPECT_NE(extension_api->GetCaptionSettings, nullptr);
   EXPECT_NE(extension_api->SetCaptionsEnabled, nullptr);
-
-  const ExtensionApi* second_extension_api =
-      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
-  EXPECT_EQ(second_extension_api, extension_api)
-      << "Extension struct should be a singleton";
-}
-
-TEST(ExtensionTest, SocketReceiveMultiMsg) {
-  typedef CobaltExtensionSocketReceiveMultiMsgApi ExtensionApi;
-  const char* kExtensionName = kCobaltExtensionSocketReceiveMultiMsgName;
-
-  const ExtensionApi* extension_api =
-      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
-  if (!extension_api) {
-    return;
-  }
-
-  EXPECT_STREQ(extension_api->name, kExtensionName);
-  EXPECT_EQ(extension_api->version, 1u);
-  EXPECT_NE(extension_api->ReceiveMultiMsgBufferSize, nullptr);
-  EXPECT_NE(extension_api->ReceiveMultiMsgBufferInitialize, nullptr);
-  EXPECT_NE(extension_api->ReceiveMultiMsg, nullptr);
 
   const ExtensionApi* second_extension_api =
       static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
@@ -666,5 +587,46 @@ TEST(ExtensionTest, StarboardSystemInfoExtension) {
       << "Extension struct should be a singleton";
 }
 
-}  // namespace extension
+TEST(ExtensionTest, StarboardFeaturesExtension) {
+  typedef StarboardExtensionFeaturesApi ExtensionApi;
+  const char* kExtensionName = kStarboardExtensionFeaturesName;
+
+  const ExtensionApi* extension_api =
+      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
+  if (!extension_api) {
+    return;
+  }
+
+  EXPECT_STREQ(extension_api->name, kExtensionName);
+  EXPECT_EQ(extension_api->version, 1u);
+  EXPECT_NE(extension_api->InitializeStarboardFeatures, nullptr);
+
+  const ExtensionApi* second_extension_api =
+      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
+  EXPECT_EQ(second_extension_api, extension_api)
+      << "Extension struct should be a singleton";
+}
+
+TEST(ExtensionTest, StarboardMediaBufferPoolExtension) {
+  typedef StarboardExtensionMediaBufferPoolApi ExtensionApi;
+  const char* kExtensionName = kStarboardExtensionMediaBufferPoolApiName;
+
+  const ExtensionApi* extension_api =
+      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
+  if (!extension_api) {
+    return;
+  }
+
+  EXPECT_STREQ(extension_api->name, kExtensionName);
+  EXPECT_EQ(extension_api->version, 1u);
+  EXPECT_NE(extension_api->ShrinkToZero, nullptr);
+  EXPECT_NE(extension_api->ExpandTo, nullptr);
+  EXPECT_NE(extension_api->Write, nullptr);
+
+  const ExtensionApi* second_extension_api =
+      static_cast<const ExtensionApi*>(SbSystemGetExtension(kExtensionName));
+  EXPECT_EQ(second_extension_api, extension_api)
+      << "Extension struct should be a singleton";
+}
+
 }  // namespace starboard

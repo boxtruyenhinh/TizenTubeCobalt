@@ -10,14 +10,14 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
-#include "include/gpu/GrContextOptions.h"
+#include "include/gpu/ganesh/GrContextOptions.h"
 
 namespace skiagm {
 
 class BatchedConvexPathsGM : public GM {
 private:
-    SkString onShortName() override { return SkString("batchedconvexpaths"); }
-    SkISize onISize() override { return SkISize::Make(512, 512); }
+    SkString getName() const override { return SkString("batchedconvexpaths"); }
+    SkISize getISize() override { return SkISize::Make(512, 512); }
 
     void modifyGrContextOptions(GrContextOptions* ctxOptions) override {
         // Ensure our paths don't go through the atlas path renderer.

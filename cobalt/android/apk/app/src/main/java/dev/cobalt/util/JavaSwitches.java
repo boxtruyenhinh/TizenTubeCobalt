@@ -1,0 +1,50 @@
+// Copyright 2025 The Cobalt Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package dev.cobalt.util;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Defines the constant names for feature switches used in Kimono.
+ */
+public class JavaSwitches {
+  public static final String ENABLE_QUIC = "EnableQUIC";
+  public static final String DISABLE_STARTUP_GUARD = "DisableStartupGuard";
+
+  /** flag to re-enable freeze and resume events */
+  public static final String ENABLE_FREEZE = "EnableFreeze";
+
+  /** flag to force use IPv4 for system host resolution. */
+  public static final String USE_IPV4_FOR_DNS = "UseIPv4ForDNS";
+
+  /** flag to enable fast track mic capture. */
+  public static final String ENABLE_COBALT_AUDIO_CAPTURE_FAST_TRACK = "EnableCobaltAudioCaptureFastTrack";
+
+  public static List<String> getExtraCommandLineArgs(Map<String, String> javaSwitches) {
+    List<String> extraCommandLineArgs = new ArrayList<>();
+
+    if (javaSwitches.containsKey(JavaSwitches.USE_IPV4_FOR_DNS)) {
+      extraCommandLineArgs.add("--enable-features=UseIPv4ForDNS");
+    }
+
+    if (javaSwitches.containsKey(JavaSwitches.ENABLE_COBALT_AUDIO_CAPTURE_FAST_TRACK)) {
+      extraCommandLineArgs.add("--enable-features=CobaltAudioCaptureFastTrack");
+    }
+
+    return extraCommandLineArgs;
+  }
+}

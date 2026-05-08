@@ -14,6 +14,7 @@
 #include "quiche/quic/core/quic_connection_stats.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/platform/api/quic_bug_tracker.h"
+#include "quiche/quic/platform/api/quic_flag_utils.h"
 #include "quiche/quic/platform/api/quic_flags.h"
 #include "quiche/quic/platform/api/quic_logging.h"
 
@@ -45,21 +46,20 @@ QuicReceivedPacketManager::QuicReceivedPacketManager(QuicConnectionStats* stats)
       num_retransmittable_packets_received_since_last_ack_sent_(0),
       min_received_before_ack_decimation_(kMinReceivedBeforeAckDecimation),
       ack_frequency_(kDefaultRetransmittablePacketsBeforeAck),
-#if defined(USE_COBALT_CUSTOMIZATIONS)
+#if BUILDFLAG(IS_COBALT)
       max_retransmittable_packets_before_ack_(
           kMaxRetransmittablePacketsBeforeAck),
-#endif  // defined(USE_COBALT_CUSTOMIZATIONS)
-      ack_decimation_delay_(kAckDecimationDelay),
+#endif
+      ack_decimation_delay_(GetQuicFlag(quic_ack_decimation_delay)),
       unlimited_ack_decimation_(false),
       one_immediate_ack_(false),
       ignore_order_(false),
       local_max_ack_delay_(
-          QuicTime::Delta::FromMilliseconds(kDefaultDelayedAckTimeMs)),
+          QuicTime::Delta::FromMilliseconds(GetDefaultDelayedAckTimeMs())),
       ack_timeout_(QuicTime::Zero()),
       time_of_previous_received_packet_(QuicTime::Zero()),
       was_last_packet_missing_(false),
-      last_ack_frequency_frame_sequence_number_(-1) {
-}
+      last_ack_frequency_frame_sequence_number_(-1) {}
 
 QuicReceivedPacketManager::~QuicReceivedPacketManager() {}
 
@@ -74,38 +74,6 @@ void QuicReceivedPacketManager::SetFromConfig(const QuicConfig& config,
   if (config.HasClientSentConnectionOption(k1ACK, perspective)) {
     one_immediate_ack_ = true;
   }
-#if defined(USE_COBALT_CUSTOMIZATIONS)
-  if (config.HasClientSentConnectionOption(kCOB0, perspective)) {
-    max_retransmittable_packets_before_ack_ = 10;
-  }
-  if (config.HasClientSentConnectionOption(kCOB1, perspective)) {
-    max_retransmittable_packets_before_ack_ = 20;
-  }
-  if (config.HasClientSentConnectionOption(kCOB2, perspective)) {
-    max_retransmittable_packets_before_ack_ = 40;
-  }
-  if (config.HasClientSentConnectionOption(kCOB3, perspective)) {
-    max_retransmittable_packets_before_ack_ = 60;
-  }
-  if (config.HasClientSentConnectionOption(kCOB4, perspective)) {
-    max_retransmittable_packets_before_ack_ = 80;
-  }
-  if (config.HasClientSentConnectionOption(kCOB5, perspective)) {
-    max_retransmittable_packets_before_ack_ = 100;
-  }
-  if (config.HasClientSentConnectionOption(kCOB6, perspective)) {
-    max_retransmittable_packets_before_ack_ = 120;
-  }
-  if (config.HasClientSentConnectionOption(kCOB7, perspective)) {
-    max_retransmittable_packets_before_ack_ = 160;
-  }
-  if (config.HasClientSentConnectionOption(kCOB8, perspective)) {
-    max_retransmittable_packets_before_ack_ = 200;
-  }
-  if (config.HasClientSentConnectionOption(kCOB9, perspective)) {
-    max_retransmittable_packets_before_ack_ = 240;
-  }
-#endif  // defined(USE_COBALT_CUSTOMIZATIONS)
 }
 
 void QuicReceivedPacketManager::RecordPacketReceived(
@@ -119,6 +87,7 @@ void QuicReceivedPacketManager::RecordPacketReceived(
     ack_frame_.received_packet_times.clear();
   }
   ack_frame_updated_ = true;
+  ack_now_ = false;
 
   // Whether |packet_number| is received out of order.
   bool packet_reordered = false;
@@ -141,6 +110,7 @@ void QuicReceivedPacketManager::RecordPacketReceived(
     time_largest_observed_ = receipt_time;
   }
   ack_frame_.packets.Add(packet_number);
+  MaybeTrimAckRanges();
 
   if (save_timestamps_) {
     // The timestamp format only handles packets in time order.
@@ -159,8 +129,11 @@ void QuicReceivedPacketManager::RecordPacketReceived(
     }
   }
 
-  if (GetQuicRestartFlag(quic_receive_ecn) && ecn != ECN_NOT_ECT) {
-    QUIC_RESTART_FLAG_COUNT_N(quic_receive_ecn, 1, 3);
+  if (ecn == ECN_CE && !last_packet_was_ce_marked_) {
+    changed_to_ce_marked_ = true;
+  }
+  last_packet_was_ce_marked_ = ecn == ECN_CE;
+  if (ecn != ECN_NOT_ECT) {
     if (!ack_frame_.ecn_counters.has_value()) {
       ack_frame_.ecn_counters = QuicEcnCounts();
     }
@@ -188,6 +161,13 @@ void QuicReceivedPacketManager::RecordPacketReceived(
   }
 }
 
+void QuicReceivedPacketManager::MaybeTrimAckRanges() {
+  while (max_ack_ranges_ > 0 &&
+         ack_frame_.packets.NumIntervals() > max_ack_ranges_) {
+    ack_frame_.packets.RemoveSmallestInterval();
+  }
+}
+
 bool QuicReceivedPacketManager::IsMissing(QuicPacketNumber packet_number) {
   return LargestAcked(ack_frame_).IsInitialized() &&
          packet_number < LargestAcked(ack_frame_) &&
@@ -211,8 +191,18 @@ const QuicFrame QuicReceivedPacketManager::GetUpdatedAckFrame(
                                     ? QuicTime::Delta::Zero()
                                     : approximate_now - time_largest_observed_;
   }
+
+  const size_t initial_ack_ranges = ack_frame_.packets.NumIntervals();
+  uint64_t num_iterations = 0;
   while (max_ack_ranges_ > 0 &&
          ack_frame_.packets.NumIntervals() > max_ack_ranges_) {
+    num_iterations++;
+    QUIC_BUG_IF(quic_rpm_too_many_ack_ranges, (num_iterations % 100000) == 0)
+        << "Too many ack ranges to remove, possibly a dead loop. "
+           "initial_ack_ranges:"
+        << initial_ack_ranges << " max_ack_ranges:" << max_ack_ranges_
+        << ", current_ack_ranges:" << ack_frame_.packets.NumIntervals()
+        << " num_iterations:" << num_iterations;
     ack_frame_.packets.RemoveSmallestInterval();
   }
   // Clear all packet times if any are too far from largest observed.
@@ -288,7 +278,11 @@ void QuicReceivedPacketManager::MaybeUpdateAckFrequency(
   }
   ack_frequency_ = unlimited_ack_decimation_
                        ? std::numeric_limits<size_t>::max()
-                       : max_retransmittable_packets_before_ack_;
+#if BUILDFLAG(IS_COBALT)
+: max_retransmittable_packets_before_ack_;
+#else
+: kMaxRetransmittablePacketsBeforeAck;
+#endif
 }
 
 void QuicReceivedPacketManager::MaybeUpdateAckTimeout(
@@ -301,12 +295,25 @@ void QuicReceivedPacketManager::MaybeUpdateAckTimeout(
     return;
   }
 
+  if (ack_now_) {
+    // An IMMEDIATE_ACK frame arrived. Send an ack immediately.
+    QUIC_RELOADABLE_FLAG_COUNT_N(quic_receive_ack_frequency, 2, 2);
+    ack_timeout_ = now;
+    return;
+  }
+
   if (!ignore_order_ && was_last_packet_missing_ &&
       last_sent_largest_acked_.IsInitialized() &&
       last_received_packet_number < last_sent_largest_acked_) {
     // Only ack immediately if an ACK frame was sent with a larger largest acked
     // than the newly received packet number.
     ack_timeout_ = now;
+    return;
+  }
+
+  if (changed_to_ce_marked_) {
+    ack_timeout_ = now;
+    changed_to_ce_marked_ = false;
     return;
   }
 

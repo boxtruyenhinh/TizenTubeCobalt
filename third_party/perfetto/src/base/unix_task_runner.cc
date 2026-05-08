@@ -34,10 +34,6 @@
 
 #include "perfetto/ext/base/watchdog.h"
 
-#if defined(STARBOARD)
-#include "starboard/common/log.h"
-#endif
-
 namespace perfetto {
 namespace base {
 
@@ -56,8 +52,11 @@ void UnixTaskRunner::WakeUp() {
 
 void UnixTaskRunner::Run() {
   PERFETTO_DCHECK_THREAD(thread_checker_);
-  created_thread_id_ = GetThreadId();
-  quit_ = false;
+  created_thread_id_.store(GetThreadId(), std::memory_order_relaxed);
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    quit_ = false;
+  }
   for (;;) {
     int poll_timeout_ms;
     {
@@ -68,9 +67,6 @@ void UnixTaskRunner::Run() {
       UpdateWatchTasksLocked();
     }
 
-#if defined(STARBOARD)
-  SB_NOTIMPLEMENTED();
-#else
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
     DWORD timeout =
         poll_timeout_ms >= 0 ? static_cast<DWORD>(poll_timeout_ms) : INFINITE;
@@ -91,7 +87,6 @@ void UnixTaskRunner::Run() {
     platform::AfterMaybeBlockingSyscall();
     PERFETTO_CHECK(ret >= 0);
     PostFileDescriptorWatches(0 /*ignored*/);
-#endif
 #endif
 
     // To avoid starvation we always interleave all types of tasks -- immediate,
@@ -114,6 +109,11 @@ bool UnixTaskRunner::QuitCalled() {
 bool UnixTaskRunner::IsIdleForTesting() {
   std::lock_guard<std::mutex> lock(lock_);
   return immediate_tasks_.empty();
+}
+
+void UnixTaskRunner::AdvanceTimeForTesting(uint32_t ms) {
+  std::lock_guard<std::mutex> lock(lock_);
+  advanced_time_for_testing_ += TimeMillis(ms);
 }
 
 void UnixTaskRunner::UpdateWatchTasksLocked() {
@@ -150,7 +150,7 @@ void UnixTaskRunner::RunImmediateAndDelayedTask() {
     }
     if (!delayed_tasks_.empty()) {
       auto it = delayed_tasks_.begin();
-      if (now >= it->first) {
+      if (now + advanced_time_for_testing_ >= it->first) {
         delayed_task = std::move(it->second);
         delayed_tasks_.erase(it);
       }
@@ -250,7 +250,8 @@ int UnixTaskRunner::GetDelayMsToNextTaskLocked() const {
   if (!immediate_tasks_.empty())
     return 0;
   if (!delayed_tasks_.empty()) {
-    TimeMillis diff = delayed_tasks_.begin()->first - GetWallTimeMs();
+    TimeMillis diff = delayed_tasks_.begin()->first - GetWallTimeMs() -
+                      advanced_time_for_testing_;
     return std::max(0, static_cast<int>(diff.count()));
   }
   return -1;
@@ -272,7 +273,8 @@ void UnixTaskRunner::PostDelayedTask(std::function<void()> task,
   TimeMillis runtime = GetWallTimeMs() + TimeMillis(delay_ms);
   {
     std::lock_guard<std::mutex> lock(lock_);
-    delayed_tasks_.insert(std::make_pair(runtime, std::move(task)));
+    delayed_tasks_.insert(
+        std::make_pair(runtime + advanced_time_for_testing_, std::move(task)));
   }
   WakeUp();
 }
@@ -307,7 +309,7 @@ void UnixTaskRunner::RemoveFileDescriptorWatch(PlatformHandle fd) {
 }
 
 bool UnixTaskRunner::RunsTasksOnCurrentThread() const {
-  return GetThreadId() == created_thread_id_;
+  return GetThreadId() == created_thread_id_.load(std::memory_order_relaxed);
 }
 
 }  // namespace base

@@ -7,16 +7,36 @@
 
 #include "src/codec/SkWebpCodec.h"
 
+#include "include/codec/SkCodec.h"
 #include "include/codec/SkCodecAnimation.h"
+#include "include/codec/SkWebpDecoder.h"
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
-#include "src/codec/SkCodecPriv.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkStream.h"
+#include "include/private/base/SkAlign.h"
+#include "include/private/base/SkMath.h"
+#include "include/private/base/SkNoncopyable.h"
+#include "include/private/base/SkTFitsIn.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
+#include "modules/skcms/skcms.h"
 #include "src/codec/SkParseEncodedOrigin.h"
 #include "src/codec/SkSampler.h"
 #include "src/core/SkRasterPipeline.h"
+#include "src/core/SkRasterPipelineOpContexts.h"
+#include "src/core/SkRasterPipelineOpList.h"
 #include "src/core/SkStreamPriv.h"
+
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <optional>
+#include <tuple>
+#include <utility>
 
 // A WebP decoder on top of (subset of) libwebp
 // For more information on WebP image format, and libwebp library, see:
@@ -26,9 +46,9 @@
 
 // If moving libwebp out of skia source tree, path for webp headers must be
 // updated accordingly. Here, we enforce using local copy in webp sub-directory.
-#include "webp/decode.h"
-#include "webp/demux.h"
-#include "webp/encode.h"
+#include "webp/decode.h"  // NO_G3_REWRITE
+#include "webp/demux.h"  // NO_G3_REWRITE
+#include "webp/mux_types.h"  // NO_G3_REWRITE
 
 bool SkWebpCodec::IsWebp(const void* buf, size_t bytesRead) {
     // WEBP starts with the following:
@@ -38,20 +58,186 @@ bool SkWebpCodec::IsWebp(const void* buf, size_t bytesRead) {
     return bytesRead >= 14 && !memcmp(bytes, "RIFF", 4) && !memcmp(&bytes[8], "WEBPVP", 6);
 }
 
+// This gives the optimal amount of the stream as SkData to a WebPDemux object for
+// decoding so that an SkCodec object can be made.
+// Exif data is at the end so we will end up reading the whole stream in that case.
+// Otherwise we stop until we reach the header bytes for VP8(L) data, and the first
+// frame for animated data.
+// Returns a bool indicating if only the header has been read and the data read from
+// the stream as SkData. If incomplete/invalid data, return nullptr and ignore the boolean
+// value.
+static std::pair<bool, sk_sp<SkData>> get_header_from_stream(SkStream* stream) {
+    const size_t kBufferSize = 4096;
+    char buffer[kBufferSize];
+    // "RIFF" (4) + file size (4) + "WEBP" (4) = 12
+    const size_t kInitialHeaderSize = 12;
+
+    SkDynamicMemoryWStream tempStream;
+    size_t bytes_read = stream->read(buffer, kInitialHeaderSize);
+    if (bytes_read < kInitialHeaderSize ||
+        memcmp(buffer, "RIFF", 4) != 0 ||
+        memcmp(&buffer[8], "WEBP", 4) != 0) {
+        // Fail if we don't have valid webp data
+        return {false, nullptr};
+    }
+    tempStream.write(buffer, bytes_read);
+    bool isAnimated = false;
+    bool firstChunkRead = false;
+
+    while (!stream->isAtEnd()) {
+        // Read the chunk's FourCC and payload size
+        const size_t kChunkSizeHeader = 8;
+        bytes_read = stream->read(buffer, kChunkSizeHeader);
+        if (bytes_read < kChunkSizeHeader) {
+            return {false, nullptr};
+        }
+        tempStream.write(buffer, bytes_read);
+
+        // Return upon VP8 or VP8L chunk, keep reading and writing otherwise
+        // Handle ANMF subchunks, if animated image read the first frame and return
+        if (!memcmp(buffer, "VP8 ", 4)) {
+            const size_t kVP8UncompressedChunkMinSize = 3;
+            const size_t kVP8UncompressedChunkMaxSize = 10;
+            bytes_read = stream->read(buffer, kVP8UncompressedChunkMaxSize);
+            if (bytes_read < kVP8UncompressedChunkMinSize) {
+                // Invalid webp
+                return {false, nullptr};
+            }
+            tempStream.write(buffer, bytes_read);
+            return {true, tempStream.detachAsData()};
+        } else if (!memcmp(buffer, "VP8L", 4)) {
+            const size_t kImageHeaderSize = 5;
+            bytes_read = stream->read(buffer, kImageHeaderSize);
+            if (bytes_read < kImageHeaderSize) {
+                // Invalid webp
+                return {false, nullptr};
+            }
+            tempStream.write(buffer, bytes_read);
+            return {true, tempStream.detachAsData()};
+        } else if (!memcmp(buffer, "VP8X", 4)) {
+            if (firstChunkRead) {
+                return {false, nullptr};
+            } else {
+                firstChunkRead = true;
+            }
+            // VP8X payload should always be 10
+            uint32_t payloadSize;
+            const size_t kVP8XPayloadSize = 10;
+            memcpy(&payloadSize, &buffer[4], 4);
+            if (payloadSize != kVP8XPayloadSize) {
+                return {false, nullptr};
+            }
+
+            bytes_read = stream->read(buffer, payloadSize);
+            if (bytes_read < payloadSize) {
+              // Invalid webp
+              return {false, nullptr};
+            }
+            tempStream.write(buffer, bytes_read);
+
+            uint8_t vp8xFeatureFlags;
+            memcpy(&vp8xFeatureFlags, buffer, 1);
+            const bool hasExif = vp8xFeatureFlags & EXIF_FLAG;
+            isAnimated = vp8xFeatureFlags & ANIMATION_FLAG;
+            if (hasExif) {
+                // If exif data, we have to read the whole stream because exif data
+                // is at the end of the file and we want that in order to create
+                // the SkCodec
+                do {
+                  bytes_read = stream->read(buffer, kBufferSize);
+                  tempStream.write(buffer, bytes_read);
+                } while (!stream->isAtEnd());
+                return {false, tempStream.detachAsData()};
+            }
+        } else {
+            if (!firstChunkRead) {
+                // We only expect VP8, VP8L, or VP8X chunks to be the first.
+                return {false, nullptr};
+            }
+            const bool animatedFrame = !memcmp(buffer, "ANMF", 4);
+
+            // According to the RIFF document format, if 'payloadSize' is odd a single
+            // padding byte -- which must be 0 to conform with RIFF -- is added.
+            uint32_t payloadSize;
+            memcpy(&payloadSize, &buffer[4], 4);
+            if (payloadSize % 2 != 0) {
+                payloadSize += 1;
+            }
+
+            // Read 'payload size' bytes ahead to get to the next chunk
+            while (payloadSize) {
+                bytes_read = stream->read(buffer, std::min((size_t)payloadSize, kBufferSize));
+                if (!bytes_read) {
+                    break;
+                }
+                tempStream.write(buffer, bytes_read);
+                payloadSize -= bytes_read;
+            }
+            if (payloadSize) {
+                SkASSERT(stream->isAtEnd());
+                // Invalid webp
+                return {false, nullptr};
+            }
+
+            if (animatedFrame && isAnimated) {
+                // If this is an animated frame and we are expecting it, return
+                // the whole frame (this is the first frame which we want in order to
+                // create the SkCodec)
+                return {true, tempStream.detachAsData()};
+            }
+        }
+    }
+    // We never reached image data but read the whole stream
+    return {true, tempStream.detachAsData()};
+}
+
+bool SkWebpCodec::ensureAllData() {
+    if (fOnlyHeaderParsed) {
+        SkDynamicMemoryWStream newData;
+        newData.write(fData->data(), fData->size());
+        SkStreamCopy(&newData, this->stream());
+        fData = newData.detachAsData();
+        fOnlyHeaderParsed = false;
+
+        WebPData webpData = { fData->bytes(), fData->size() };
+        WebPDemuxState state;
+        fDemux.reset(WebPDemuxPartial(&webpData, &state));
+        // We know fDemux state is at least WEBP_DEMUX_PARSED_HEADER already which we allow
+        if (state == WEBP_DEMUX_PARSE_ERROR) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // Parse headers of RIFF container, and check for valid Webp (VP8) content.
 // Returns an SkWebpCodec on success
 std::unique_ptr<SkCodec> SkWebpCodec::MakeFromStream(std::unique_ptr<SkStream> stream,
                                                      Result* result) {
+    SkASSERT(result);
+    if (!stream) {
+        *result = SkCodec::kInvalidInput;
+        return nullptr;
+    }
     // Webp demux needs a contiguous data buffer.
     sk_sp<SkData> data = nullptr;
+    // If there is no memory base for the stream, we will attempt to only read necessary portions,
+    // which we will read the rest later.
+    bool onlyHeaderParsed = false;
     if (stream->getMemoryBase()) {
         // It is safe to make without copy because we'll hold onto the stream.
         data = SkData::MakeWithoutCopy(stream->getMemoryBase(), stream->getLength());
     } else {
-        data = SkCopyStreamToData(stream.get());
+        std::tie(onlyHeaderParsed, data) = get_header_from_stream(stream.get());
+        if (!data) {
+            *result = kIncompleteInput;
+            return nullptr;
+        }
 
         // If we are forced to copy the stream to a data, we can go ahead and delete the stream.
-        stream.reset(nullptr);
+        if (!onlyHeaderParsed) {
+            stream.reset(nullptr);
+        }
     }
 
     // It's a little strange that the |demux| will outlive |webpData|, though it needs the
@@ -172,7 +358,8 @@ std::unique_ptr<SkCodec> SkWebpCodec::MakeFromStream(std::unique_ptr<SkStream> s
     *result = kSuccess;
     SkEncodedInfo info = SkEncodedInfo::Make(width, height, color, alpha, 8, std::move(profile));
     return std::unique_ptr<SkCodec>(new SkWebpCodec(std::move(info), std::move(stream),
-                                                    demux.release(), std::move(data), origin));
+                                                    demux.release(), std::move(data), origin,
+                                                    onlyHeaderParsed));
 }
 
 static WEBP_CSP_MODE webp_decode_mode(SkColorType dstCT, bool premultiply) {
@@ -227,6 +414,11 @@ int SkWebpCodec::onGetRepetitionCount() {
     return loopCount;
 }
 
+SkCodec::IsAnimated SkWebpCodec::onIsAnimated() {
+    auto flags = WebPDemuxGetI(fDemux.get(), WEBP_FF_FORMAT_FLAGS);
+    return (flags & ANIMATION_FLAG) != 0 ? IsAnimated::kYes : IsAnimated::kNo;
+}
+
 int SkWebpCodec::onGetFrameCount() {
     auto flags = WebPDemuxGetI(fDemux.get(), WEBP_FF_FORMAT_FLAGS);
     if (!(flags & ANIMATION_FLAG)) {
@@ -236,6 +428,10 @@ int SkWebpCodec::onGetFrameCount() {
     const uint32_t oldFrameCount = fFrameHolder.size();
     if (fFailed) {
         return oldFrameCount;
+    }
+
+    if (!ensureAllData()) {
+        return 0;
     }
 
     const uint32_t frameCount = WebPDemuxGetI(fDemux, WEBP_FF_FRAME_COUNT);
@@ -312,36 +508,45 @@ static bool is_8888(SkColorType colorType) {
     }
 }
 
+namespace {
+
 // Requires that the src input be unpremultiplied (or opaque).
-static void blend_line(SkColorType dstCT, void* dst,
-                       SkColorType srcCT, const void* src,
-                       SkAlphaType dstAt,
-                       bool srcHasAlpha,
-                       int width) {
-    SkRasterPipeline_MemoryCtx dst_ctx = { (void*)dst, 0 },
-                               src_ctx = { (void*)src, 0 };
+class RPBlender final : SkNoncopyable {
+public:
+    RPBlender(SkColorType dstCT, SkColorType srcCT, SkAlphaType dstAt, bool srcHasAlpha)
+    {
+        fRP.appendLoadDst(dstCT, &fDstCtx);
+        if (kUnpremul_SkAlphaType == dstAt) {
+            fRP.append(SkRasterPipelineOp::premul_dst);
+        }
 
-    SkRasterPipeline_<256> p;
+        fRP.appendLoad(srcCT, &fSrcCtx);
+        if (srcHasAlpha) {
+            fRP.append(SkRasterPipelineOp::premul);
+        }
 
-    p.append_load_dst(dstCT, &dst_ctx);
-    if (kUnpremul_SkAlphaType == dstAt) {
-        p.append(SkRasterPipeline::premul_dst);
+        fRP.append(SkRasterPipelineOp::srcover);
+
+        if (kUnpremul_SkAlphaType == dstAt) {
+            fRP.append(SkRasterPipelineOp::unpremul);
+        }
+        fRP.appendStore(dstCT, &fDstCtx);
     }
 
-    p.append_load(srcCT, &src_ctx);
-    if (srcHasAlpha) {
-        p.append(SkRasterPipeline::premul);
+    void blendLine(void* dst, const void* src, int width) {
+        fDstCtx = {                    dst, 0 };
+        fSrcCtx = { const_cast<void*>(src), 0 };
+
+        fRP.run(0, 0, width, 1);
     }
 
-    p.append(SkRasterPipeline::srcover);
+private:
+    SkRasterPipelineContexts::MemoryCtx fDstCtx, fSrcCtx;
 
-    if (kUnpremul_SkAlphaType == dstAt) {
-        p.append(SkRasterPipeline::unpremul);
-    }
-    p.append_store(dstCT, &dst_ctx);
+    SkRasterPipeline_<256> fRP;
+};
 
-    p.run(0,0, width,1);
-}
+}  // namespace
 
 SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, size_t rowBytes,
                                          const Options& options, int* rowsDecodedPtr) {
@@ -362,6 +567,9 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
     WebPIterator frame;
     SkAutoTCallVProc<WebPIterator, WebPDemuxReleaseIterator> autoFrame(&frame);
     // If this succeeded in onGetFrameCount(), it should succeed again here.
+    if (!ensureAllData()) {
+        return kInvalidInput;
+    }
     SkAssertResult(WebPDemuxGetFrame(fDemux, index + 1, &frame));
 
     const bool independent = index == 0 ? true :
@@ -522,11 +730,15 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
             xformDst = dst;
         }
 
+        std::optional<RPBlender> blender;
+        if (blendWithPrevFrame) {
+            blender.emplace(dstCT, dstCT, dstInfo.alphaType(), frame.has_alpha);
+        }
+
         for (int y = 0; y < rowsDecoded; y++) {
             this->applyColorXform(xformDst, xformSrc, scaledWidth);
             if (blendWithPrevFrame) {
-                blend_line(dstCT, dst, dstCT, xformDst,
-                        dstInfo.alphaType(), frame.has_alpha, scaledWidth);
+                blender->blendLine(dst, xformDst, scaledWidth);
                 dst = SkTAddOffset<void>(dst, rowBytes);
             } else {
                 xformDst = SkTAddOffset<void>(xformDst, rowBytes);
@@ -534,11 +746,12 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
             xformSrc = SkTAddOffset<uint32_t>(xformSrc, srcRowBytes);
         }
     } else if (blendWithPrevFrame) {
+        RPBlender blender(dstCT, webpDst.colorType(), dstInfo.alphaType(), frame.has_alpha);
+
         const uint8_t* src = config.output.u.RGBA.rgba;
 
         for (int y = 0; y < rowsDecoded; y++) {
-            blend_line(dstCT, dst, webpDst.colorType(), src,
-                    dstInfo.alphaType(), frame.has_alpha, scaledWidth);
+            blender.blendLine(dst, src, scaledWidth);
             src = SkTAddOffset<const uint8_t>(src, srcRowBytes);
             dst = SkTAddOffset<void>(dst, rowBytes);
         }
@@ -548,13 +761,43 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
 }
 
 SkWebpCodec::SkWebpCodec(SkEncodedInfo&& info, std::unique_ptr<SkStream> stream,
-                         WebPDemuxer* demux, sk_sp<SkData> data, SkEncodedOrigin origin)
+                         WebPDemuxer* demux, sk_sp<SkData> data, SkEncodedOrigin origin,
+                         bool onlyHeaderParsed)
     : INHERITED(std::move(info), skcms_PixelFormat_BGRA_8888, std::move(stream),
                 origin)
     , fDemux(demux)
     , fData(std::move(data))
     , fFailed(false)
+    , fOnlyHeaderParsed(onlyHeaderParsed)
 {
     const auto& eInfo = this->getEncodedInfo();
     fFrameHolder.setScreenSize(eInfo.width(), eInfo.height());
 }
+
+namespace SkWebpDecoder {
+bool IsWebp(const void* data, size_t len) {
+    return SkWebpCodec::IsWebp(data, len);
+}
+
+std::unique_ptr<SkCodec> Decode(std::unique_ptr<SkStream> stream,
+                                SkCodec::Result* outResult,
+                                SkCodecs::DecodeContext) {
+    SkCodec::Result resultStorage;
+    if (!outResult) {
+        outResult = &resultStorage;
+    }
+    return SkWebpCodec::MakeFromStream(std::move(stream), outResult);
+}
+
+std::unique_ptr<SkCodec> Decode(sk_sp<SkData> data,
+                                SkCodec::Result* outResult,
+                                SkCodecs::DecodeContext) {
+    if (!data) {
+        if (outResult) {
+            *outResult = SkCodec::kInvalidInput;
+        }
+        return nullptr;
+    }
+    return Decode(SkMemoryStream::Make(std::move(data)), outResult, nullptr);
+}
+}  // namespace SkWebpDecoder

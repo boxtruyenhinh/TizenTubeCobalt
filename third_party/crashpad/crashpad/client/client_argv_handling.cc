@@ -1,4 +1,4 @@
-// Copyright 2018 The Crashpad Authors. All rights reserved.
+// Copyright 2018 The Crashpad Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 #include "client/client_argv_handling.h"
 
 #include "base/strings/stringprintf.h"
+#include "build/build_config.h"
 
 namespace crashpad {
 
@@ -32,11 +33,12 @@ std::vector<std::string> BuildHandlerArgvStrings(
     const base::FilePath& database,
     const base::FilePath& metrics_dir,
     const std::string& url,
-#if defined(STARBOARD)
-    const std::string& ca_certificates_path,
-#endif  // STARBOARD
+#if BUILDFLAG(IS_STARBOARD) || BUILDFLAG(IS_NATIVE_TARGET)
+    const base::FilePath& ca_certificates_path,
+#endif
     const std::map<std::string, std::string>& annotations,
-    const std::vector<std::string>& arguments) {
+    const std::vector<std::string>& arguments,
+    const std::vector<base::FilePath>& attachments) {
   std::vector<std::string> argv_strings(1, handler.value());
 
   for (const auto& argument : arguments) {
@@ -56,21 +58,46 @@ std::vector<std::string> BuildHandlerArgvStrings(
     argv_strings.push_back(FormatArgumentString("url", url));
   }
 
-
-#if defined(STARBOARD)
+#if BUILDFLAG(IS_STARBOARD) || BUILDFLAG(IS_NATIVE_TARGET)
   if (!ca_certificates_path.empty()) {
     argv_strings.push_back(FormatArgumentString("ca-certificates-path",
-                                                ca_certificates_path));
+                                                ca_certificates_path.value()));
   }
-#endif  // STARBOARD
+#endif
 
   for (const auto& kv : annotations) {
     argv_strings.push_back(
         FormatArgumentString("annotation", kv.first + '=' + kv.second));
   }
 
+  for (const auto& attachment : attachments) {
+    argv_strings.push_back(
+        FormatArgumentString("attachment", attachment.value()));
+  }
+
   return argv_strings;
 }
+
+#if BUILDFLAG(IS_STARBOARD) || BUILDFLAG(IS_NATIVE_TARGET)
+std::vector<std::string> BuildHandlerArgvStrings(
+    const base::FilePath& handler,
+    const base::FilePath& database,
+    const base::FilePath& metrics_dir,
+    const std::string& url,
+    const std::map<std::string, std::string>& annotations,
+    const std::vector<std::string>& arguments,
+    const std::vector<base::FilePath>& attachments) {
+  base::FilePath empty_path;
+  return BuildHandlerArgvStrings(handler,
+                                 database,
+                                 metrics_dir,
+                                 url,
+                                 empty_path,
+                                 annotations,
+                                 arguments,
+                                 attachments);
+}
+#endif
 
 void StringVectorToCStringVector(const std::vector<std::string>& strings,
                                  std::vector<const char*>* c_strings) {

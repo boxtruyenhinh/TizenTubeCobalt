@@ -16,9 +16,9 @@
 #define STARBOARD_ELF_LOADER_ELF_HASH_TABLE_H_
 
 #include <stddef.h>
+
 #include "starboard/elf_loader/elf.h"
 
-namespace starboard {
 namespace elf_loader {
 
 // Models the hash table used to map symbol names to symbol entries using
@@ -58,6 +58,5 @@ class ElfHashTable {
 };
 
 }  // namespace elf_loader
-}  // namespace starboard
 
 #endif  // STARBOARD_ELF_LOADER_ELF_HASH_TABLE_H_

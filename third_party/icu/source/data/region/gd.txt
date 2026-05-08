@@ -85,6 +85,7 @@ gd{
         CN{"An t-Sìn"}
         CO{"Coloimbia"}
         CP{"Eilean Clipperton"}
+        CQ{"Sarc"}
         CR{"Costa Rìcea"}
         CU{"Cùba"}
         CV{"An Ceap Uaine"}
@@ -298,6 +299,9 @@ gd{
         ZW{"An t-Sìombab"}
         ZZ{"Roinn-dùthcha neo-aithnichte"}
     }
+    Countries%chagos{
+        IO{"Innis-mhuir Chagos"}
+    }
     Countries%short{
         GB{"RA"}
         US{"SA"}
@@ -307,6 +311,7 @@ gd{
         CG{"A’ Chongo"}
         CI{"An Costa Ìbhri"}
         CZ{"Poblachd na Seice"}
+        NZ{"Aotearoa Sealainn Nuadh"}
         SZ{"Dùthaich nan Suasaidh"}
         TL{"Tìomor an Ear"}
     }

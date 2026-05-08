@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-PYTHON_VERSION_COMPATIBILITY = "PY3"
+PYTHON_VERSION_COMPATIBILITY = 'PY3'
 
 DEPS = [
   'build',
@@ -17,42 +17,50 @@ DEPS = [
 
 def RunSteps(api):
   api.vars.setup()
-  checkout_root = api.vars.cache_dir.join('work')
-  out_dir = checkout_root.join(
+  checkout_root = api.vars.cache_dir.joinpath('work')
+  out_dir = checkout_root.joinpath(
       'skia', 'out', api.vars.builder_name, api.vars.configuration)
   api.build(checkout_root=checkout_root, out_dir=out_dir)
-  dst = api.vars.swarming_out_dir.join('out', api.vars.configuration)
+  dst = api.vars.swarming_out_dir.joinpath('out', api.vars.configuration)
   api.build.copy_build_products(out_dir=out_dir, dst=dst)
   api.run.check_failure()
 
 
 TEST_BUILDERS = [
-  'Build-Debian9-Clang-arm-Release-Flutter_Android_Docker',
-  'Build-Debian10-GCC-x86-Debug-Docker',
-  'Build-Debian10-GCC-x86_64-Debug-Docker',
-  'Build-Debian10-GCC-x86_64-Release-NoGPU_Docker',
-  'Build-Debian10-GCC-x86_64-Release-Shared_Docker',
   'Build-Debian10-Clang-arm-Release-Android_API26',
   'Build-Debian10-Clang-arm-Release-Android_ASAN',
+  'Build-Debian10-Clang-arm-OptimizeForSize-Android_NoPatch',
   'Build-Debian10-Clang-arm-Release-Chromebook_GLES',
-  'Build-Debian10-Clang-arm-Release-Flutter_Android',
+  'Build-Debian10-Clang-arm64-Debug-Android_FrameworkWorkarounds',
+  'Build-Debian10-Clang-arm64-Debug-Android_Graphite_Native_Vulkan',
   'Build-Debian10-Clang-arm64-Debug-Android_HWASAN',
+  'Build-Debian10-Clang-arm64-Debug-Chromebook_GLES',
+  'Build-Debian10-Clang-arm64-Release-Android_Graphite_Dawn_GLES',
+  'Build-Debian10-Clang-arm64-Release-Android_Graphite_Dawn_Vulkan',
   'Build-Debian10-Clang-arm64-Release-Android_Wuffs',
+  'Build-Debian10-Clang-x86_64-Debug-ASAN_Graphite_Native_Vulkan',
+  'Build-Debian10-Clang-x86_64-Debug-AVIF',
   'Build-Debian10-Clang-x86_64-Debug-Chromebook_GLES',
   'Build-Debian10-Clang-x86_64-Debug-Coverage',
+  'Build-Debian10-Clang-x86_64-Debug-Fontations',
+  'Build-Debian10-Clang-x86_64-Debug-FreeType',
   'Build-Debian10-Clang-x86_64-Debug-MSAN',
   'Build-Debian10-Clang-x86_64-Debug-SK_CPU_LIMIT_SSE41',
   'Build-Debian10-Clang-x86_64-Debug-SafeStack',
+  'Build-Debian10-Clang-x86_64-Debug-SwiftShader_Graphite',
   'Build-Debian10-Clang-x86_64-Debug-SwiftShader_MSAN',
   'Build-Debian10-Clang-x86_64-Debug-TSAN',
   'Build-Debian10-Clang-x86_64-Debug-Tidy',
   'Build-Debian10-Clang-x86_64-Debug-Vulkan_TSAN',
   'Build-Debian10-Clang-x86_64-Debug-Wuffs',
+  'Build-Debian10-Clang-x86_64-OptimizeForSize',
   'Build-Debian10-Clang-x86_64-Release-ANGLE',
   'Build-Debian10-Clang-x86_64-Release-ASAN',
+  'Build-Debian10-Clang-x86_64-Release-AVIF',
   'Build-Debian10-Clang-x86_64-Release-CMake',
   'Build-Debian10-Clang-x86_64-Release-Fast',
   'Build-Debian10-Clang-x86_64-Release-NoDEPS',
+  'Build-Debian10-Clang-x86_64-Release-RustPNG',
   'Build-Debian10-Clang-x86_64-Release-Static',
   'Build-Debian10-Clang-x86_64-Release-SwiftShader',
   'Build-Debian10-Clang-x86_64-Release-Vulkan',
@@ -61,24 +69,38 @@ TEST_BUILDERS = [
   'Build-Debian10-EMCC-wasm-Debug-CanvasKit',
   'Build-Debian10-EMCC-wasm-Debug-PathKit',
   'Build-Debian10-EMCC-wasm-Release-CanvasKit_CPU',
+  'Build-Debian10-EMCC-wasm-Release-CanvasKit_WebGPU',
   'Build-Debian10-EMCC-wasm-Release-PathKit',
+  'Build-Debian11-GCC-x86-Debug-Docker',
+  'Build-Debian11-GCC-x86_64-Debug-Docker',
+  'Build-Debian11-GCC-x86_64-Release-NoGPU_Docker',
+  'Build-Debian11-GCC-x86_64-Release-Shared_Docker',
   'Build-Mac-Clang-arm64-Debug-Android_Vulkan',
   'Build-Mac-Clang-arm64-Debug-iOS',
-  "Build-Mac-Clang-arm64-Debug-Graphite",
-  "Build-Mac-Clang-arm64-Debug-Graphite_NoGpu",
-  "Build-Mac-Clang-arm64-Release-Graphite",
-  'Build-Mac-Xcode11.4.1-arm64-Debug-iOS',
+  'Build-Mac-Clang-arm64-Debug-Graphite_Dawn_Metal',
+  'Build-Mac-Clang-arm64-Debug-Graphite_Dawn_Metal_NoGPU',
+  'Build-Mac-Clang-arm64-Debug-Graphite_Dawn_Metal_NoPrecompile',
+  'Build-Mac-Clang-arm64-Debug-Graphite_Native_Metal',
+  'Build-Mac-Clang-arm64-Debug-Graphite_Native_Metal_NoGPU',
+  'Build-Mac-Clang-arm64-Debug-Graphite_Native_Metal_NoPrecompile',
+  'Build-Mac-Clang-arm64-Release-Graphite_Native_Metal',
+  'Build-Mac-Clang-arm64-Release-Graphite_Native_Dawn_Metal',
+  'Build-Mac-Clang-x86_64-Release-Graphite_Native_Metal_Vello',
+  'Build-Mac-Clang-arm64-Debug-iOS_iOS12',
   'Build-Mac-Clang-x86_64-Debug-ASAN',
-  'Build-Mac-Clang-x86_64-Debug-CommandBuffer',
   'Build-Mac-Clang-x86_64-Debug-Metal',
+  'Build-Mac-Clang-arm64-Release-iOS18_Metal',
   'Build-Win-Clang-arm64-Release-Android',
   'Build-Win-Clang-x86-Debug-Exceptions',
   'Build-Win-Clang-x86_64-Debug-ANGLE',
+  'Build-Win-Clang-x86_64-Release-Graphite_Native_Vulkan',
   'Build-Win-Clang-x86_64-Release-Direct3D',
   'Build-Win-Clang-x86_64-Release-Shared',
-  "Build-Win-Clang-x86_64-Release-Dawn",
   'Build-Win-Clang-x86_64-Release-Vulkan',
-  'Housekeeper-PerCommit-CheckGeneratedFiles',
+  'Build-Win-MSVC-x86_64-Release-Graphite_Dawn_D3D11',
+  'Build-Win-MSVC-x86_64-Release-Graphite_Dawn_D3D12',
+  'Build-Debian10-Clang-x86_64-Release-SK_USE_PADDED_BLUR_UPSCALE',
+  'Build-Ubuntu18-Clang-x86_64-Release-Docker',
 ]
 
 # Default properties used for TEST_BUILDERS.

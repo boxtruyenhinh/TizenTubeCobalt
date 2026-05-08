@@ -23,13 +23,12 @@
 #include <string>
 #include <vector>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/file.h"
 #include "starboard/common/log.h"
 #include "starboard/common/string.h"
 #include "starboard/common/time.h"
 #include "starboard/configuration_constants.h"
-#include "starboard/directory.h"
-#include "starboard/string.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,17 +42,18 @@ const char kDrainFilePrefix[] = "d_";
 }  // extern "C"
 #endif
 
-namespace starboard {
 namespace loader_app {
 namespace {
+using ::starboard::CurrentPosixTime;
 
 std::string ExtractAppKey(const std::string& str) {
   const size_t begin = str.find_first_of('_') + 1;
   const size_t end = str.find_last_of('_');
 
   if ((begin == std::string::npos) || (end == std::string::npos) ||
-      (end - begin < 1))
+      (end - begin < 1)) {
     return "";
+  }
 
   return str.substr(begin, end - begin);
 }
@@ -61,8 +61,9 @@ std::string ExtractAppKey(const std::string& str) {
 int64_t ExtractTimestamp(const std::string& str) {
   const size_t index = str.find_last_of('_') + 1;
 
-  if ((index == std::string::npos) || (index == str.size() - 1))
+  if ((index == std::string::npos) || (index == str.size() - 1)) {
     return 0;
+  }
 
   const std::string timestamp = str.substr(index, str.size() - index);
 
@@ -99,10 +100,12 @@ std::vector<std::string> FindAllWithPrefix(const std::string& dir,
       break;
     }
     starboard::strlcpy(filename.data(), dirent->d_name, filename.size());
-    if (!strcmp(filename.data(), ".") || !strcmp(filename.data(), ".."))
+    if (!strcmp(filename.data(), ".") || !strcmp(filename.data(), "..")) {
       continue;
-    if (!strncmp(prefix.data(), filename.data(), prefix.size()))
+    }
+    if (!strncmp(prefix.data(), filename.data(), prefix.size())) {
       filenames.push_back(std::string(filename.data()));
+    }
   }
   closedir(directory);
   return filenames;
@@ -117,8 +120,9 @@ void Rank(const char* dir, char* app_key, size_t len) {
   filenames.erase(std::remove_if(filenames.begin(), filenames.end(), IsExpired),
                   filenames.end());
 
-  if (filenames.empty())
+  if (filenames.empty()) {
     return;
+  }
 
   // This lambda compares two strings, each string being a drain file name. This
   // function returns |true| when |left| has an earlier timestamp than |right|,
@@ -129,8 +133,9 @@ void Rank(const char* dir, char* app_key, size_t len) {
     const int64_t left_timestamp = ExtractTimestamp(left);
     const int64_t right_timestamp = ExtractTimestamp(right);
 
-    if (left_timestamp != right_timestamp)
+    if (left_timestamp != right_timestamp) {
       return left_timestamp < right_timestamp;
+    }
 
     const std::string left_app_key = ExtractAppKey(left);
     const std::string right_app_key = ExtractAppKey(right);
@@ -143,13 +148,10 @@ void Rank(const char* dir, char* app_key, size_t len) {
 
   const std::string& ranking_app_key = ExtractAppKey(filenames.front());
 
-  if (starboard::strlcpy(app_key, ranking_app_key.c_str(), len) >= len)
+  if (starboard::strlcpy(app_key, ranking_app_key.c_str(), len) >= len) {
     SB_LOG(ERROR) << "Returned value was truncated";
+  }
 }
-
-}  // namespace
-
-namespace drain_file {
 
 bool TryDrain(const char* dir, const char* app_key) {
   SB_DCHECK(dir);
@@ -158,10 +160,12 @@ bool TryDrain(const char* dir, const char* app_key) {
   std::vector<std::string> filenames = FindAllWithPrefix(dir, kDrainFilePrefix);
 
   for (const auto& filename : filenames) {
-    if (IsExpired(filename))
+    if (IsExpired(filename)) {
       continue;
-    if (filename.find(app_key) == std::string::npos)
+    }
+    if (filename.find(app_key) == std::string::npos) {
       return false;
+    }
     SB_LOG(INFO) << "Found valid drain file '" << filename << "'";
     return true;
   }
@@ -172,16 +176,18 @@ bool TryDrain(const char* dir, const char* app_key) {
   filename.append(std::to_string(PosixTimeToWindowsTime(CurrentPosixTime()) /
                                  kDrainFileAgeUnitUsec));
 
-  SB_DCHECK(filename.size() <= kSbFileMaxName);
+  SB_DCHECK_LE(filename.size(), kSbFileMaxName);
 
   std::string path(dir);
   path.append(kSbFileSepString);
   path.append(filename);
 
-  int file = open(path.c_str(), O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR);
+  // Silence the -wunused-variable warning for non-debug builds.
+  [[maybe_unused]] int file =
+      open(path.c_str(), O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR);
 
-  SB_DCHECK(file >= 0);
-  SB_DCHECK(close(file) == 0);
+  SB_DCHECK_GE(file, 0);
+  SB_DCHECK_EQ(close(file), 0);
 
   SB_LOG(INFO) << "Created drain file at '" << path << "'";
 
@@ -239,14 +245,15 @@ void PrepareDirectory(const char* dir, const char* app_key) {
   const std::vector<std::string> entries = FindAllWithPrefix(dir, "");
 
   for (const auto& entry : entries) {
-    if (!strncmp(entry.c_str(), prefix.c_str(), prefix.size()))
+    if (!strncmp(entry.c_str(), prefix.c_str(), prefix.size())) {
       continue;
+    }
 
     std::string path(dir);
     path.append(kSbFileSepString);
     path.append(entry);
 
-    SbFileDeleteRecursive(path.c_str(), false);
+    starboard::SbFileDeleteRecursive(path.c_str(), false);
   }
 }
 
@@ -262,8 +269,9 @@ bool IsAppDraining(const char* dir, const char* app_key) {
       FindAllWithPrefix(dir, prefix.c_str());
 
   for (const auto& filename : filenames) {
-    if (!IsExpired(filename))
+    if (!IsExpired(filename)) {
       return true;
+    }
   }
   return false;
 }
@@ -285,40 +293,39 @@ bool IsAnotherAppDraining(const char* dir, const char* app_key) {
   return false;
 }
 
-}  // namespace drain_file
+}  // namespace
 }  // namespace loader_app
-}  // namespace starboard
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 bool DrainFileTryDrain(const char* dir, const char* app_key) {
-  return starboard::loader_app::drain_file::TryDrain(dir, app_key);
+  return loader_app::TryDrain(dir, app_key);
 }
 
 bool DrainFileRankAndCheck(const char* dir, const char* app_key) {
-  return starboard::loader_app::drain_file::RankAndCheck(dir, app_key);
+  return loader_app::RankAndCheck(dir, app_key);
 }
 
 void DrainFileClearExpired(const char* dir) {
-  starboard::loader_app::drain_file::ClearExpired(dir);
+  loader_app::ClearExpired(dir);
 }
 
 void DrainFileClearForApp(const char* dir, const char* app_key) {
-  starboard::loader_app::drain_file::ClearForApp(dir, app_key);
+  loader_app::ClearForApp(dir, app_key);
 }
 
 void DrainFilePrepareDirectory(const char* dir, const char* app_key) {
-  starboard::loader_app::drain_file::PrepareDirectory(dir, app_key);
+  loader_app::PrepareDirectory(dir, app_key);
 }
 
 bool DrainFileIsAppDraining(const char* dir, const char* app_key) {
-  return starboard::loader_app::drain_file::IsAppDraining(dir, app_key);
+  return loader_app::IsAppDraining(dir, app_key);
 }
 
 bool DrainFileIsAnotherAppDraining(const char* dir, const char* app_key) {
-  return starboard::loader_app::drain_file::IsAnotherAppDraining(dir, app_key);
+  return loader_app::IsAnotherAppDraining(dir, app_key);
 }
 
 #ifdef __cplusplus

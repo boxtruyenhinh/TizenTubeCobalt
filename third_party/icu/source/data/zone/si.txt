@@ -258,6 +258,9 @@ si{
         "America:Chihuahua"{
             ec{"චිහුආහුආ"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"සියුඩාඩ් ජුවාරෙස්"}
+        }
         "America:Coral_Harbour"{
             ec{"ඇටිකොකන්"}
         }
@@ -1223,6 +1226,9 @@ si{
         "Pacific:Johnston"{
             ec{"ජොන්ස්ටන්"}
         }
+        "Pacific:Kanton"{
+            ec{"කැන්ටන්"}
+        }
         "Pacific:Kiritimati"{
             ec{"කිරිමටි"}
         }
@@ -1886,7 +1892,9 @@ si{
             lg{"යෙකටෙරින්බර්ග් වේලාව"}
             ls{"යෙකටෙරින්බර්ග් සම්මත වේලාව"}
         }
-        fallbackFormat{"{1} ({0})"}
+        "meta:Yukon"{
+            ls{"යුකොන් වේලාව"}
+        }
         gmtFormat{"ග්‍රිමවේ{0}"}
         gmtZeroFormat{"ග්‍රිමවේ"}
         hourFormat{"+HH.mm;-HH.mm"}

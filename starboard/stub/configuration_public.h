@@ -24,14 +24,8 @@
 
 // --- System Header Configuration -------------------------------------------
 
-// Any system headers listed here that are not provided by the platform will be
-// emulated in starboard/types.h.
-
 // Whether the current platform provides the standard header sys/types.h.
 #define SB_HAS_SYS_TYPES_H 0
-
-// Whether the current platform provides ssize_t.
-#define SB_HAS_SSIZE_T 1
 
 // Type detection for wchar_t.
 #if defined(__WCHAR_MAX__) && \
@@ -47,10 +41,5 @@
 // Chrome has an exclusion for iOS here, we should too when we support iOS.
 #define SB_IS_WCHAR_T_UNSIGNED 1
 #endif
-
-// --- Network Configuration -------------------------------------------------
-
-// Specifies whether this platform supports IPV6.
-#define SB_HAS_IPV6 1
 
 #endif  // STARBOARD_STUB_CONFIGURATION_PUBLIC_H_

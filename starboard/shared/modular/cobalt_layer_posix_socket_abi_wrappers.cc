@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#if SB_API_VERSION >= 16
-
+#include <net/if.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 
@@ -39,6 +38,11 @@ int connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
   return __abi_wrap_connect(sockfd, addr, addrlen);
 }
 
+const char* __abi_wrap_gai_strerror(int ecode);
+const char* gai_strerror(int ecode) {
+  return __abi_wrap_gai_strerror(ecode);
+}
+
 int __abi_wrap_getaddrinfo(const char* node,
                            const char* service,
                            const struct addrinfo* hints,
@@ -60,6 +64,16 @@ int getifaddrs(struct ifaddrs** ifap) {
   return __abi_wrap_getifaddrs(ifap);
 }
 
+unsigned int __abi_wrap_if_nametoindex(const char* ifname);
+unsigned int if_nametoindex(const char* ifname) {
+  return __abi_wrap_if_nametoindex(ifname);
+}
+
+char* __abi_wrap_if_indextoname(unsigned int ifindex, char* ifname);
+char* if_indextoname(unsigned int ifindex, char* ifname) {
+  return __abi_wrap_if_indextoname(ifindex, ifname);
+}
+
 int __abi_wrap_setsockopt(int socket,
                           int level,
                           int option_name,
@@ -74,6 +88,14 @@ int setsockopt(int socket,
                                option_len);
 }
 
-}  // extern "C"
+int __abi_wrap_shutdown(int socket, int how);
+int shutdown(int socket, int how) {
+  return __abi_wrap_shutdown(socket, how);
+}
 
-#endif  // SB_API_VERSION >= 16
+ssize_t __abi_wrap_sendmsg(int sockfd, const struct msghdr* msg, int flags);
+ssize_t sendmsg(int sockfd, const struct msghdr* msg, int flags) {
+  return __abi_wrap_sendmsg(sockfd, msg, flags);
+}
+
+}  // extern "C"

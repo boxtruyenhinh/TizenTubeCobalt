@@ -5,16 +5,22 @@
  * found in the LICENSE file.
  */
 
+#include "src/sksl/ir/SkSLForStatement.h"
+
+#include "include/core/SkTypes.h"
 #include "src/sksl/SkSLAnalysis.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLDefines.h"
+#include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/analysis/SkSLProgramVisitor.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLExpressionStatement.h"
-#include "src/sksl/ir/SkSLForStatement.h"
 #include "src/sksl/ir/SkSLNop.h"
-#include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
+#include "src/sksl/ir/SkSLVariable.h"
 
 namespace SkSL {
 
@@ -42,22 +48,6 @@ static bool is_simple_initializer(const Statement* stmt) {
            stmt->is<SkSL::ExpressionStatement>();
 }
 
-std::unique_ptr<Statement> ForStatement::clone() const {
-    std::unique_ptr<LoopUnrollInfo> unrollInfo;
-    if (fUnrollInfo) {
-        unrollInfo = std::make_unique<LoopUnrollInfo>(*fUnrollInfo);
-    }
-
-    return std::make_unique<ForStatement>(
-            fLine,
-            this->initializer() ? this->initializer()->clone() : nullptr,
-            this->test() ? this->test()->clone() : nullptr,
-            this->next() ? this->next()->clone() : nullptr,
-            this->statement()->clone(),
-            std::move(unrollInfo),
-            SymbolTable::WrapIfBuiltin(this->symbols()));
-}
-
 std::string ForStatement::description() const {
     std::string result("for (");
     if (this->initializer()) {
@@ -77,18 +67,52 @@ std::string ForStatement::description() const {
     return result;
 }
 
-std::unique_ptr<Statement> ForStatement::Convert(const Context& context, int line,
+static void hoist_vardecl_symbols_into_outer_scope(const Context& context,
+                                                   const Block& initBlock,
+                                                   SymbolTable* innerSymbols,
+                                                   SymbolTable* hoistedSymbols) {
+    class SymbolHoister : public ProgramVisitor {
+    public:
+        SymbolHoister(const Context& ctx, SymbolTable* innerSym, SymbolTable* hoistSym)
+                : fContext(ctx)
+                , fInnerSymbols(innerSym)
+                , fHoistedSymbols(hoistSym) {}
+
+        bool visitStatement(const Statement& stmt) override {
+            if (stmt.is<VarDeclaration>()) {
+                // Hoist the variable's symbol outside of the initializer block's symbol table, and
+                // into the outer symbol table. If the initializer's symbol table originally had
+                // ownership, transfer it. (If the variable was owned elsewhere, it can keep its
+                // current owner.)
+                Variable* var = stmt.as<VarDeclaration>().var();
+                fInnerSymbols->moveSymbolTo(fHoistedSymbols, var, fContext);
+                return false;
+            }
+            return ProgramVisitor::visitStatement(stmt);
+        }
+
+        const Context& fContext;
+        SymbolTable* fInnerSymbols;
+        SymbolTable* fHoistedSymbols;
+    };
+
+    SymbolHoister{context, innerSymbols, hoistedSymbols}.visitStatement(initBlock);
+}
+
+std::unique_ptr<Statement> ForStatement::Convert(const Context& context,
+                                                 Position pos,
+                                                 ForLoopPositions positions,
                                                  std::unique_ptr<Statement> initializer,
                                                  std::unique_ptr<Expression> test,
                                                  std::unique_ptr<Expression> next,
                                                  std::unique_ptr<Statement> statement,
-                                                 std::shared_ptr<SymbolTable> symbolTable) {
+                                                 std::unique_ptr<SymbolTable> symbolTable) {
     bool isSimpleInitializer = is_simple_initializer(initializer.get());
-    bool isVardeclBlockInitializer =
-            !isSimpleInitializer && is_vardecl_block_initializer(initializer.get());
+    bool isVardeclBlockInitializer = !isSimpleInitializer &&
+                                     is_vardecl_block_initializer(initializer.get());
 
     if (!isSimpleInitializer && !isVardeclBlockInitializer) {
-        context.fErrors->error(initializer->fLine, "invalid for loop initializer");
+        context.fErrors->error(initializer->fPosition, "invalid for loop initializer");
         return nullptr;
     }
 
@@ -108,7 +132,7 @@ std::unique_ptr<Statement> ForStatement::Convert(const Context& context, int lin
     std::unique_ptr<LoopUnrollInfo> unrollInfo;
     if (context.fConfig->strictES2Mode()) {
         // In strict-ES2, loops must be unrollable or it's an error.
-        unrollInfo = Analysis::GetLoopUnrollInfo(line, initializer.get(), test.get(),
+        unrollInfo = Analysis::GetLoopUnrollInfo(context, pos, positions, initializer.get(), &test,
                                                  next.get(), statement.get(), context.fErrors);
         if (!unrollInfo) {
             return nullptr;
@@ -116,7 +140,7 @@ std::unique_ptr<Statement> ForStatement::Convert(const Context& context, int lin
     } else {
         // In ES3, loops don't have to be unrollable, but we can use the unroll information for
         // optimization purposes.
-        unrollInfo = Analysis::GetLoopUnrollInfo(line, initializer.get(), test.get(),
+        unrollInfo = Analysis::GetLoopUnrollInfo(context, pos, positions, initializer.get(), &test,
                                                  next.get(), statement.get(), /*errors=*/nullptr);
     }
 
@@ -131,38 +155,64 @@ std::unique_ptr<Statement> ForStatement::Convert(const Context& context, int lin
         // conceptually equivalent to synthesize a scope, declare the variables, and then emit a for
         // statement with an empty init-stmt. (Note that we can't just do this transformation
         // unilaterally for all for-statements, because the resulting for loop isn't ES2-compliant.)
+        std::unique_ptr<SymbolTable> hoistedSymbols = symbolTable->insertNewParent();
+        hoist_vardecl_symbols_into_outer_scope(context, initializer->as<Block>(),
+                                               symbolTable.get(), hoistedSymbols.get());
         StatementArray scope;
         scope.push_back(std::move(initializer));
-        scope.push_back(ForStatement::Make(context, line, /*initializer=*/nullptr,
-                                           std::move(test), std::move(next), std::move(statement),
-                                           std::move(unrollInfo), /*symbolTable=*/nullptr));
-        return Block::Make(line, std::move(scope), std::move(symbolTable));
+        scope.push_back(ForStatement::Make(context,
+                                           pos,
+                                           positions,
+                                           /*initializer=*/nullptr,
+                                           std::move(test),
+                                           std::move(next),
+                                           std::move(statement),
+                                           std::move(unrollInfo),
+                                           std::move(symbolTable)));
+        return Block::Make(pos,
+                           std::move(scope),
+                           Block::Kind::kBracedScope,
+                           std::move(hoistedSymbols));
     }
 
-    return ForStatement::Make(context, line, std::move(initializer), std::move(test),
-                              std::move(next), std::move(statement), std::move(unrollInfo),
+    return ForStatement::Make(context,
+                              pos,
+                              positions,
+                              std::move(initializer),
+                              std::move(test),
+                              std::move(next),
+                              std::move(statement),
+                              std::move(unrollInfo),
                               std::move(symbolTable));
 }
 
-std::unique_ptr<Statement> ForStatement::ConvertWhile(const Context& context, int line,
+std::unique_ptr<Statement> ForStatement::ConvertWhile(const Context& context,
+                                                      Position pos,
                                                       std::unique_ptr<Expression> test,
-                                                      std::unique_ptr<Statement> statement,
-                                                      std::shared_ptr<SymbolTable> symbolTable) {
+                                                      std::unique_ptr<Statement> statement) {
     if (context.fConfig->strictES2Mode()) {
-        context.fErrors->error(line, "while loops are not supported");
+        context.fErrors->error(pos, "while loops are not supported");
         return nullptr;
     }
-    return ForStatement::Convert(context, line, /*initializer=*/nullptr, std::move(test),
-                                 /*next=*/nullptr, std::move(statement), std::move(symbolTable));
+    return ForStatement::Convert(context,
+                                 pos,
+                                 ForLoopPositions(),
+                                 /*initializer=*/nullptr,
+                                 std::move(test),
+                                 /*next=*/nullptr,
+                                 std::move(statement),
+                                 /*symbolTable=*/nullptr);
 }
 
-std::unique_ptr<Statement> ForStatement::Make(const Context& context, int line,
+std::unique_ptr<Statement> ForStatement::Make(const Context& context,
+                                              Position pos,
+                                              ForLoopPositions positions,
                                               std::unique_ptr<Statement> initializer,
                                               std::unique_ptr<Expression> test,
                                               std::unique_ptr<Expression> next,
                                               std::unique_ptr<Statement> statement,
                                               std::unique_ptr<LoopUnrollInfo> unrollInfo,
-                                              std::shared_ptr<SymbolTable> symbolTable) {
+                                              std::unique_ptr<SymbolTable> symbolTable) {
     SkASSERT(is_simple_initializer(initializer.get()) ||
              is_vardecl_block_initializer(initializer.get()));
     SkASSERT(!test || test->type().matches(*context.fTypes.fBool));
@@ -179,9 +229,14 @@ std::unique_ptr<Statement> ForStatement::Make(const Context& context, int line,
         }
     }
 
-    return std::make_unique<ForStatement>(line, std::move(initializer), std::move(test),
-                                          std::move(next), std::move(statement),
-                                          std::move(unrollInfo), std::move(symbolTable));
+    return std::make_unique<ForStatement>(pos,
+                                          positions,
+                                          std::move(initializer),
+                                          std::move(test),
+                                          std::move(next),
+                                          std::move(statement),
+                                          std::move(unrollInfo),
+                                          std::move(symbolTable));
 }
 
 }  // namespace SkSL

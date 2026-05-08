@@ -12,19 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-if (use_cobalt_customizations) {
-import("sanitizers.gni")
-} else {
 import("//gn/standalone/sanitizers/sanitizers.gni")
-}
 
 # Link dependencies for sanitizers for executables.
 group("deps") {
   visibility = [ "*" ]
   if (using_sanitizer) {
     public_configs = [ ":sanitizers_ldflags" ]
+    deps = [ ":ignorelist_copy" ]
     if (is_android && sanitizer_lib != "" && !sanitizer_lib_dir_is_static) {
-      deps = [ ":copy_sanitizer_lib" ]
+      deps += [ ":copy_sanitizer_lib" ]
     }
   }
 }
@@ -36,9 +33,20 @@ if (is_android && sanitizer_lib != "" && !sanitizer_lib_dir_is_static) {
   }
 }
 
+# Add a dependency on the ignorelist.txt file to cause rebuilds when
+# the file changes.
+copy("ignorelist_copy") {
+  sources = [ "ignorelist.txt" ]
+  outputs = [ "${target_out_dir}/ignorelist.txt" ]
+}
+
 config("sanitizers_cflags") {
   if (using_sanitizer) {
-    cflags = [ "-fno-omit-frame-pointer" ]
+    ignorelist_path_ = rebase_path("ignorelist.txt", root_build_dir)
+    cflags = [
+      "-fno-omit-frame-pointer",
+      "-fsanitize-ignorelist=$ignorelist_path_",
+    ]
     defines = []
 
     if (is_asan) {

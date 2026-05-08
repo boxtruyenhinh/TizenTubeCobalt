@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "starboard/common/log.h"
+#include "starboard/shared/testing/no_inline.h"
 #include "starboard/system.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#include "starboard/shared/testing/no_inline.h"
-
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -84,4 +81,3 @@ TEST(SbSystemGetStackTest, SunnyDayNoStack) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

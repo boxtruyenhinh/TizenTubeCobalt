@@ -16,6 +16,7 @@
 #define STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_VIDEO_DECODER_INTERNAL_H_
 
 #include <functional>
+#include <limits>
 
 #include "starboard/common/ref_counted.h"
 #include "starboard/configuration.h"
@@ -26,18 +27,10 @@
 #include "starboard/shared/starboard/player/input_buffer_internal.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 // This class decodes encoded video stream into video frames.
 class VideoDecoder {
  public:
-  typedef ::starboard::shared::starboard::player::InputBuffer InputBuffer;
-  typedef ::starboard::shared::starboard::player::InputBuffers InputBuffers;
-  typedef ::starboard::shared::starboard::player::filter::VideoFrame VideoFrame;
-
   enum Status {
     kNeedMoreInput,    // Signals that more input is required to produce output.
     kBufferFull,       // Signals that the decoder can no longer accept input.
@@ -53,10 +46,9 @@ class VideoDecoder {
   // WriteInputBuffer() or WriteEndOfStream() is called.
   // Also note that calling Reset() or dtor from this callback *will* result in
   // deadlock.
-  typedef std::function<void(Status status,
-                             const scoped_refptr<VideoFrame>& frame)>
-      DecoderStatusCB;
-  typedef ::starboard::shared::starboard::player::filter::ErrorCB ErrorCB;
+  using DecoderStatusCB =
+      std::function<void(Status status,
+                         const scoped_refptr<VideoFrame>& frame)>;
 
   virtual ~VideoDecoder() {}
 
@@ -73,7 +65,8 @@ class VideoDecoder {
   // finished.  Once the first frame is decoded and the timeout has passed, the
   // preroll will be considered as finished even if there isn't enough frames
   // decoded as suggested by GetPrerollFrameCount().
-  // On most platforms this can be simply set to |kSbInt64Max|.
+  // On most platforms this can be simply set to
+  // |std::numeric_limits<int64_t>::max()|.
   virtual int64_t GetPrerollTimeout() const = 0;
 
   // Returns a soft limit of the maximum number of frames the user of this class
@@ -103,6 +96,15 @@ class VideoDecoder {
   // is called again.
   virtual void Reset() = 0;
 
+  // Alternative function to Reset the codec specifically in cases where it is
+  // being torn down. By default, this function will be equivalent to the
+  // Reset() function, but platforms may redefine this function for use as they
+  // see fit.
+  //
+  // TODO: b/492971394 - Refactor this to Flush() and Stop() if experiment is
+  // positive.
+  virtual void ResetForTeardown() { Reset(); }
+
   // This function can only be called when the current SbPlayerOutputMode is
   // |kSbPlayerOutputModeDecodeToTexture|.  It has to return valid value after
   // the |decoder_status_cb| is called with a valid frame for the first time
@@ -111,10 +113,6 @@ class VideoDecoder {
   virtual SbDecodeTarget GetCurrentDecodeTarget() = 0;
 };
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_VIDEO_DECODER_INTERNAL_H_

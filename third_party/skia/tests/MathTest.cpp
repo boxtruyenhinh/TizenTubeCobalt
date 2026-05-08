@@ -6,19 +6,24 @@
  */
 
 #include "include/core/SkPoint.h"
-#include "include/private/SkColorData.h"
-#include "include/private/SkFixed.h"
-#include "include/private/SkHalf.h"
-#include "include/private/SkTPin.h"
-#include "include/private/SkTo.h"
-#include "include/utils/SkRandom.h"
-#include "src/core/SkEndian.h"
-#include "src/core/SkFDot6.h"
-#include "src/core/SkMathPriv.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkFixed.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkMath.h"
+#include "include/private/base/SkTPin.h"
+#include "src/base/SkEndian.h"
+#include "src/base/SkHalf.h"
+#include "src/base/SkMathPriv.h"
+#include "src/base/SkRandom.h"
 #include "tests/Test.h"
 
-#include <algorithm>
+#include <array>
 #include <cinttypes>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 
 static void test_clz(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, 32 == SkCLZ(0));
@@ -35,7 +40,7 @@ static void test_clz(skiatest::Reporter* reporter) {
         mask >>= (mask & 31);
         int intri = SkCLZ(mask);
         int porta = SkCLZ_portable(mask);
-        REPORTER_ASSERT(reporter, intri == porta, "mask:%d intri:%d porta:%d", mask, intri, porta);
+        REPORTER_ASSERT(reporter, intri == porta, "mask:%u intri:%d porta:%d", mask, intri, porta);
     }
 }
 
@@ -54,7 +59,7 @@ static void test_ctz(skiatest::Reporter* reporter) {
         mask >>= (mask & 31);
         int intri = SkCTZ(mask);
         int porta = SkCTZ_portable(mask);
-        REPORTER_ASSERT(reporter, intri == porta, "mask:%d intri:%d porta:%d", mask, intri, porta);
+        REPORTER_ASSERT(reporter, intri == porta, "mask:%u intri:%d porta:%d", mask, intri, porta);
     }
 }
 
@@ -71,7 +76,7 @@ static float fast_floor(float x) {
 }
 
 static float std_floor(float x) {
-    return sk_float_floor(x);
+    return std::floor(x);
 }
 
 static void test_floor_value(skiatest::Reporter* reporter, float value) {
@@ -88,7 +93,7 @@ static void test_floor(skiatest::Reporter* reporter) {
         0, 1, 1.1f, 1.01f, 1.001f, 1.0001f, 1.00001f, 1.000001f, 1.0000001f
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gVals); ++i) {
+    for (size_t i = 0; i < std::size(gVals); ++i) {
         test_floor_value(reporter, gVals[i]);
 //        test_floor_value(reporter, -gVals[i]);
     }
@@ -166,34 +171,52 @@ static void test_blend31() {
 
 static void check_length(skiatest::Reporter* reporter,
                          const SkPoint& p, SkScalar targetLen) {
-    float x = SkScalarToFloat(p.fX);
-    float y = SkScalarToFloat(p.fY);
-    float len = sk_float_sqrt(x*x + y*y);
+    float x = p.fX;
+    float y = p.fY;
+    float len = std::sqrt(x*x + y*y);
 
-    len /= SkScalarToFloat(targetLen);
+    len /= targetLen;
 
     REPORTER_ASSERT(reporter, len > 0.999f && len < 1.001f);
 }
 
+template <typename T>
 static void unittest_isfinite(skiatest::Reporter* reporter) {
-    float nan = sk_float_asin(2);
-    float inf = SK_ScalarInfinity;
-    float big = 3.40282e+038f;
+    const T zero = T(0);
+    const T plain = T(123);
+    const T inf = std::numeric_limits<T>::infinity();
+    const T big = std::numeric_limits<T>::max();
+    const T nan = inf * zero;
 
-    REPORTER_ASSERT(reporter, !SkScalarIsNaN(inf));
-    REPORTER_ASSERT(reporter, !SkScalarIsNaN(-inf));
-    REPORTER_ASSERT(reporter, !SkScalarIsFinite(inf));
-    REPORTER_ASSERT(reporter, !SkScalarIsFinite(-inf));
+    REPORTER_ASSERT(reporter, !SkIsNaN(inf));
+    REPORTER_ASSERT(reporter, !SkIsNaN(-inf));
+    REPORTER_ASSERT(reporter, !SkIsFinite(inf));
+    REPORTER_ASSERT(reporter, !SkIsFinite(-inf));
 
-    REPORTER_ASSERT(reporter,  SkScalarIsNaN(nan));
-    REPORTER_ASSERT(reporter, !SkScalarIsNaN(big));
-    REPORTER_ASSERT(reporter, !SkScalarIsNaN(-big));
-    REPORTER_ASSERT(reporter, !SkScalarIsNaN(0));
+    REPORTER_ASSERT(reporter,  SkIsNaN(nan));
+    REPORTER_ASSERT(reporter, !SkIsNaN(big));
+    REPORTER_ASSERT(reporter, !SkIsNaN(-big));
+    REPORTER_ASSERT(reporter, !SkIsNaN(zero));
 
-    REPORTER_ASSERT(reporter, !SkScalarIsFinite(nan));
-    REPORTER_ASSERT(reporter,  SkScalarIsFinite(big));
-    REPORTER_ASSERT(reporter,  SkScalarIsFinite(-big));
-    REPORTER_ASSERT(reporter,  SkScalarIsFinite(0));
+    REPORTER_ASSERT(reporter, !SkIsFinite(nan));
+    REPORTER_ASSERT(reporter,  SkIsFinite(big));
+    REPORTER_ASSERT(reporter,  SkIsFinite(-big));
+    REPORTER_ASSERT(reporter,  SkIsFinite(zero));
+
+    // SkIsFinite supports testing multiple values at once.
+    REPORTER_ASSERT(reporter, !SkIsFinite(inf, plain));
+    REPORTER_ASSERT(reporter, !SkIsFinite(plain, -inf));
+    REPORTER_ASSERT(reporter, !SkIsFinite(nan, plain));
+    REPORTER_ASSERT(reporter,  SkIsFinite(plain, big));
+    REPORTER_ASSERT(reporter,  SkIsFinite(-big, plain));
+    REPORTER_ASSERT(reporter,  SkIsFinite(plain, zero));
+
+    REPORTER_ASSERT(reporter, !SkIsFinite(inf, plain, plain));
+    REPORTER_ASSERT(reporter, !SkIsFinite(plain, -inf, plain));
+    REPORTER_ASSERT(reporter, !SkIsFinite(plain, plain, nan));
+    REPORTER_ASSERT(reporter,  SkIsFinite(big, plain, plain));
+    REPORTER_ASSERT(reporter,  SkIsFinite(plain, -big, plain));
+    REPORTER_ASSERT(reporter,  SkIsFinite(plain, plain, zero));
 }
 
 static void unittest_half(skiatest::Reporter* reporter) {
@@ -202,7 +225,7 @@ static void unittest_half(skiatest::Reporter* reporter) {
         -0.f, -1.f, -0.5f, -0.499999f, -0.5000001f, -1.f/3
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gFloats); ++i) {
+    for (size_t i = 0; i < std::size(gFloats); ++i) {
         SkHalf h = SkFloatToHalf(gFloats[i]);
         float f = SkHalfToFloat(h);
         REPORTER_ASSERT(reporter, SkScalarNearlyEqual(f, gFloats[i]));
@@ -232,7 +255,7 @@ static void unittest_half(skiatest::Reporter* reporter) {
     static const FloatUnion overflowHalf = { ((143 << 23) | (1023 << 13)) };
     h = SkFloatToHalf(overflowHalf.fF);
     f = SkHalfToFloat(h);
-    REPORTER_ASSERT(reporter, !SkScalarIsFinite(f) );
+    REPORTER_ASSERT(reporter, !SkIsFinite(f) );
 
     static const FloatUnion underflowHalf = { 101 << 23 };
     h = SkFloatToHalf(underflowHalf.fF);
@@ -242,12 +265,12 @@ static void unittest_half(skiatest::Reporter* reporter) {
     static const FloatUnion inf32 = { 255 << 23 };
     h = SkFloatToHalf(inf32.fF);
     f = SkHalfToFloat(h);
-    REPORTER_ASSERT(reporter, !SkScalarIsFinite(f) );
+    REPORTER_ASSERT(reporter, !SkIsFinite(f) );
 
     static const FloatUnion nan32 = { 255 << 23 | 1 };
     h = SkFloatToHalf(nan32.fF);
     f = SkHalfToFloat(h);
-    REPORTER_ASSERT(reporter, SkScalarIsNaN(f) );
+    REPORTER_ASSERT(reporter, SkIsNaN(f) );
 
 }
 
@@ -258,9 +281,9 @@ static void test_rsqrt(skiatest::Reporter* reporter, RSqrtFn rsqrt) {
     // test close to 0 up to 1
     float input = 0.000001f;
     for (int i = 0; i < 1000; ++i) {
-        float exact = 1.0f/sk_float_sqrt(input);
+        float exact = 1.0f/std::sqrt(input);
         float estimate = rsqrt(input);
-        float relativeError = sk_float_abs(exact - estimate)/exact;
+        float relativeError = std::fabs(exact - estimate)/exact;
         REPORTER_ASSERT(reporter, relativeError <= maxRelativeError);
         input += 0.001f;
     }
@@ -268,9 +291,9 @@ static void test_rsqrt(skiatest::Reporter* reporter, RSqrtFn rsqrt) {
     // test 1 to ~100
     input = 1.0f;
     for (int i = 0; i < 1000; ++i) {
-        float exact = 1.0f/sk_float_sqrt(input);
+        float exact = 1.0f/std::sqrt(input);
         float estimate = rsqrt(input);
-        float relativeError = sk_float_abs(exact - estimate)/exact;
+        float relativeError = std::fabs(exact - estimate)/exact;
         REPORTER_ASSERT(reporter, relativeError <= maxRelativeError);
         input += 0.01f;
     }
@@ -278,53 +301,11 @@ static void test_rsqrt(skiatest::Reporter* reporter, RSqrtFn rsqrt) {
     // test some big numbers
     input = 1000000.0f;
     for (int i = 0; i < 100; ++i) {
-        float exact = 1.0f/sk_float_sqrt(input);
+        float exact = 1.0f/std::sqrt(input);
         float estimate = rsqrt(input);
-        float relativeError = sk_float_abs(exact - estimate)/exact;
+        float relativeError = std::fabs(exact - estimate)/exact;
         REPORTER_ASSERT(reporter, relativeError <= maxRelativeError);
         input += 754326.f;
-    }
-}
-
-static void test_nextlog2(skiatest::Reporter* r) {
-    REPORTER_ASSERT(r, sk_float_nextlog2(-std::numeric_limits<float>::infinity()) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(-std::numeric_limits<float>::max()) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(-1000.0f) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(-0.1f) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(-std::numeric_limits<float>::min()) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(-std::numeric_limits<float>::denorm_min()) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(0.0f) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(std::numeric_limits<float>::denorm_min()) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(std::numeric_limits<float>::min()) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(0.1f) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(1.0f) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(1.1f) == 1);
-    REPORTER_ASSERT(r, sk_float_nextlog2(2.0f) == 1);
-    REPORTER_ASSERT(r, sk_float_nextlog2(2.1f) == 2);
-    REPORTER_ASSERT(r, sk_float_nextlog2(3.0f) == 2);
-    REPORTER_ASSERT(r, sk_float_nextlog2(3.1f) == 2);
-    REPORTER_ASSERT(r, sk_float_nextlog2(4.0f) == 2);
-    REPORTER_ASSERT(r, sk_float_nextlog2(4.1f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(5.0f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(5.1f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(6.0f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(6.1f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(7.0f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(7.1f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(8.0f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(8.1f) == 4);
-    REPORTER_ASSERT(r, sk_float_nextlog2(9.0f) == 4);
-    REPORTER_ASSERT(r, sk_float_nextlog2(9.1f) == 4);
-    REPORTER_ASSERT(r, sk_float_nextlog2(std::numeric_limits<float>::max()) == 128);
-    REPORTER_ASSERT(r, sk_float_nextlog2(std::numeric_limits<float>::infinity()) > 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(std::numeric_limits<float>::quiet_NaN()) >= 0);
-
-    for (int i = 0; i < 100; ++i) {
-        float pow2 = std::ldexp(1, i);
-        float epsilon = std::ldexp(SK_ScalarNearlyZero, i);
-        REPORTER_ASSERT(r, sk_float_nextlog2(pow2) == i);
-        REPORTER_ASSERT(r, sk_float_nextlog2(pow2 + epsilon) == i + 1);
-        REPORTER_ASSERT(r, sk_float_nextlog2(pow2 - epsilon) == i);
     }
 }
 
@@ -375,13 +356,13 @@ static void test_copysign(skiatest::Reporter* reporter) {
         -1, 1, 1,
         -1, -1, -1,
     };
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gTriples); i += 3) {
+    for (size_t i = 0; i < std::size(gTriples); i += 3) {
         REPORTER_ASSERT(reporter,
                         SkCopySign32(gTriples[i], gTriples[i+1]) == gTriples[i+2]);
         float x = (float)gTriples[i];
         float y = (float)gTriples[i+1];
         float expected = (float)gTriples[i+2];
-        REPORTER_ASSERT(reporter, sk_float_copysign(x, y) == expected);
+        REPORTER_ASSERT(reporter, std::copysign(x, y) == expected);
     }
 
     SkRandom rand;
@@ -415,6 +396,103 @@ static void huge_vector_normalize(skiatest::Reporter* reporter) {
     }
 }
 
+DEF_TEST(PopCount, reporter) {
+    {
+        uint32_t testVal = 0;
+        REPORTER_ASSERT(reporter, SkPopCount(testVal) == 0);
+    }
+
+    for (int i = 0; i < 32; ++i) {
+        uint32_t testVal = 0x1 << i;
+        REPORTER_ASSERT(reporter, SkPopCount(testVal) == 1);
+
+        testVal ^= 0xFFFFFFFF;
+        REPORTER_ASSERT(reporter, SkPopCount(testVal) == 31);
+    }
+
+    {
+        uint32_t testVal = 0xFFFFFFFF;
+        REPORTER_ASSERT(reporter, SkPopCount(testVal) == 32);
+    }
+
+    SkRandom rand;
+    for (int i = 0; i < 100; ++i) {
+        int expectedNumSetBits = 0;
+        uint32_t testVal = 0;
+
+        int numTries = rand.nextULessThan(33);
+        for (int j = 0; j < numTries; ++j) {
+            int bit = rand.nextRangeU(0, 31);
+
+            if (testVal & (0x1 << bit)) {
+                continue;
+            }
+
+            ++expectedNumSetBits;
+            testVal |= 0x1 << bit;
+        }
+
+        REPORTER_ASSERT(reporter, SkPopCount(testVal) == expectedNumSetBits);
+    }
+}
+
+DEF_TEST(NthSet, reporter) {
+    {
+        uint32_t testVal = 0x1;
+        uint32_t recreated = 0;
+        int result = SkNthSet(testVal, 0);
+        recreated |= (0x1 << result);
+        REPORTER_ASSERT(reporter, testVal == recreated);
+    }
+
+    {
+        uint32_t testVal = 0x80000000;
+        uint32_t recreated = 0;
+        int result = SkNthSet(testVal, 0);
+        recreated |= (0x1 << result);
+        REPORTER_ASSERT(reporter, testVal == recreated);
+    }
+
+    {
+        uint32_t testVal = 0x55555555;
+        uint32_t recreated = 0;
+        for (int i = 0; i < 16; ++i) {
+            int result = SkNthSet(testVal, i);
+            REPORTER_ASSERT(reporter, result == 2*i);
+            recreated |= (0x1 << result);
+        }
+        REPORTER_ASSERT(reporter, testVal == recreated);
+    }
+
+    SkRandom rand;
+    for (int i = 0; i < 100; ++i) {
+        int expectedNumSetBits = 0;
+        uint32_t testVal = 0;
+
+        int numTries = rand.nextULessThan(33);
+        for (int j = 0; j < numTries; ++j) {
+            int bit = rand.nextRangeU(0, 31);
+
+            if (testVal & (0x1 << bit)) {
+                continue;
+            }
+
+            ++expectedNumSetBits;
+            testVal |= 0x1 << bit;
+        }
+
+        REPORTER_ASSERT(reporter, SkPopCount(testVal) == expectedNumSetBits);
+        uint32_t recreated = 0;
+
+        for (int j = 0; j < expectedNumSetBits; ++j) {
+            int index = SkNthSet(testVal, j);
+            recreated |= (0x1 << index);
+        }
+
+        REPORTER_ASSERT(reporter, recreated == testVal);
+    }
+}
+
 DEF_TEST(Math, reporter) {
     int         i;
     SkRandom    rand;
@@ -445,7 +523,7 @@ DEF_TEST(Math, reporter) {
 
     {
         SkScalar x = SK_ScalarNaN;
-        REPORTER_ASSERT(reporter, SkScalarIsNaN(x));
+        REPORTER_ASSERT(reporter, SkIsNaN(x));
     }
 
     for (i = 0; i < 10000; i++) {
@@ -479,11 +557,11 @@ DEF_TEST(Math, reporter) {
     }
 
     huge_vector_normalize(reporter);
-    unittest_isfinite(reporter);
+    unittest_isfinite<float>(reporter);
+    unittest_isfinite<double>(reporter);
     unittest_half(reporter);
     test_rsqrt(reporter, sk_float_rsqrt);
     test_rsqrt(reporter, sk_float_rsqrt_portable);
-    test_nextlog2(reporter);
 
     for (i = 0; i < 10000; i++) {
         SkFixed numer = rand.nextS();
@@ -501,8 +579,8 @@ DEF_TEST(Math, reporter) {
             check = SK_MinS32;
         }
         if (result != (int32_t)check) {
-            ERRORF(reporter, "\nFixed Divide: %8x / %8x -> %8x %8" PRIx64 "\n", numer, denom,
-                   result, check);
+            ERRORF(reporter, "\nFixed Divide: %8x / %8x -> %8x %8" PRIx64 "\n",
+                   (uint32_t)numer, (uint32_t)denom, (uint32_t)result, (uint64_t)check);
         }
         REPORTER_ASSERT(reporter, result == (int32_t)check);
     }
@@ -542,20 +620,19 @@ DEF_TEST(TestEndian, reporter) {
     REPORTER_ASSERT(reporter, 0x11223344 == SkTEndianSwap32<0x44332211>::value);
     REPORTER_ASSERT(reporter, 0x1122334455667788ULL == SkTEndianSwap64<0x8877665544332211ULL>::value);
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(g16); ++i) {
+    for (size_t i = 0; i < std::size(g16); ++i) {
         REPORTER_ASSERT(reporter, g16[i].fYang == SkEndianSwap16(g16[i].fYin));
     }
-    for (size_t i = 0; i < SK_ARRAY_COUNT(g32); ++i) {
+    for (size_t i = 0; i < std::size(g32); ++i) {
         REPORTER_ASSERT(reporter, g32[i].fYang == SkEndianSwap32(g32[i].fYin));
     }
-    for (size_t i = 0; i < SK_ARRAY_COUNT(g64); ++i) {
+    for (size_t i = 0; i < std::size(g64); ++i) {
         REPORTER_ASSERT(reporter, g64[i].fYang == SkEndianSwap64(g64[i].fYin));
     }
 }
 
 template <typename T>
 static void test_divmod(skiatest::Reporter* r) {
-#if !defined(__MSVC_RUNTIME_CHECKS)
     const struct {
         T numer;
         T denom;
@@ -570,7 +647,7 @@ static void test_divmod(skiatest::Reporter* r) {
         {(T)-17, (T)-4},
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(kEdgeCases); i++) {
+    for (size_t i = 0; i < std::size(kEdgeCases); i++) {
         const T numer = kEdgeCases[i].numer;
         const T denom = kEdgeCases[i].denom;
         T div, mod;
@@ -591,7 +668,6 @@ static void test_divmod(skiatest::Reporter* r) {
         REPORTER_ASSERT(r, numer/denom == div);
         REPORTER_ASSERT(r, numer%denom == mod);
     }
-#endif
 }
 
 DEF_TEST(divmod_u8, r) {
@@ -627,13 +703,13 @@ DEF_TEST(divmod_s64, r) {
 }
 
 static void test_nextsizepow2(skiatest::Reporter* r, size_t test, size_t expectedAns) {
-    size_t ans = GrNextSizePow2(test);
+    size_t ans = SkNextSizePow2(test);
 
     REPORTER_ASSERT(r, ans == expectedAns);
     //SkDebugf("0x%zx -> 0x%zx (0x%zx)\n", test, ans, expectedAns);
 }
 
-DEF_TEST(GrNextSizePow2, reporter) {
+DEF_TEST(SkNextSizePow2, reporter) {
     constexpr int kNumSizeTBits = 8 * sizeof(size_t);
 
     size_t test = 0, expectedAns = 1;
@@ -712,6 +788,40 @@ DEF_TEST(FloatSaturate64, reporter) {
     }
 }
 
+DEF_TEST(SkNextPow2, reporter) {
+    // start off with some easy-to verify cases and some edge cases.
+    const struct {
+        int fInput;
+        int fExpected;
+    } cases[] = {
+        // 0 is undefined for the current implementation.
+        { 1, 1 },
+        { 2, 2 },
+        { 3, 4 },
+        { 4, 4 },
+        { 5, 8 },
+        { 1073741822, 1073741824},
+        { 1073741823, 1073741824},
+        { 1073741824, 1073741824}, // Anything larger than this will overflow
+    };
+
+    for (auto c : cases) {
+        int actual = SkNextPow2(c.fInput);
+        REPORTER_ASSERT(reporter, c.fExpected == actual,
+            "SkNextPow2(%d) == %d not %d", c.fInput, actual, c.fExpected);
+        REPORTER_ASSERT(reporter, actual == SkNextPow2_portable(c.fInput));
+    }
+
+    // exhaustive search for all the between numbers
+    for (int i = 6; i < 63356; i++) {
+        int actual = SkNextPow2(i);
+        int expected = std::pow(2.f, std::ceil(logf(i)/logf(2)));
+        REPORTER_ASSERT(reporter, expected == actual,
+            "SkNextPow2(%d) == %d not %d", i, actual, expected);
+        REPORTER_ASSERT(reporter, actual == SkNextPow2_portable(i));
+    }
+}
+
 DEF_TEST(DoubleSaturate32, reporter) {
     const struct {
         double  fDouble;
@@ -755,38 +865,3 @@ DEF_TEST(DoubleSaturate32, reporter) {
     }
 
 #endif
-
-DEF_TEST(unit_floats, r) {
-    // pick a non-trivial, non-pow-2 value, to test the loop
-    float v[13];
-    constexpr int N = SK_ARRAY_COUNT(v);
-
-    // empty array reports true
-    REPORTER_ASSERT(r, sk_floats_are_unit(v, 0));
-
-    SkRandom rand;
-    for (int outer = 0; outer < 1000; ++outer) {
-        // check some good values
-        for (int i = 0; i < N; ++i) {
-            v[i] = rand.nextUScalar1();
-        }
-        const int index = rand.nextU() % N;
-
-        REPORTER_ASSERT(r, sk_floats_are_unit(v, N));
-        v[index] = -0.f;
-        REPORTER_ASSERT(r, sk_floats_are_unit(v, N));
-        v[index] = 1.0f;
-        REPORTER_ASSERT(r, sk_floats_are_unit(v, N));
-
-        // check some bad values
-        const float non_norms[] = {
-            1.0000001f, 2, SK_ScalarInfinity, SK_ScalarNaN
-        };
-        for (float bad : non_norms) {
-            v[index] = bad;
-            REPORTER_ASSERT(r, !sk_floats_are_unit(v, N));
-            v[index] = -bad;
-            REPORTER_ASSERT(r, !sk_floats_are_unit(v, N));
-        }
-    }
-}

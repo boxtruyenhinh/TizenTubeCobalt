@@ -16,8 +16,8 @@
 // this is hooked up to something.
 
 #include "starboard/nplb/posix_compliance/posix_socket_helpers.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -37,8 +37,7 @@ int Transfer(int receive_socket_fd,
                             size - send_total, kSendFlags);
       if (bytes_sent < 0) {
         if (errno != EINPROGRESS) {
-          // TODO: b/321999529, need errno
-          // return -1;
+          return -1;
         }
         bytes_sent = 0;
       }
@@ -51,8 +50,7 @@ int Transfer(int receive_socket_fd,
 
     if (bytes_received < 0) {
       if (errno != EINPROGRESS) {
-        // TODO: b/321999529, need errno
-        // return -1;
+        return -1;
       }
       bytes_received = 0;
     }
@@ -68,7 +66,7 @@ TEST(PosixSocketReceiveTest, SunnyDay) {
   const int kSockBufSize = kBufSize / 8;
   int listen_socket_fd = -1, client_socket_fd = -1, server_socket_fd = -1;
   int result = PosixSocketCreateAndConnect(
-      AF_INET, AF_INET, htons(GetPortNumberForTests()), kSocketTimeout,
+      AF_INET, AF_INET, htons(PosixGetPortNumberForTests()), kSocketTimeout,
       &listen_socket_fd, &client_socket_fd, &server_socket_fd);
   ASSERT_TRUE(result == 0);
 
@@ -116,4 +114,3 @@ TEST(PosixSocketReceiveTest, SunnyDay) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

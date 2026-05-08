@@ -19,7 +19,6 @@
 #include "starboard/system.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 
 void TestProducesBothValuesOfAllBits(RandomFunction get_random) {
@@ -34,8 +33,9 @@ void TestProducesBothValuesOfAllBits(RandomFunction get_random) {
     found_ones |= value;
     found_zeros &= value;
 
-    if (found_zeros == kAllZeros && found_ones == kAllOnes)
+    if (found_zeros == kAllZeros && found_ones == kAllOnes) {
       return;
+    }
   }
 
   ADD_FAILURE() << "Didn't achieve all bit values in maximum number of tries.";
@@ -57,8 +57,10 @@ void TestIsFairlyUniform(RandomFunction get_random) {
     // Don't quit too quickly for things to start converging, or we may have
     // a false positive.
     if (count > kMinAttempts &&
-        kExpectedAverage - kAllowedVariance < cumulative_average &&
-        cumulative_average < kExpectedAverage + kAllowedVariance) {
+        static_cast<double>(kExpectedAverage - kAllowedVariance) <
+            cumulative_average &&
+        cumulative_average <
+            static_cast<double>(kExpectedAverage + kAllowedVariance)) {
       break;
     }
 
@@ -70,4 +72,3 @@ void TestIsFairlyUniform(RandomFunction get_random) {
 }
 
 }  // namespace nplb
-}  // namespace starboard

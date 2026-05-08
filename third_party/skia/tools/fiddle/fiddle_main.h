@@ -7,18 +7,15 @@
 #ifndef fiddle_main_DEFINED
 #define fiddle_main_DEFINED
 
-#ifdef FIDDLE_BUILD_TEST
-    #include "include/core/SkCanvas.h"
-    #include "include/core/SkDocument.h"
-    #include "include/core/SkPictureRecorder.h"
-    #include "include/core/SkStream.h"
-    #include "include/core/SkSurface.h"
-    #include "include/gpu/GrDirectContext.h"
-    #include "include/gpu/gl/GrGLAssembleInterface.h"
-    #include "include/gpu/gl/GrGLInterface.h"
-#else
-    #include "skia.h"
-#endif
+#include "include/core/SkCanvas.h"
+#include "include/core/SkDocument.h"
+#include "include/core/SkFontMgr.h"
+#include "include/core/SkPictureRecorder.h"
+#include "include/core/SkStream.h"
+#include "include/core/SkSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/gl/GrGLAssembleInterface.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
 
 #include <memory>
 #include <sstream>
@@ -28,35 +25,48 @@ class GLTestContext;
 class ManagedBackendTexture;
 }  // namespace sk_gpu_test
 
-extern sk_sp<sk_gpu_test::ManagedBackendTexture> backEndTexture;
+
+// fiddle_main.h (purposefully) pollutes the global namespace with very generic identifiers like
+// "image", "duration", "frame", and "fontMgr". As such it is something of an
+// "implementation header" and should be included last to avoid name shadowing warnings.
+extern GrBackendTexture backEndTexture;
 extern GrBackendRenderTarget backEndRenderTarget;
-extern sk_sp<sk_gpu_test::ManagedBackendTexture> backEndTextureRenderTarget;
+extern GrBackendTexture backEndTextureRenderTarget;
 extern SkBitmap source;
 extern sk_sp<SkImage> image;
 extern double duration; // The total duration of the animation in seconds.
 extern double frame;    // A value in [0, 1] of where we are in the animation.
+extern sk_sp<SkFontMgr> fontMgr;  // Can load some system fonts
 
 struct DrawOptions {
-    DrawOptions(int w, int h, bool r, bool g, bool p, bool k, bool srgb, bool f16,
-                bool textOnly, const char* s,
-                GrMipmapped mipMapping,
+    DrawOptions(int w,
+                int h,
+                bool r,
+                bool g,
+                bool p,
+                bool k,
+                bool srgb,
+                bool f16,
+                bool textOnly,
+                const char* s,
+                skgpu::Mipmapped mipMapping,
                 int offScreenWidth,
                 int offScreenHeight,
-                int deprecated, // TODO(jcgregorio): remove
-                GrMipmapped offScreenMipMapping)
-        : size(SkISize::Make(w, h))
-        , raster(r)
-        , gpu(g)
-        , pdf(p)
-        , skp(k)
-        , srgb(srgb)
-        , f16(f16)
-        , textOnly(textOnly)
-        , source(s)
-        , fMipMapping(mipMapping)
-        , fOffScreenWidth(offScreenWidth)
-        , fOffScreenHeight(offScreenHeight)
-        , fOffScreenMipMapping(offScreenMipMapping) {
+                int deprecated,  // TODO(jcgregorio): remove
+                skgpu::Mipmapped offScreenMipMapping)
+            : size(SkISize::Make(w, h))
+            , raster(r)
+            , gpu(g)
+            , pdf(p)
+            , skp(k)
+            , srgb(srgb)
+            , f16(f16)
+            , textOnly(textOnly)
+            , source(s)
+            , fMipMapping(mipMapping)
+            , fOffScreenWidth(offScreenWidth)
+            , fOffScreenHeight(offScreenHeight)
+            , fOffScreenMipMapping(offScreenMipMapping) {
         // F16 mode is only valid for color correct backends.
         SkASSERT(srgb || !f16);
     }
@@ -74,14 +84,14 @@ struct DrawOptions {
     // In this case the resource is created with extra room to accommodate mipmaps.
     // TODO: The SkImage::makeTextureImage API would need to be widened to allow this to be true
     // for the non-backend gpu SkImages.
-    GrMipmapped fMipMapping;
+    skgpu::Mipmapped fMipMapping;
 
     // Parameters for an GPU offscreen resource exposed as a GrBackendRenderTarget
     int         fOffScreenWidth;
     int         fOffScreenHeight;
     // TODO: should we also expose stencilBits here? How about the config?
 
-    GrMipmapped fOffScreenMipMapping; // only applicable if the offscreen is also textureable
+    skgpu::Mipmapped fOffScreenMipMapping;  // only applicable if the offscreen is also textureable
 };
 
 extern DrawOptions GetDrawOptions();

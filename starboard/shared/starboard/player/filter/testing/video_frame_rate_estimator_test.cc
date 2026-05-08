@@ -12,22 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "starboard/shared/starboard/player/filter/video_frame_cadence_pattern_generator.h"
+#include "starboard/shared/starboard/player/filter/video_frame_rate_estimator.h"
 
 #include <initializer_list>
 #include <list>
 
 #include "starboard/common/ref_counted.h"
+#include "starboard/shared/starboard/player/filter/video_frame_cadence_pattern_generator.h"
 #include "starboard/shared/starboard/player/filter/video_frame_internal.h"
-#include "starboard/shared/starboard/player/filter/video_frame_rate_estimator.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
-namespace testing {
 namespace {
 
 using Frames = VideoFrameRateEstimator::Frames;
@@ -234,9 +229,5 @@ TEST(VideoFrameRateEstimatorTest, EndOfStream) {
 }
 
 }  // namespace
-}  // namespace testing
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
+
 }  // namespace starboard

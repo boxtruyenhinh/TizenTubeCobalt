@@ -15,15 +15,14 @@
 #include "starboard/raspi/shared/open_max/open_max_component.h"
 
 #include <algorithm>
+#include <mutex>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/once.h"
 #include "starboard/configuration.h"
 #include "starboard/thread.h"
 
 namespace starboard {
-namespace raspi {
-namespace shared {
-namespace open_max {
 
 OpenMaxComponent::OpenMaxComponent(const char* name)
     : OpenMaxComponentBase(name),
@@ -32,9 +31,9 @@ OpenMaxComponent::OpenMaxComponent(const char* name)
       output_component_(NULL) {}
 
 void OpenMaxComponent::SetOutputComponent(OpenMaxComponent* component) {
-  SB_DCHECK(component != NULL);
+  SB_DCHECK(component);
   SB_DCHECK(component->input_buffers_.empty());
-  SB_DCHECK(output_component_ == NULL);
+  SB_DCHECK_EQ(output_component_, nullptr);
   SB_DCHECK(output_buffers_.empty());
   output_component_ = component;
 }
@@ -54,11 +53,11 @@ void OpenMaxComponent::CloseTunnel() {
     current->WaitForCommandCompletion();
 
     error = OMX_SetupTunnel(prev->handle_, prev->output_port_, NULL, 0);
-    SB_DCHECK(error == OMX_ErrorNone)
+    SB_DCHECK_EQ(error, OMX_ErrorNone)
         << "OMX_SetupTunnel " << prev->output_port_
         << " to 0 failed with error " << std::hex << error;
     error = OMX_SetupTunnel(current->handle_, current->input_port_, NULL, 0);
-    SB_DCHECK(error == OMX_ErrorNone)
+    SB_DCHECK_EQ(error, OMX_ErrorNone)
         << "OMX_SetupTunnel " << current->input_port_
         << " to 0 failed with error " << std::hex << error;
 
@@ -112,7 +111,7 @@ int OpenMaxComponent::WriteData(const void* data,
     offset += size_to_append;
 
     OMX_ERRORTYPE error = OMX_EmptyThisBuffer(handle_, buffer_header);
-    SB_DCHECK(error == OMX_ErrorNone);
+    SB_DCHECK_EQ(error, OMX_ErrorNone);
   }
 
   return offset;
@@ -129,7 +128,7 @@ bool OpenMaxComponent::WriteEOS() {
   buffer_header->nFlags = OMX_BUFFERFLAG_EOS;
 
   OMX_ERRORTYPE error = OMX_EmptyThisBuffer(handle_, buffer_header);
-  SB_DCHECK(error == OMX_ErrorNone);
+  SB_DCHECK_EQ(error, OMX_ErrorNone);
   return true;
 }
 
@@ -137,9 +136,9 @@ OMX_BUFFERHEADERTYPE* OpenMaxComponent::GetOutputBuffer() {
   bool enable_output_port = false;
 
   {
-    mutex_.Acquire();
+    std::unique_lock lock(mutex_);
     if (!output_setting_changed_ && output_buffers_.empty()) {
-      mutex_.Release();
+      lock.unlock();
       if (output_component_ == NULL) {
         return NULL;
       } else {
@@ -150,7 +149,6 @@ OMX_BUFFERHEADERTYPE* OpenMaxComponent::GetOutputBuffer() {
     enable_output_port = output_setting_changed_ &&
                          filled_output_buffers_.empty() &&
                          outstanding_output_buffers_ == 0;
-    mutex_.Release();
   }
 
   if (enable_output_port) {
@@ -158,12 +156,12 @@ OMX_BUFFERHEADERTYPE* OpenMaxComponent::GetOutputBuffer() {
     output_setting_changed_ = false;
   }
 
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   if (filled_output_buffers_.empty()) {
     return NULL;
   }
 
-  SB_DCHECK(output_component_ == NULL);
+  SB_DCHECK_EQ(output_component_, nullptr);
   OMX_BUFFERHEADERTYPE* buffer = filled_output_buffers_.front();
   filled_output_buffers_.pop();
   ++outstanding_output_buffers_;
@@ -177,12 +175,12 @@ void OpenMaxComponent::DropOutputBuffer(OMX_BUFFERHEADERTYPE* buffer) {
   }
 
   {
-    ScopedLock scoped_lock(mutex_);
+    std::lock_guard scoped_lock(mutex_);
     if (output_buffers_.empty()) {
-      SB_DCHECK(outstanding_output_buffers_ == 0);
+      SB_DCHECK_EQ(outstanding_output_buffers_, 0);
       return;
     }
-    SB_DCHECK(outstanding_output_buffers_ > 0);
+    SB_DCHECK_GT(outstanding_output_buffers_, 0);
     --outstanding_output_buffers_;
 
     if (output_setting_changed_) {
@@ -191,7 +189,7 @@ void OpenMaxComponent::DropOutputBuffer(OMX_BUFFERHEADERTYPE* buffer) {
   }
   buffer->nFilledLen = 0;
   OMX_ERRORTYPE error = OMX_FillThisBuffer(handle_, buffer);
-  SB_DCHECK(error == OMX_ErrorNone);
+  SB_DCHECK_EQ(error, OMX_ErrorNone);
 }
 
 OpenMaxComponent::~OpenMaxComponent() {
@@ -208,7 +206,7 @@ OpenMaxComponent::~OpenMaxComponent() {
   for (size_t i = 0; i < input_buffers_.size(); ++i) {
     OMX_ERRORTYPE error =
         OMX_FreeBuffer(handle_, input_port_, input_buffers_[i]);
-    SB_DCHECK(error == OMX_ErrorNone);
+    SB_DCHECK_EQ(error, OMX_ErrorNone);
   }
   WaitForCommandCompletion();
 
@@ -229,7 +227,7 @@ OMX_BUFFERHEADERTYPE* OpenMaxComponent::AllocateBuffer(int port,
                                                        OMX_U32 size) {
   OMX_BUFFERHEADERTYPE* buffer;
   OMX_ERRORTYPE error = OMX_AllocateBuffer(handle_, &buffer, port, NULL, size);
-  SB_DCHECK(error == OMX_ErrorNone);
+  SB_DCHECK_EQ(error, OMX_ErrorNone);
   return buffer;
 }
 
@@ -241,7 +239,7 @@ void OpenMaxComponent::DisableOutputPort() {
     for (size_t i = 0; i < output_buffers_.size(); ++i) {
       OMX_ERRORTYPE error =
           OMX_FreeBuffer(handle_, output_port_, output_buffers_[i]);
-      SB_DCHECK(error == OMX_ErrorNone);
+      SB_DCHECK_EQ(error, OMX_ErrorNone);
     }
     output_buffers_.clear();
     WaitForCommandCompletion();
@@ -314,7 +312,7 @@ void OpenMaxComponent::EnableOutputPortAndAllocateBuffer() {
   for (size_t i = 0; i < output_buffers_.size(); ++i) {
     output_buffers_[i]->nFilledLen = 0;
     OMX_ERRORTYPE error = OMX_FillThisBuffer(handle_, output_buffers_[i]);
-    SB_DCHECK(error == OMX_ErrorNone);
+    SB_DCHECK_EQ(error, OMX_ErrorNone);
   }
 }
 
@@ -330,7 +328,7 @@ void OpenMaxComponent::EnableOutputTunnelling(
   OMX_ERRORTYPE error =
       OMX_SetupTunnel(handle_, output_port_, output_component_->handle_,
                       output_component_->input_port_);
-  SB_DCHECK(error == OMX_ErrorNone)
+  SB_DCHECK_EQ(error, OMX_ErrorNone)
       << "OMX_SetupTunnel " << output_port_ << " to "
       << output_component_->input_port_ << " failed with error " << std::hex
       << error;
@@ -348,7 +346,7 @@ void OpenMaxComponent::EnableOutputTunnelling(
 }
 
 OMX_BUFFERHEADERTYPE* OpenMaxComponent::GetUnusedInputBuffer() {
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   if (!free_input_buffers_.empty()) {
     OMX_BUFFERHEADERTYPE* buffer_header = free_input_buffers_.front();
     free_input_buffers_.pop();
@@ -358,23 +356,20 @@ OMX_BUFFERHEADERTYPE* OpenMaxComponent::GetUnusedInputBuffer() {
 }
 
 void OpenMaxComponent::OnOutputSettingChanged() {
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   output_setting_changed_ = true;
 }
 
 OMX_ERRORTYPE OpenMaxComponent::OnEmptyBufferDone(
     OMX_BUFFERHEADERTYPE* buffer) {
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   free_input_buffers_.push(buffer);
   return OMX_ErrorNone;
 }
 
 void OpenMaxComponent::OnFillBufferDone(OMX_BUFFERHEADERTYPE* buffer) {
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   filled_output_buffers_.push(buffer);
 }
 
-}  // namespace open_max
-}  // namespace shared
-}  // namespace raspi
 }  // namespace starboard

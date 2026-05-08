@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "starboard/common/murmurhash2.h"
+
 #include <string.h>
 
-#include "starboard/common/murmurhash2.h"
+#include <memory>
 
 namespace starboard {
 
@@ -71,8 +73,10 @@ uint32_t MurmurHash2_32_Aligned(const void* src,
   switch (size) {
     case 3:
       h ^= data[2] << 16;
+      [[fallthrough]];
     case 2:
       h ^= data[1] << 8;
+      [[fallthrough]];
     case 1:
       h ^= data[0];
       h *= m;

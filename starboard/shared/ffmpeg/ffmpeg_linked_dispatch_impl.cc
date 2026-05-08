@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
+#include "starboard/shared/ffmpeg/ffmpeg_dispatch.h"
+// clang-format on
+
 // This file implements the FFMPEGDispatch interface for a library linked
 // directly, or which the symbols are already available in the global namespace.
-
-#include "starboard/shared/ffmpeg/ffmpeg_dispatch.h"
 
 #include <dlfcn.h>
 #include <pthread.h>
@@ -29,8 +31,6 @@
 #include "starboard/shared/starboard/lazy_initialization_internal.h"
 
 namespace starboard {
-namespace shared {
-namespace ffmpeg {
 namespace {
 
 FFMPEGDispatch* g_ffmpeg_dispatch_impl;
@@ -41,7 +41,6 @@ void construct_ffmpeg_dispatch() {
 }
 
 void LoadSymbols(FFMPEGDispatch* ffmpeg) {
-  SB_DCHECK(ffmpeg->is_valid());
   // Load the desired symbols from the shared libraries. Note: If a symbol is
   // listed as a '.text' entry in the output of 'objdump -T' on the shared
   // library file, then it is directly available from it.
@@ -54,13 +53,10 @@ void LoadSymbols(FFMPEGDispatch* ffmpeg) {
   SB_DCHECK(ffmpeg->avutil_version);
   INITSYMBOL(av_malloc);
   INITSYMBOL(av_freep);
-  INITSYMBOL(av_free);
-  INITSYMBOL(av_rescale_rnd);
 #if LIBAVUTIL_VERSION_INT >= LIBAVUTIL_VERSION_52_8
   INITSYMBOL(av_frame_alloc);
   INITSYMBOL(av_frame_free);
   INITSYMBOL(av_frame_unref);
-  INITSYMBOL(av_dict_get);
 #endif  // LIBAVUTIL_VERSION_INT >= LIBAVUTIL_VERSION_52_8
   INITSYMBOL(av_samples_get_buffer_size);
   INITSYMBOL(av_opt_set_int);
@@ -91,22 +87,6 @@ void LoadSymbols(FFMPEGDispatch* ffmpeg) {
   INITSYMBOL(avcodec_get_frame_defaults);
 #endif  // LIBAVUTIL_VERSION_INT > LIBAVUTIL_VERSION_52_8
   INITSYMBOL(avcodec_align_dimensions2);
-
-#if LIBAVCODEC_LIBRARY_IS_FFMPEG
-  INITSYMBOL(av_packet_alloc);
-  INITSYMBOL(av_packet_free);
-  INITSYMBOL(av_packet_unref);
-  INITSYMBOL(avcodec_parameters_to_context);
-#endif  // LIBAVCODEC_LIBRARY_IS_FFMPEG
-  INITSYMBOL(av_free_packet);
-
-  INITSYMBOL(av_read_frame);
-  INITSYMBOL(av_seek_frame);
-  INITSYMBOL(avformat_open_input);
-  INITSYMBOL(avformat_close_input);
-  INITSYMBOL(avformat_alloc_context);
-  INITSYMBOL(avformat_find_stream_info);
-  INITSYMBOL(avio_alloc_context);
 
   // Load symbols from the avformat shared library.
   INITSYMBOL(avformat_version);
@@ -143,16 +123,9 @@ bool FFMPEGDispatch::RegisterSpecialization(int specialization,
   return true;
 }
 
-bool FFMPEGDispatch::is_valid() const {
-  // Loading of a linked library is always successful.
-  return true;
-}
-
 int FFMPEGDispatch::specialization_version() const {
   // There is only one version of ffmpeg linked to the binary.
   return FFMPEG;
 }
 
-}  // namespace ffmpeg
-}  // namespace shared
 }  // namespace starboard

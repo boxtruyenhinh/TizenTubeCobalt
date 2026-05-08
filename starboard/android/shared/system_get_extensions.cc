@@ -12,96 +12,83 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/system.h"
+// clang-format on
 
-#if SB_API_VERSION >= 16
 #include "starboard/android/shared/accessibility_extension.h"
-#endif  // SB_API_VERSION >= 16
 #include "starboard/android/shared/android_media_session_client.h"
 #include "starboard/android/shared/configuration.h"
+#include "starboard/android/shared/crash_handler.h"
+#include "starboard/android/shared/features_extension.h"
 #include "starboard/android/shared/graphics.h"
-#include "starboard/android/shared/media_settings_api.h"
+#include "starboard/android/shared/media_buffer_pool_extension.h"
 #include "starboard/android/shared/platform_info.h"
 #include "starboard/android/shared/platform_service.h"
 #include "starboard/android/shared/player_set_max_video_input_size.h"
+#include "starboard/android/shared/player_set_video_surface_view.h"
 #include "starboard/android/shared/system_info_api.h"
-#include "starboard/common/log.h"
 #include "starboard/common/string.h"
-#if SB_IS(EVERGREEN_COMPATIBLE)
-#include "starboard/elf_loader/evergreen_config.h"  // nogncheck
-#include "starboard/extension/loader_app_metrics.h"
-#include "starboard/shared/starboard/crash_handler.h"
-#include "starboard/shared/starboard/loader_app_metrics.h"
-#else
-#include "starboard/android/shared/crash_handler.h"
-#endif
 #include "starboard/extension/configuration.h"
 #include "starboard/extension/crash_handler.h"
+#include "starboard/extension/experimental_features.h"
+#include "starboard/extension/features.h"
 #include "starboard/extension/graphics.h"
 #include "starboard/extension/media_session.h"
-#include "starboard/extension/media_settings.h"
 #include "starboard/extension/platform_info.h"
 #include "starboard/extension/platform_service.h"
 #include "starboard/extension/player_set_max_video_input_size.h"
-#include "starboard/extension/socket_receive_multi_msg.h"
+#include "starboard/extension/player_set_video_surface_view.h"
 #include "starboard/extension/system_info.h"
-#include "starboard/shared/posix/socket_receive_multi_msg.h"
+#include "starboard/shared/starboard/experimental_features.h"
 
 const void* SbSystemGetExtension(const char* name) {
-#if SB_IS(EVERGREEN_COMPATIBLE)
-  const starboard::elf_loader::EvergreenConfig* evergreen_config =
-      starboard::elf_loader::EvergreenConfig::GetInstance();
-  if (evergreen_config != NULL &&
-      evergreen_config->custom_get_extension_ != NULL) {
-    const void* ext = evergreen_config->custom_get_extension_(name);
-    if (ext != NULL) {
-      return ext;
-    }
-  }
-#endif
   if (strcmp(name, kCobaltExtensionPlatformServiceName) == 0) {
-    return starboard::android::shared::GetPlatformServiceApi();
+    return starboard::GetPlatformServiceApiAndroid();
   }
   if (strcmp(name, kCobaltExtensionConfigurationName) == 0) {
-    return starboard::android::shared::GetConfigurationApi();
+    return starboard::GetConfigurationApiAndroid();
   }
   if (strcmp(name, kCobaltExtensionMediaSessionName) == 0) {
-    return starboard::android::shared::GetMediaSessionApi();
+    // TODO(b/377019873): Re-enable
+    // return starboard::GetMediaSessionApi();
+    return NULL;
+  }
+  if (strcmp(name, kStarboardExtensionFeaturesName) == 0) {
+    return starboard::GetFeaturesApi();
   }
   if (strcmp(name, kCobaltExtensionGraphicsName) == 0) {
-    return starboard::android::shared::GetGraphicsApi();
+    // TODO(b/377052944): Check if this is needed, likely can be
+    // deleted.
+    // return starboard::GetGraphicsApi();
+    return NULL;
   }
   if (strcmp(name, kCobaltExtensionCrashHandlerName) == 0) {
-#if SB_IS(EVERGREEN_COMPATIBLE)
-    return starboard::common::GetCrashHandlerApi();
-#else
-    return starboard::android::shared::GetCrashHandlerApi();
-#endif
+    return starboard::GetCrashHandlerApi();
   }
   if (strcmp(name, kCobaltExtensionPlatformInfoName) == 0) {
-    return starboard::android::shared::GetPlatformInfoApi();
+    return starboard::GetPlatformInfoApi();
   }
   if (strcmp(name, kStarboardExtensionPlayerSetMaxVideoInputSizeName) == 0) {
-    return starboard::android::shared::GetPlayerSetMaxVideoInputSizeApi();
+    return starboard::GetPlayerSetMaxVideoInputSizeApi();
   }
-#if SB_API_VERSION >= 16
+  if (strcmp(name, kStarboardExtensionExperimentalFeaturesConfigurationName) ==
+      0) {
+    return starboard::GetExperimentalFeaturesConfigurationApi();
+  }
+  if (strcmp(name, kStarboardExtensionPlayerSetVideoSurfaceViewName) == 0) {
+    return starboard::GetPlayerSetVideoSurfaceViewApi();
+  }
   if (strcmp(name, kStarboardExtensionAccessibilityName) == 0) {
-    return starboard::android::shared::GetAccessibilityApi();
+    // TODO(b/377052218): Re-enable
+    // return starboard::GetAccessibilityApi();
+    return NULL;
   }
-#endif  // SB_API_VERSION >= 16
-#if SB_IS(EVERGREEN_COMPATIBLE)
-  if (strcmp(name, kStarboardExtensionLoaderAppMetricsName) == 0) {
-    return starboard::shared::starboard::GetLoaderAppMetricsApi();
-  }
-#endif
-  if (strcmp(name, kStarboardExtensionMediaSettingsName) == 0) {
-    return starboard::android::shared::GetMediaSettingsApi();
+  if (strcmp(name, kStarboardExtensionMediaBufferPoolApiName) == 0) {
+    return starboard::android::shared::GetMediaBufferPoolApi();
   }
   if (strcmp(name, kStarboardExtensionSystemInfoName) == 0) {
-    return starboard::android::shared::GetSystemInfoApi();
-  }
-  if (strcmp(name, kCobaltExtensionSocketReceiveMultiMsgName) == 0) {
-    return starboard::shared::posix::GetSocketReceiveMultiMsgApi();
+    return starboard::GetSystemInfoApi();
   }
   return NULL;
 }

@@ -20,17 +20,10 @@ group("starboard_platform") {
   ]
 
   deps = [
-    "//third_party/libdav1d:dav1d",
+    "//third_party/dav1d",
     "//third_party/libjpeg_turbo:libjpeg",
     "//third_party/libvpx",
   ]
-}
-
-# TODO(b/348280514): Used on platforms where linker cannot resolve wrapped
-# functions
-static_library("starboard_egl_wrapped_functions") {
-  sources = [ "//starboard/shared/x11/egl_swap_buffers.cc" ]
-  configs += [ "//starboard/build/config:starboard_implementation" ]
 }
 
 static_library("starboard_platform_sources") {
@@ -38,13 +31,11 @@ static_library("starboard_platform_sources") {
   sources = [
     "//starboard/linux/x64x11/system_get_property.cc",
     "//starboard/linux/x64x11/system_get_property_impl.cc",
-    "//starboard/shared/libjpeg/image_decode.cc",
-    "//starboard/shared/libjpeg/image_is_decode_supported.cc",
     "//starboard/shared/libjpeg/jpeg_image_decoder.cc",
     "//starboard/shared/libjpeg/jpeg_image_decoder.h",
     "//starboard/shared/starboard/link_receiver.cc",
+    "//starboard/shared/starboard/link_receiver.h",
     "//starboard/shared/x11/application_x11.cc",
-    "//starboard/shared/x11/egl_swap_buffers.cc",
     "//starboard/shared/x11/player_set_bounds.cc",
     "//starboard/shared/x11/window_create.cc",
     "//starboard/shared/x11/window_destroy.cc",

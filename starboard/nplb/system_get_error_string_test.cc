@@ -14,20 +14,17 @@
 
 #include <fcntl.h>
 
-#include "starboard/common/string.h"
-#include "starboard/file.h"
 #include "starboard/nplb/file_helpers.h"
 #include "starboard/system.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
 TEST(SbSystemGetErrorStringTest, SunnyDay) {
   // Opening a non-existent file should generate an error on all platforms.
   ScopedRandomFile random_file(ScopedRandomFile::kDontCreate);
-  int file = open(random_file.filename().c_str(), O_RDONLY, S_IRUSR | S_IWUSR);
+  open(random_file.filename().c_str(), O_RDONLY);
 
   SbSystemError error = SbSystemGetLastError();
   EXPECT_NE(0, error);
@@ -35,9 +32,9 @@ TEST(SbSystemGetErrorStringTest, SunnyDay) {
     char name[128] = {0};
     int len = SbSystemGetErrorString(error, name, SB_ARRAY_SIZE_INT(name));
     EXPECT_LT(0, len);
-    EXPECT_LT(0, strlen(name));
+    EXPECT_LT(0u, strlen(name));
     if (len < SB_ARRAY_SIZE_INT(name)) {
-      EXPECT_EQ(len, strlen(name));
+      EXPECT_EQ(static_cast<size_t>(len), strlen(name));
     }
   }
 
@@ -45,7 +42,7 @@ TEST(SbSystemGetErrorStringTest, SunnyDay) {
     char name[128] = {0};
     int len = SbSystemGetErrorString(error, name, 0);
     EXPECT_LT(0, len);
-    EXPECT_EQ(0, strlen(name));
+    EXPECT_EQ(0u, strlen(name));
   }
 
   {
@@ -56,4 +53,3 @@ TEST(SbSystemGetErrorStringTest, SunnyDay) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

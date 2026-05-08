@@ -12,23 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "starboard/common/time.h"
 #include "starboard/nplb/player_test_fixture.h"
-#include "starboard/string.h"
 #include "starboard/testing/fake_graphics_context_provider.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
+using ::starboard::FakeGraphicsContextProvider;
 using ::testing::ValuesIn;
 
 typedef SbPlayerTestFixture::GroupedSamples GroupedSamples;
-typedef testing::FakeGraphicsContextProvider FakeGraphicsContextProvider;
 
 class SbPlayerGetMediaTimeTest
     : public ::testing::TestWithParam<SbPlayerTestConfig> {
  protected:
+  void SetUp() override { SkipTestIfNotSupported(GetParam()); }
+
   FakeGraphicsContextProvider fake_graphics_context_provider_;
 };
 
@@ -58,12 +59,12 @@ TEST_P(SbPlayerGetMediaTimeTest, SunnyDay) {
   ASSERT_NO_FATAL_FAILURE(player_fixture.Write(samples));
   ASSERT_NO_FATAL_FAILURE(player_fixture.WaitForPlayerPresenting());
 
-  int64_t start_system_time = CurrentMonotonicTime();
+  int64_t start_system_time = starboard::CurrentMonotonicTime();
   int64_t start_media_time = player_fixture.GetCurrentMediaTime();
 
   ASSERT_NO_FATAL_FAILURE(player_fixture.WaitForPlayerEndOfStream());
 
-  int64_t end_system_time = CurrentMonotonicTime();
+  int64_t end_system_time = starboard::CurrentMonotonicTime();
   int64_t end_media_time = player_fixture.GetCurrentMediaTime();
 
   const int64_t kDurationDifferenceAllowance = 500'000;  // 500 ms
@@ -72,13 +73,13 @@ TEST_P(SbPlayerGetMediaTimeTest, SunnyDay) {
               kDurationToPlay, kDurationDifferenceAllowance);
 
   SB_DLOG(INFO) << "The expected media time should be " << kDurationToPlay
-                << ", the actual start time is " << start_media_time
-                << ", the actual end time is " << end_media_time
+                << ", the actual media time is " << end_media_time
                 << ", with difference "
                 << std::abs(end_media_time - kDurationToPlay) << ".";
   SB_DLOG(INFO) << "The expected total playing time should be "
                 << kDurationToPlay << ", the actual playing time is "
-                << end_system_time - start_system_time << ", with difference "
+                << end_system_time - start_system_time + start_media_time
+                << ", with difference "
                 << std::abs(end_system_time - start_system_time +
                             start_media_time - kDurationToPlay)
                 << ".";
@@ -111,27 +112,28 @@ TEST_P(SbPlayerGetMediaTimeTest, TimeAfterSeek) {
   const int64_t kDurationToPlay = 1'000'000;  // 1 second
   samples = GroupedSamples();
   if (player_fixture.HasAudio()) {
-    int start_index =
-        player_fixture.ConvertDurationToAudioBufferCount(seek_to_time);
     samples.AddAudioSamples(
-        start_index,
-        player_fixture.ConvertDurationToAudioBufferCount(kDurationToPlay));
+        0,
+        player_fixture.ConvertDurationToAudioBufferCount(seek_to_time) +
+            player_fixture.ConvertDurationToAudioBufferCount(kDurationToPlay));
     samples.AddAudioEOS();
   }
   if (player_fixture.HasVideo()) {
-    samples.AddVideoSamples(0, player_fixture.ConvertDurationToVideoBufferCount(
-                                   seek_to_time + kDurationToPlay));
+    samples.AddVideoSamples(
+        0,
+        player_fixture.ConvertDurationToVideoBufferCount(seek_to_time) +
+            player_fixture.ConvertDurationToVideoBufferCount(kDurationToPlay));
     samples.AddVideoEOS();
   }
   ASSERT_NO_FATAL_FAILURE(player_fixture.Write(samples));
   ASSERT_NO_FATAL_FAILURE(player_fixture.WaitForPlayerPresenting());
 
-  int64_t start_system_time = CurrentMonotonicTime();
+  int64_t start_system_time = starboard::CurrentMonotonicTime();
   int64_t start_media_time = player_fixture.GetCurrentMediaTime();
 
   ASSERT_NO_FATAL_FAILURE(player_fixture.WaitForPlayerEndOfStream());
 
-  int64_t end_system_time = CurrentMonotonicTime();
+  int64_t end_system_time = starboard::CurrentMonotonicTime();
   int64_t end_media_time = player_fixture.GetCurrentMediaTime();
 
   const int64_t kDurationDifferenceAllowance = 500'000;  // 500 ms
@@ -143,40 +145,24 @@ TEST_P(SbPlayerGetMediaTimeTest, TimeAfterSeek) {
 
   SB_DLOG(INFO) << "The expected media time should be "
                 << kDurationToPlay + seek_to_time
-                << ", the actual start time is " << start_media_time
-                << ", the actual end time is " << end_media_time
+                << ", the actual media time is " << end_media_time
                 << ", with difference "
                 << std::abs(end_media_time - kDurationToPlay - seek_to_time)
                 << ".";
   SB_DLOG(INFO) << "The expected total playing time should be "
                 << kDurationToPlay << ", the actual playing time is "
-                << end_system_time - start_system_time << ", with difference "
+                << end_system_time - start_system_time + start_media_time -
+                       seek_to_time
+                << ", with difference "
                 << std::abs(end_system_time - start_system_time +
                             start_media_time - seek_to_time - kDurationToPlay)
                 << ".";
 }
 
-std::vector<SbPlayerTestConfig> GetSupportedTestConfigs() {
-  static std::vector<SbPlayerTestConfig> supported_configs;
-  if (supported_configs.size() > 0) {
-    return supported_configs;
-  }
-
-  const std::vector<const char*>& key_systems = GetKeySystems();
-  for (auto key_system : key_systems) {
-    std::vector<SbPlayerTestConfig> configs =
-        GetSupportedSbPlayerTestConfigs(key_system);
-    supported_configs.insert(supported_configs.end(), configs.begin(),
-                             configs.end());
-  }
-  return supported_configs;
-}
-
-INSTANTIATE_TEST_CASE_P(SbPlayerGetMediaTimeTests,
-                        SbPlayerGetMediaTimeTest,
-                        ValuesIn(GetSupportedTestConfigs()),
-                        GetSbPlayerTestConfigName);
+INSTANTIATE_TEST_SUITE_P(SbPlayerGetMediaTimeTests,
+                         SbPlayerGetMediaTimeTest,
+                         ValuesIn(GetAllPlayerTestConfigs()),
+                         GetSbPlayerTestConfigName);
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

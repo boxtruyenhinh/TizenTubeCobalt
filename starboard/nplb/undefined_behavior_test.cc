@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "starboard/shared/testing/no_inline.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#include "starboard/shared/testing/no_inline.h"
-
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -59,4 +57,3 @@ TEST(SbUndefinedBehaviorTest, CallThisPointerIsNullRainyDay) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

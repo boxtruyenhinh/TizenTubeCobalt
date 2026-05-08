@@ -12,31 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cstdint>
 #include <netdb.h>
-
-#if !defined(_WIN32)
-#include <arpa/inet.h>
 #include <netinet/in.h>
-#endif
 #include <sys/socket.h>
 #include <sys/types.h>
 
+#include <cstdint>
 #include <tuple>
 #include <utility>
 
+#include "starboard/common/log.h"
+#include "starboard/configuration.h"
 #include "starboard/nplb/posix_compliance/posix_socket_helpers.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
-namespace starboard {
-
 namespace nplb {
-
 namespace {
-
-#if defined(_WIN32)
-typedef uint32_t in_addr_t;
-#endif
 
 // IPv4 Address 8.8.8.8
 
@@ -134,7 +125,6 @@ TEST_P(PosixSocketResolveTest, SunnyDayHints) {
   freeaddrinfo(ai);
 }
 
-#if SB_API_VERSION >= 16
 TEST_P(PosixSocketResolveTest, SunnyDayFiltered) {
   struct addrinfo hints = {0};
   hints.ai_family = GetAddressFamily();
@@ -263,7 +253,6 @@ TEST_P(PosixSocketResolveTest, SunnyDayFlags) {
     freeaddrinfo(ai);
   }
 }
-#endif  // SB_API_VERSION >= 16
 
 TEST_P(PosixSocketResolveTest, Localhost) {
   struct addrinfo hints = {0};
@@ -273,14 +262,6 @@ TEST_P(PosixSocketResolveTest, Localhost) {
   struct addrinfo* ai = nullptr;
 
   int result = getaddrinfo(kLocalhost, 0, &hints, &ai);
-#if SB_API_VERSION < 16
-  if ((result == EAI_BADFLAGS || result == EAI_NODATA) &&
-      GetAddressFamily() == AF_INET6) {
-    // It's ok to return EAI_BADFLAGS or EAI_NODATA for IPv6 on Starboard < 16.
-    freeaddrinfo(ai);
-    return;
-  }
-#endif
   if (result == -1) {
     SB_LOG(INFO) << "getaddrinfo() failed with errno=" << errno << " "
                  << strerror(errno) << " and result=" << result;
@@ -289,42 +270,40 @@ TEST_P(PosixSocketResolveTest, Localhost) {
   ASSERT_NE(nullptr, ai);
 
   int address_count = 0;
-  struct sockaddr_in* ai_addr = nullptr;
-  struct sockaddr_in6* ai_addr6 = nullptr;
+  bool checked_at_least_one = false;
   for (const struct addrinfo* i = ai; i != nullptr; i = i->ai_next) {
     ++address_count;
-    if (ai_addr == nullptr && i->ai_addr != nullptr) {
-      ai_addr = reinterpret_cast<sockaddr_in*>(i->ai_addr);
-      ai_addr6 = reinterpret_cast<sockaddr_in6*>(i->ai_addr);
+    if (i->ai_addr == nullptr) {
+      continue;
+    }
+    checked_at_least_one = true;
 
-      EXPECT_TRUE(ai_addr->sin_family == AF_INET ||
-                  ai_addr->sin_family == AF_INET6);
-      if (GetAddressFamily() != AF_UNSPEC) {
-        EXPECT_EQ(ai_addr->sin_family, GetAddressFamily());
-        if (GetAddressFamily() == AF_INET) {
-          struct in_addr loopback_addr;
-          loopback_addr.s_addr = htonl(INADDR_LOOPBACK);
-          EXPECT_EQ(ai_addr->sin_addr.s_addr, loopback_addr.s_addr);
+    if (GetAddressFamily() != AF_UNSPEC) {
+      EXPECT_EQ(i->ai_addr->sa_family, GetAddressFamily());
+    }
 
-          struct in_addr expected_addr;
-          expected_addr.s_addr = htonl((127 << 24) | 1);
-          EXPECT_EQ(ai_addr->sin_addr.s_addr, expected_addr.s_addr);
-        }
-        if (GetAddressFamily() == AF_INET6) {
-          struct in6_addr loopback = IN6ADDR_LOOPBACK_INIT;
-          EXPECT_EQ(memcmp(&ai_addr6->sin6_addr, &loopback, sizeof(loopback)),
-                    0);
+    if (i->ai_addr->sa_family == AF_INET) {
+      auto* v4_addr = reinterpret_cast<struct sockaddr_in*>(i->ai_addr);
+      EXPECT_EQ(v4_addr->sin_addr.s_addr, htonl(INADDR_LOOPBACK));
 
-          const unsigned char kExpectedAddress[16] = {0, 0, 0, 0, 0, 0, 0, 0,
-                                                      0, 0, 0, 0, 0, 0, 0, 1};
-          EXPECT_THAT(ai_addr6->sin6_addr.s6_addr,
-                      testing::ElementsAreArray(kExpectedAddress));
-        }
-      }
+      struct in_addr expected_addr;
+      expected_addr.s_addr = htonl((127 << 24) | 1);
+      EXPECT_EQ(v4_addr->sin_addr.s_addr, expected_addr.s_addr);
+    } else if (i->ai_addr->sa_family == AF_INET6) {
+      auto* v6_addr = reinterpret_cast<struct sockaddr_in6*>(i->ai_addr);
+      struct in6_addr loopback = IN6ADDR_LOOPBACK_INIT;
+      EXPECT_EQ(memcmp(&v6_addr->sin6_addr, &loopback, sizeof(loopback)), 0);
+
+      const unsigned char kExpectedAddress[16] = {0, 0, 0, 0, 0, 0, 0, 0,
+                                                  0, 0, 0, 0, 0, 0, 0, 1};
+      EXPECT_THAT(v6_addr->sin6_addr.s6_addr,
+                  testing::ElementsAreArray(kExpectedAddress));
+    } else {
+      FAIL() << "Unexpected address family: " << i->ai_addr->sa_family;
     }
   }
   EXPECT_LT(0, address_count);
-  EXPECT_NE(nullptr, ai_addr);
+  EXPECT_TRUE(checked_at_least_one);
 
   freeaddrinfo(ai);
 }
@@ -341,7 +320,7 @@ TEST_P(PosixSocketResolveTest, RainyDayNullHostname) {
 }
 
 #if SB_HAS(IPV6)
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     PosixSocketHints,
     PosixSocketResolveTest,
     ::testing::Combine(
@@ -355,7 +334,7 @@ INSTANTIATE_TEST_CASE_P(
                           std::make_pair(SOCK_STREAM, IPPROTO_TCP))),
     GetPosixSocketHintsName);
 #else
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     PosixSocketHints,
     PosixSocketResolveTest,
     ::testing::Combine(
@@ -372,4 +351,3 @@ INSTANTIATE_TEST_CASE_P(
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

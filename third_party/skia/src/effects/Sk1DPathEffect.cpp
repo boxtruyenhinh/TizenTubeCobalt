@@ -5,13 +5,24 @@
  * found in the LICENSE file.
  */
 
-
-#include "include/core/SkPathMeasure.h"
-#include "include/core/SkStrokeRec.h"
 #include "include/effects/Sk1DPathEffect.h"
+
+#include "include/core/SkFlattenable.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPathEffect.h"
+#include "include/core/SkPathMeasure.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkStrokeRec.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "src/core/SkPathEffectBase.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
+
+struct SkRect;
 
 // Since we are stepping by a float, the do/while loop might go on forever (or nearly so).
 // Put in a governor to limit crash values from looping too long (and allocating too much ram).
@@ -34,6 +45,9 @@ protected:
                 }
                 distance += delta;
             }
+            if (governor < 0) {
+                return false;
+            }
         } while (meas.nextContour());
         return true;
     }
@@ -52,8 +66,6 @@ protected:
 private:
     // For simplicity, assume fast bounds cannot be computed
     bool computeFastBounds(SkRect*) const override { return false; }
-
-    using INHERITED = SkPathEffect;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -237,7 +249,7 @@ SkScalar SkPath1DPathEffectImpl::next(SkPath* dst, SkScalar distance,
 
 sk_sp<SkPathEffect> SkPath1DPathEffect::Make(const SkPath& path, SkScalar advance, SkScalar phase,
                                              Style style) {
-    if (advance <= 0 || !SkScalarIsFinite(advance) || !SkScalarIsFinite(phase) || path.isEmpty()) {
+    if (advance <= 0 || !SkIsFinite(advance, phase) || path.isEmpty()) {
         return nullptr;
     }
     return sk_sp<SkPathEffect>(new SkPath1DPathEffectImpl(path, advance, phase, style));

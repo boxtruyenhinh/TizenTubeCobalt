@@ -8,8 +8,9 @@
 #include "bench/Benchmark.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkString.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 
 class StrokeBench : public Benchmark {
 public:
@@ -22,7 +23,7 @@ public:
 
 protected:
     bool isSuitableFor(Backend backend) override {
-        return backend == kNonRendering_Backend;
+        return backend == Backend::kNonRendering;
     }
 
     const char* onGetName() override { return fName.c_str(); }
@@ -34,7 +35,7 @@ protected:
         for (int outer = 0; outer < 10; ++outer) {
             for (int i = 0; i < loops; ++i) {
                 SkPath result;
-                paint.getFillPath(fPath, &result, nullptr, fRes);
+                skpathutils::FillPathWithPaint(fPath, paint, &result, nullptr, fRes);
             }
         }
     }

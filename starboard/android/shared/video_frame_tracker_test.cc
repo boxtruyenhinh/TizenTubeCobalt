@@ -12,15 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <string>
-
 #include "starboard/android/shared/video_frame_tracker.h"
+
+#include <string>
 
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace starboard {
-namespace android {
-namespace shared {
 namespace {
 
 TEST(VideoFrameTrackerTest, DroppedFrameCountIsCumulative) {
@@ -161,6 +159,4 @@ TEST(VideoFrameTrackerTest, UnorderedInputFramesAreHandled) {
 }
 
 }  // namespace
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard

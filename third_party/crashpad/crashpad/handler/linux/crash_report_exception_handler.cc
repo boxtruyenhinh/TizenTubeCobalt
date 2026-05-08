@@ -1,4 +1,4 @@
-// Copyright 2018 The Crashpad Authors. All rights reserved.
+// Copyright 2018 The Crashpad Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,11 +18,13 @@
 #include <utility>
 
 #include "base/logging.h"
+#include "build/build_config.h"
 #include "client/settings.h"
 #include "handler/linux/capture_snapshot.h"
 #include "minidump/minidump_file_writer.h"
 #include "snapshot/linux/process_snapshot_linux.h"
 #include "snapshot/sanitized/process_snapshot_sanitized.h"
+#include "util/file/file_helper.h"
 #include "util/file/file_reader.h"
 #include "util/file/output_stream_file_writer.h"
 #include "util/linux/direct_ptrace_connection.h"
@@ -34,19 +36,54 @@
 #include "util/stream/log_output_stream.h"
 #include "util/stream/zlib_output_stream.h"
 
-#if defined(STARBOARD) || defined(NATIVE_TARGET_BUILD)
-#include "starboard/elf_loader/evergreen_info.h"
+#if BUILDFLAG(IS_ANDROID)
+#include <android/log.h>
 #endif
 
 namespace crashpad {
-
 namespace {
 
+class Logger final : public LogOutputStream::Delegate {
+ public:
+  Logger() = default;
+
+  Logger(const Logger&) = delete;
+  Logger& operator=(const Logger&) = delete;
+
+  ~Logger() override = default;
+
+#if BUILDFLAG(IS_ANDROID)
+  int Log(const char* buf) override {
+    return __android_log_buf_write(
+        LOG_ID_CRASH, ANDROID_LOG_FATAL, "crashpad", buf);
+  }
+
+  size_t OutputCap() override {
+    // Most minidumps are expected to be compressed and encoded into less than
+    // 128k.
+    return 128 * 1024;
+  }
+
+  size_t LineWidth() override {
+    // From Android NDK r20 <android/log.h>, log message text may be truncated
+    // to less than an implementation-specific limit (1023 bytes), for sake of
+    // safe and being easy to read in logcat, choose 512.
+    return 512;
+  }
+#else
+  // TODO(jperaza): Log to an appropriate location on Linux.
+  int Log(const char* buf) override { return -ENOTCONN; }
+  size_t OutputCap() override { return 0; }
+  size_t LineWidth() override { return 0; }
+#endif
+};
+
 bool WriteMinidumpLogFromFile(FileReaderInterface* file_reader) {
-  ZlibOutputStream stream(ZlibOutputStream::Mode::kCompress,
-                          std::make_unique<Base94OutputStream>(
-                              Base94OutputStream::Mode::kEncode,
-                              std::make_unique<LogOutputStream>()));
+  ZlibOutputStream stream(
+      ZlibOutputStream::Mode::kCompress,
+      std::make_unique<Base94OutputStream>(
+          Base94OutputStream::Mode::kEncode,
+          std::make_unique<LogOutputStream>(std::make_unique<Logger>())));
   FileOperationResult read_result;
   do {
     uint8_t buffer[4096];
@@ -66,12 +103,14 @@ CrashReportExceptionHandler::CrashReportExceptionHandler(
     CrashReportDatabase* database,
     CrashReportUploadThread* upload_thread,
     const std::map<std::string, std::string>* process_annotations,
+    const std::vector<base::FilePath>* attachments,
     bool write_minidump_to_database,
     bool write_minidump_to_log,
     const UserStreamDataSources* user_stream_data_sources)
     : database_(database),
       upload_thread_(upload_thread),
       process_annotations_(process_annotations),
+      attachments_(attachments),
       write_minidump_to_database_(write_minidump_to_database),
       write_minidump_to_log_(write_minidump_to_log),
       user_stream_data_sources_(user_stream_data_sources) {
@@ -79,21 +118,6 @@ CrashReportExceptionHandler::CrashReportExceptionHandler(
 }
 
 CrashReportExceptionHandler::~CrashReportExceptionHandler() = default;
-
-#if defined(STARBOARD) || defined(NATIVE_TARGET_BUILD)
-bool CrashReportExceptionHandler::AddEvergreenInfo(
-    const ExceptionHandlerProtocol::ClientInformation& info) {
-  evergreen_info_ = info.evergreen_information_address;
-  return true;
-}
-
-bool CrashReportExceptionHandler::AddAnnotations(
-    const ExceptionHandlerProtocol::ClientInformation& info) {
-  serialized_annotations_address_ = info.serialized_annotations_address;
-  serialized_annotations_size_ = info.serialized_annotations_size;
-  return true;
-}
-#endif
 
 bool CrashReportExceptionHandler::HandleException(
     pid_t client_process_id,
@@ -103,6 +127,10 @@ bool CrashReportExceptionHandler::HandleException(
     pid_t* requesting_thread_id,
     UUID* local_report_id) {
   Metrics::ExceptionEncountered();
+
+#if BUILDFLAG(IS_COBALT)
+  LOG(INFO) << "Freeze detection: Crashpad handler processing exception for PID: " << client_process_id;
+#endif
 
   DirectPtraceConnection connection;
   if (!connection.Initialize(client_process_id)) {
@@ -160,13 +188,9 @@ bool CrashReportExceptionHandler::HandleExceptionWithConnection(
 
   UUID client_id;
   Settings* const settings = database_->GetSettings();
-  if (settings) {
-    // If GetSettings() or GetClientID() fails, something else will log a
-    // message and client_id will be left at its default value, all zeroes,
-    // which is appropriate.
-    settings->GetClientID(&client_id);
+  if (settings && settings->GetClientID(&client_id)) {
+    process_snapshot->SetClientID(client_id);
   }
-  process_snapshot->SetClientID(client_id);
 
   return write_minidump_to_database_
              ? WriteMinidumpToDatabase(process_snapshot.get(),
@@ -209,6 +233,10 @@ bool CrashReportExceptionHandler::WriteMinidumpToDatabase(
     return false;
   }
 
+#if BUILDFLAG(IS_COBALT)
+  LOG(INFO) << "Freeze detection: Minidump successfully written to database. ReportID: " << new_report->ReportID().ToString();
+#endif
+
   bool write_minidump_to_log_succeed = false;
   if (write_minidump_to_log) {
     if (auto* file_reader = new_report->Reader()) {
@@ -217,6 +245,25 @@ bool CrashReportExceptionHandler::WriteMinidumpToDatabase(
       else
         LOG(ERROR) << "WriteMinidumpLogFromFile failed";
     }
+  }
+
+  for (const auto& attachment : (*attachments_)) {
+    FileReader file_reader;
+    if (!file_reader.Open(attachment)) {
+      LOG(ERROR) << "attachment " << attachment.value().c_str()
+                 << " couldn't be opened, skipping";
+      continue;
+    }
+
+    base::FilePath filename = attachment.BaseName();
+    FileWriter* file_writer = new_report->AddAttachment(filename.value());
+    if (file_writer == nullptr) {
+      LOG(ERROR) << "attachment " << filename.value().c_str()
+                 << " couldn't be created, skipping";
+      continue;
+    }
+
+    CopyFileContent(&file_reader, file_writer);
   }
 
   UUID uuid;
@@ -256,7 +303,7 @@ bool CrashReportExceptionHandler::WriteMinidumpToLog(
       ZlibOutputStream::Mode::kCompress,
       std::make_unique<Base94OutputStream>(
           Base94OutputStream::Mode::kEncode,
-          std::make_unique<LogOutputStream>())));
+          std::make_unique<LogOutputStream>(std::make_unique<Logger>()))));
   if (!minidump.WriteMinidump(&writer, false /* allow_seek */)) {
     LOG(ERROR) << "WriteMinidump failed";
     return false;

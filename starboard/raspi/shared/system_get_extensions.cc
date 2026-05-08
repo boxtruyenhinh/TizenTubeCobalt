@@ -12,31 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/system.h"
+// clang-format on
 
+#include "build/build_config.h"
 #include "starboard/common/string.h"
-#if SB_IS(EVERGREEN_COMPATIBLE)
-#include "starboard/elf_loader/evergreen_config.h"
-#endif
 #include "starboard/extension/configuration.h"
-#include "starboard/extension/crash_handler.h"
 #include "starboard/extension/graphics.h"
-#if SB_IS(EVERGREEN_COMPATIBLE)
-#include "starboard/extension/loader_app_metrics.h"
-#endif
-#include "starboard/extension/time_zone.h"
-#include "starboard/linux/shared/time_zone.h"
 #include "starboard/raspi/shared/configuration.h"
 #include "starboard/raspi/shared/graphics.h"
-#include "starboard/shared/starboard/crash_handler.h"
+
 #if SB_IS(EVERGREEN_COMPATIBLE)
+#include "starboard/elf_loader/evergreen_config.h"
+#include "starboard/extension/loader_app_metrics.h"
 #include "starboard/shared/starboard/loader_app_metrics.h"
+#endif
+
+#if BUILDFLAG(USE_EVERGREEN)
+#include "starboard/extension/crash_handler.h"
+#include "starboard/shared/starboard/crash_handler.h"
 #endif
 
 const void* SbSystemGetExtension(const char* name) {
 #if SB_IS(EVERGREEN_COMPATIBLE)
-  const starboard::elf_loader::EvergreenConfig* evergreen_config =
-      starboard::elf_loader::EvergreenConfig::GetInstance();
+  const elf_loader::EvergreenConfig* evergreen_config =
+      elf_loader::EvergreenConfig::GetInstance();
   if (evergreen_config != NULL &&
       evergreen_config->custom_get_extension_ != NULL) {
     const void* ext = evergreen_config->custom_get_extension_(name);
@@ -47,20 +48,19 @@ const void* SbSystemGetExtension(const char* name) {
 #endif
 
   if (strcmp(name, kCobaltExtensionConfigurationName) == 0) {
-    return starboard::raspi::shared::GetConfigurationApi();
+    return starboard::GetConfigurationApiRaspi();
   }
   if (strcmp(name, kCobaltExtensionGraphicsName) == 0) {
-    return starboard::raspi::shared::GetGraphicsApi();
+    return starboard::GetGraphicsApi();
   }
+#if BUILDFLAG(USE_EVERGREEN)
   if (strcmp(name, kCobaltExtensionCrashHandlerName) == 0) {
-    return starboard::common::GetCrashHandlerApi();
+    return starboard::GetCrashHandlerApi();
   }
-  if (strcmp(name, kStarboardExtensionTimeZoneName) == 0) {
-    return starboard::shared::GetTimeZoneApi();
-  }
+#endif
 #if SB_IS(EVERGREEN_COMPATIBLE)
   if (strcmp(name, kStarboardExtensionLoaderAppMetricsName) == 0) {
-    return starboard::shared::starboard::GetLoaderAppMetricsApi();
+    return starboard::GetLoaderAppMetricsApi();
   }
 #endif
   return NULL;

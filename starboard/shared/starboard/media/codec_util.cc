@@ -25,23 +25,19 @@
 #include "starboard/shared/starboard/media/iamf_util.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace media {
 
 VideoConfig::VideoConfig(SbMediaVideoCodec video_codec,
-                         int width,
-                         int height,
+                         const Size& size,
                          const uint8_t* data,
-                         size_t size)
-    : width_(width), height_(height) {
+                         size_t data_size)
+    : size_(size) {
   if (video_codec == kSbMediaVideoCodecVp9) {
     video_codec_ = video_codec;
   } else if (video_codec == kSbMediaVideoCodecAv1) {
     video_codec_ = video_codec;
   } else if (video_codec == kSbMediaVideoCodecH264) {
     avc_parameter_sets_ =
-        AvcParameterSets(AvcParameterSets::kAnnexB, data, size);
+        AvcParameterSets(AvcParameterSets::kAnnexB, data, data_size);
     if (avc_parameter_sets_->is_valid()) {
       video_codec_ = video_codec;
     }
@@ -52,12 +48,11 @@ VideoConfig::VideoConfig(SbMediaVideoCodec video_codec,
 
 VideoConfig::VideoConfig(const VideoStreamInfo& video_stream_info,
                          const uint8_t* data,
-                         size_t size)
+                         size_t data_size)
     : VideoConfig(video_stream_info.codec,
-                  video_stream_info.frame_width,
-                  video_stream_info.frame_height,
+                  video_stream_info.frame_size,
                   data,
-                  size) {}
+                  data_size) {}
 
 bool VideoConfig::operator==(const VideoConfig& that) const {
   if (video_codec_ == kSbMediaVideoCodecNone &&
@@ -65,8 +60,7 @@ bool VideoConfig::operator==(const VideoConfig& that) const {
     return true;
   }
   return video_codec_ == that.video_codec_ &&
-         avc_parameter_sets_ == that.avc_parameter_sets_ &&
-         width_ == that.width_ && height_ == that.height_;
+         avc_parameter_sets_ == that.avc_parameter_sets_ && size_ == that.size_;
 }
 
 bool VideoConfig::operator!=(const VideoConfig& that) const {
@@ -75,11 +69,7 @@ bool VideoConfig::operator!=(const VideoConfig& that) const {
 
 SbMediaAudioCodec GetAudioCodecFromString(const char* codec,
                                           const char* subtype) {
-#if SB_API_VERSION < 15
-  const bool kCheckAc3Audio = kSbHasAc3Audio;
-#else
   const bool kCheckAc3Audio = true;
-#endif  // SB_API_VERSION < 15
   if (strncmp(codec, "mp4a.40.", 8) == 0) {
     return kSbMediaAudioCodecAac;
   }
@@ -111,15 +101,10 @@ SbMediaAudioCodec GetAudioCodecFromString(const char* codec,
   if (is_wav && strcmp(codec, "1") == 0) {
     return kSbMediaAudioCodecPcm;
   }
-#if SB_API_VERSION >= 15
   if (strcmp(codec, "iamf") == 0 || IamfMimeUtil(codec).is_valid()) {
     return kSbMediaAudioCodecIamf;
   }
-#endif  // SB_API_VERSION >= 15
   return kSbMediaAudioCodecNone;
 }
 
-}  // namespace media
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

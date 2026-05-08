@@ -24,11 +24,9 @@
 // constraints that requires it own tests.
 
 namespace starboard {
-namespace android {
-namespace shared {
 namespace {
 
-using ::starboard::shared::starboard::drm::CreateDummyDrmSystem;
+using ::starboard::CreateDummyDrmSystem;
 
 SbPlayerCreationParam GetDefaultPlaybackParam() {
   SbPlayerCreationParam creation_param = {
@@ -144,6 +142,4 @@ TEST(SbPlayerGetPreferredOutputModeTest,
 }
 
 }  // namespace
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard

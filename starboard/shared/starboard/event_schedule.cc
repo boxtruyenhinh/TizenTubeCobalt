@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/event.h"
+// clang-format on
 
 #include "starboard/shared/starboard/application.h"
 
 SbEventId SbEventSchedule(SbEventCallback callback,
                           void* context,
                           int64_t delay) {
-  return starboard::shared::starboard::Application::Get()->Schedule(
-      callback, context, delay);
+  return starboard::Application::Get()->Schedule(callback, context, delay);
 }

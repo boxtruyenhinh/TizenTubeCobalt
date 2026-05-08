@@ -18,15 +18,16 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
 TEST(PosixFileFsyncTest, InvalidFileErrors) {
-  int result = fsync(-1);
-  EXPECT_FALSE(result == 0);
+  const int result = fsync(-1);
+  EXPECT_NE(result, 0) << "fsync with invalid file descriptor should fail";
+  EXPECT_EQ(errno, EBADF) << "fsync with invalid file descriptor should set "
+                             "errno to EBADF, but got "
+                          << strerror(errno);
 }
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

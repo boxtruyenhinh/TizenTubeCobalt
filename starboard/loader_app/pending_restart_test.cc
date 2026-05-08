@@ -14,11 +14,11 @@
 
 #include "starboard/loader_app/pending_restart.h"
 
+#include "starboard/configuration.h"
 #include "starboard/loader_app/installation_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if SB_IS(EVERGREEN_COMPATIBLE)
-namespace starboard {
 namespace loader_app {
 namespace {
 
@@ -48,5 +48,4 @@ TEST_F(PendingRestartTest, PendingRestart) {
 }  // namespace
 
 }  // namespace loader_app
-}  // namespace starboard
 #endif  //  SB_IS(EVERGREEN_COMPATIBLE)

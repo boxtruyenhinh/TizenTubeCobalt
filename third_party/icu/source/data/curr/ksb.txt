@@ -175,9 +175,13 @@ ksb{
             "SHP",
             "pauni ya Santahelena",
         }
+        SLE{
+            "SLE",
+            "leoni",
+        }
         SLL{
             "SLL",
-            "leoni",
+            "leoni (1964—2022)",
         }
         SOS{
             "SOS",
@@ -216,7 +220,7 @@ ksb{
             "falanga CFA BEAC",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "falanga CFA BCEAO",
         }
         ZAR{

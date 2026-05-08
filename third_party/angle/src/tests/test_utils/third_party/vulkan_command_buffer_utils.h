@@ -36,7 +36,8 @@ samples utility functions
 // glslang has issues with some specific warnings.
 ANGLE_DISABLE_EXTRA_SEMI_WARNING
 
-#include "SPIRV/GlslangToSpv.h"
+// Pull in upstream glslang header (http://anglebug.com/42266837)
+#include "glslang/Public/ShaderLang.h"
 
 ANGLE_REENABLE_EXTRA_SEMI_WARNING
 
@@ -60,7 +61,7 @@ ANGLE_REENABLE_EXTRA_SEMI_WARNING
 #    include "vulkan/vk_sdk_platform.h"
 #endif
 
-#include <vulkan/vulkan.h>
+#include "common/vulkan/vk_headers.h"
 
 /* Number of descriptor sets needs to be the same at alloc,       */
 /* pipeline layout creation, and descriptor set layout creation   */

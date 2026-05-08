@@ -5,14 +5,18 @@
  * found in the LICENSE file.
  */
 
-#include "modules/sksg/include/SkSGDraw.h"
-
 #include "include/core/SkCanvas.h"
+#include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathUtils.h"
+#include "include/core/SkPoint.h"
+#include "include/private/base/SkAssert.h"
+#include "modules/sksg/include/SkSGDraw.h"
 #include "modules/sksg/include/SkSGGeometryNode.h"
-#include "modules/sksg/include/SkSGInvalidationController.h"
+#include "modules/sksg/include/SkSGNode.h"
 #include "modules/sksg/include/SkSGPaint.h"
-#include "src/core/SkTLazy.h"
+
+class SkMatrix;
 
 namespace sksg {
 
@@ -54,7 +58,7 @@ const RenderNode* Draw::onNodeAt(const SkPoint& p) const {
     }
 
     SkPath stroke_path;
-    if (!paint.getFillPath(fGeometry->asPath(), &stroke_path)) {
+    if (!skpathutils::FillPathWithPaint(fGeometry->asPath(), paint, &stroke_path)) {
         return nullptr;
     }
 

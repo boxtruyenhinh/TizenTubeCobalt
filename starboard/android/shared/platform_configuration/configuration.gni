@@ -14,10 +14,6 @@
 
 import("//starboard/build/config/base_configuration.gni")
 
-declare_args() {
-  enable_vulkan = false
-}
-
 final_executable_type = "shared_library"
 gtest_target_type = "shared_library"
 starboard_level_final_executable_type = "shared_library"
@@ -25,18 +21,8 @@ starboard_level_gtest_target_type = "shared_library"
 
 sb_enable_benchmark = true
 
-size_config_path = "//starboard/android/shared/platform_configuration:size"
-speed_config_path = "//starboard/android/shared/platform_configuration:speed"
-
 pedantic_warnings_config_path =
     "//starboard/android/shared/platform_configuration:pedantic_warnings"
-
-executable_configs +=
-    [ "//starboard/android/shared/platform_configuration:executable_config" ]
-shared_library_configs +=
-    [ "//starboard/android/shared/platform_configuration:library_config" ]
-static_library_configs +=
-    [ "//starboard/android/shared/platform_configuration:library_config" ]
 
 install_target_path = "//starboard/android/shared/install_target.gni"
 
@@ -52,5 +38,3 @@ cobalt_font_package = "android_system"
 separate_install_targets_for_bundling = true
 
 v8_enable_webassembly = true
-
-enable_in_app_dial = true

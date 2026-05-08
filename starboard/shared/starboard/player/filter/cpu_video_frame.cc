@@ -17,14 +17,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 #include "starboard/configuration_constants.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 namespace {
 
@@ -104,24 +101,24 @@ void CopyPlane(int bit_depth,
 }  // namespace
 
 int CpuVideoFrame::GetPlaneCount() const {
-  SB_DCHECK(format_ != kInvalid);
-  SB_DCHECK(format_ != kNativeTexture);
+  SB_DCHECK_NE(format_, kInvalid);
+  SB_DCHECK_NE(format_, kNativeTexture);
 
   return static_cast<int>(planes_.size());
 }
 
 const CpuVideoFrame::Plane& CpuVideoFrame::GetPlane(int index) const {
-  SB_DCHECK(format_ != kInvalid);
-  SB_DCHECK(format_ != kNativeTexture);
-  SB_DCHECK(index >= 0 && index < GetPlaneCount())
-      << "Invalid index: " << index;
+  SB_DCHECK_NE(format_, kInvalid);
+  SB_DCHECK_NE(format_, kNativeTexture);
+  SB_DCHECK_GE(index, 0);
+  SB_DCHECK_LT(index, GetPlaneCount());
   return planes_[index];
 }
 
 scoped_refptr<CpuVideoFrame> CpuVideoFrame::ConvertTo(
     Format target_format) const {
-  SB_DCHECK(format_ == kYV12);
-  SB_DCHECK(target_format == kBGRA32);
+  SB_DCHECK_EQ(format_, kYV12);
+  SB_DCHECK_EQ(target_format, kBGRA32);
 
   EnsureYUVToRGBLookupTableInitialized();
 
@@ -192,9 +189,9 @@ scoped_refptr<CpuVideoFrame> CpuVideoFrame::CreateYV12Frame(
   SB_DCHECK(bit_depth == 8 || bit_depth == 10 || bit_depth == 12);
 
   if (bit_depth > 8) {
-    SB_DCHECK(source_y_pitch_in_bytes >= width * 2);
+    SB_DCHECK_GE(source_y_pitch_in_bytes, width * 2);
   } else {
-    SB_DCHECK(source_y_pitch_in_bytes >= width);
+    SB_DCHECK_GE(source_y_pitch_in_bytes, width);
   }
 
   scoped_refptr<CpuVideoFrame> frame(new CpuVideoFrame(timestamp));
@@ -241,8 +238,4 @@ scoped_refptr<CpuVideoFrame> CpuVideoFrame::CreateYV12Frame(
   return frame;
 }
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

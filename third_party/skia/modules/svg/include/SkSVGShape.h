@@ -8,13 +8,20 @@
 #ifndef SkSVGShape_DEFINED
 #define SkSVGShape_DEFINED
 
-#include "include/core/SkPath.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/private/base/SkAPI.h"
 #include "modules/svg/include/SkSVGTransformableNode.h"
 
-class SkSVGLengthContext;
+class SkCanvas;
 class SkPaint;
+class SkSVGLengthContext;
+class SkSVGNode;
+class SkSVGRenderContext;
+enum class SkPathFillType;
+enum class SkSVGTag;
 
-class SkSVGShape : public SkSVGTransformableNode {
+class SK_API SkSVGShape : public SkSVGTransformableNode {
 public:
     void appendChild(sk_sp<SkSVGNode>) override;
 

@@ -14,225 +14,110 @@
 
 #include "starboard/android/shared/drm_system.h"
 
-#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <utility>
 
-#include "starboard/android/shared/jni_env_ext.h"
-#include "starboard/android/shared/jni_utils.h"
+#include "starboard/android/shared/drm_session_id_mapper.h"
 #include "starboard/android/shared/media_common.h"
-#include "starboard/common/atomic.h"
+#include "starboard/android/shared/media_drm_bridge.h"
 #include "starboard/common/instance_counter.h"
+#include "starboard/common/string.h"
 #include "starboard/common/thread.h"
+#include "starboard/shared/starboard/features.h"
 
-namespace {
-
-using starboard::android::shared::DrmSystem;
-using starboard::android::shared::JniEnvExt;
-using starboard::android::shared::ScopedLocalJavaRef;
-
-const char kNoUrl[] = "";
-
-// Using all capital names to be consistent with other Android media statuses.
-// They are defined in the same order as in their Java counterparts.  Their
-// values should be kept in consistent with their Java counterparts defined in
-// android.media.MediaDrm.KeyStatus.
-const jint MEDIA_DRM_KEY_STATUS_EXPIRED = 1;
-const jint MEDIA_DRM_KEY_STATUS_INTERNAL_ERROR = 4;
-const jint MEDIA_DRM_KEY_STATUS_OUTPUT_NOT_ALLOWED = 2;
-const jint MEDIA_DRM_KEY_STATUS_PENDING = 3;
-const jint MEDIA_DRM_KEY_STATUS_USABLE = 0;
-
-// They must have the same values as defined in MediaDrm.KeyRequest.
-const jint REQUEST_TYPE_INITIAL = 0;
-const jint REQUEST_TYPE_RENEWAL = 1;
-const jint REQUEST_TYPE_RELEASE = 2;
-
-DECLARE_INSTANCE_COUNTER(AndroidDrmSystem)
-
-SbDrmSessionRequestType SbDrmSessionRequestTypeFromMediaDrmKeyRequestType(
-    jint request_type) {
-  if (request_type == REQUEST_TYPE_INITIAL) {
-    return kSbDrmSessionRequestTypeLicenseRequest;
-  }
-  if (request_type == REQUEST_TYPE_RENEWAL) {
-    return kSbDrmSessionRequestTypeLicenseRenewal;
-  }
-  if (request_type == REQUEST_TYPE_RELEASE) {
-    return kSbDrmSessionRequestTypeLicenseRelease;
-  }
-  SB_NOTREACHED();
-  return kSbDrmSessionRequestTypeLicenseRequest;
-}
-
-}  // namespace
-
-// This has to be defined outside the above anonymous namespace to be picked up
-// by the comparison of std::vector<SbDrmKeyId>.
-inline bool operator==(const SbDrmKeyId& left, const SbDrmKeyId& right) {
+// Declare the function as static instead of putting it in the above anonymous
+// namespace so it can be picked up by `std::vector<SbDrmKeyId>::operator==()`
+// as functions in anonymous namespace doesn't participate in argument dependent
+// lookup.
+static bool operator==(const SbDrmKeyId& left, const SbDrmKeyId& right) {
   if (left.identifier_size != right.identifier_size) {
     return false;
   }
   return memcmp(left.identifier, right.identifier, left.identifier_size) == 0;
 }
 
-extern "C" SB_EXPORT_PLATFORM void
-Java_dev_cobalt_media_MediaDrmBridge_nativeOnSessionMessage(
-    JNIEnv* env,
-    jobject unused_this,
-    jlong native_media_drm_bridge,
-    jint ticket,
-    jbyteArray j_session_id,
-    jint request_type,
-    jbyteArray j_message) {
-  jbyte* session_id_elements = env->GetByteArrayElements(j_session_id, NULL);
-  jsize session_id_size = env->GetArrayLength(j_session_id);
-
-  jbyte* message_elements = env->GetByteArrayElements(j_message, NULL);
-  jsize message_size = env->GetArrayLength(j_message);
-
-  SB_DCHECK(session_id_elements);
-  SB_DCHECK(message_elements);
-
-  DrmSystem* drm_system = reinterpret_cast<DrmSystem*>(native_media_drm_bridge);
-  SB_DCHECK(drm_system);
-  drm_system->CallUpdateRequestCallback(
-      ticket, SbDrmSessionRequestTypeFromMediaDrmKeyRequestType(request_type),
-      session_id_elements, session_id_size, message_elements, message_size,
-      kNoUrl);
-  env->ReleaseByteArrayElements(j_session_id, session_id_elements, JNI_ABORT);
-  env->ReleaseByteArrayElements(j_message, message_elements, JNI_ABORT);
-}
-
-extern "C" SB_EXPORT_PLATFORM void
-Java_dev_cobalt_media_MediaDrmBridge_nativeOnKeyStatusChange(
-    JniEnvExt* env,
-    jobject unused_this,
-    jlong native_media_drm_bridge,
-    jbyteArray j_session_id,
-    jobjectArray j_key_status_array) {
-  jbyte* session_id_elements = env->GetByteArrayElements(j_session_id, NULL);
-  jsize session_id_size = env->GetArrayLength(j_session_id);
-
-  SB_DCHECK(session_id_elements);
-
-  // NULL array indicates key status isn't supported (i.e. Android API < 23)
-  jsize length = (j_key_status_array == NULL)
-                     ? 0
-                     : env->GetArrayLength(j_key_status_array);
-  std::vector<SbDrmKeyId> drm_key_ids(length);
-  std::vector<SbDrmKeyStatus> drm_key_statuses(length);
-
-  for (jsize i = 0; i < length; ++i) {
-    jobject j_key_status =
-        env->GetObjectArrayElementOrAbort(j_key_status_array, i);
-    jbyteArray j_key_id = static_cast<jbyteArray>(
-        env->CallObjectMethodOrAbort(j_key_status, "getKeyId", "()[B"));
-
-    jbyte* key_id_elements = env->GetByteArrayElements(j_key_id, NULL);
-    jsize key_id_size = env->GetArrayLength(j_key_id);
-    SB_DCHECK(key_id_elements);
-
-    SB_DCHECK(key_id_size <= sizeof(drm_key_ids[i].identifier));
-    memcpy(drm_key_ids[i].identifier, key_id_elements, key_id_size);
-    env->ReleaseByteArrayElements(j_key_id, key_id_elements, JNI_ABORT);
-    drm_key_ids[i].identifier_size = key_id_size;
-
-    jint j_status_code =
-        env->CallIntMethodOrAbort(j_key_status, "getStatusCode", "()I");
-    if (j_status_code == MEDIA_DRM_KEY_STATUS_EXPIRED) {
-      drm_key_statuses[i] = kSbDrmKeyStatusExpired;
-    } else if (j_status_code == MEDIA_DRM_KEY_STATUS_INTERNAL_ERROR) {
-      drm_key_statuses[i] = kSbDrmKeyStatusError;
-    } else if (j_status_code == MEDIA_DRM_KEY_STATUS_OUTPUT_NOT_ALLOWED) {
-      drm_key_statuses[i] = kSbDrmKeyStatusRestricted;
-    } else if (j_status_code == MEDIA_DRM_KEY_STATUS_PENDING) {
-      drm_key_statuses[i] = kSbDrmKeyStatusPending;
-    } else if (j_status_code == MEDIA_DRM_KEY_STATUS_USABLE) {
-      drm_key_statuses[i] = kSbDrmKeyStatusUsable;
-    } else {
-      SB_NOTREACHED();
-      drm_key_statuses[i] = kSbDrmKeyStatusError;
-    }
-  }
-
-  DrmSystem* drm_system = reinterpret_cast<DrmSystem*>(native_media_drm_bridge);
-  SB_DCHECK(drm_system);
-  drm_system->CallDrmSessionKeyStatusesChangedCallback(
-      session_id_elements, session_id_size, drm_key_ids, drm_key_statuses);
-
-  env->ReleaseByteArrayElements(j_session_id, session_id_elements, JNI_ABORT);
-}
-
 namespace starboard {
-namespace android {
-namespace shared {
-
 namespace {
 
-jbyteArray ByteArrayFromRaw(const void* data, int size) {
-  return JniEnvExt::Get()->NewByteArrayFromRaw(static_cast<const jbyte*>(data),
-                                               size);
-}
+constexpr char kNoUrl[] = "";
+
+// kSbDrmTicketInvalid after the session is created means a drm ticket for a DRM
+// request that DRM service spontaneously creates. (not initiated by
+// Javascript). This spontaneous DRM request includes deferred license request
+// or multiple provisioning requests. NOTE: Some device requires multiple rounds
+// of provisioning (See http://b/419320804#comment1). See StarboardCdm's logic
+// for "spontaneous" message:
+// https://source.corp.google.com/h/github/youtube/cobalt/+/main:media/starboard/starboard_cdm.cc;l=336-359;drc=274beb9dd42dc6c7d7dd3ff9415a41e1393f0133
+constexpr int kSpontaneousDrmTicketId = kSbDrmTicketInvalid;
+
+DECLARE_INSTANCE_COUNTER(AndroidDrmSystem)
 
 }  // namespace
 
-DrmSystem::DrmSystem(
-    const char* key_system,
-    void* context,
-    SbDrmSessionUpdateRequestFunc update_request_callback,
-    SbDrmSessionUpdatedFunc session_updated_callback,
-    SbDrmSessionKeyStatusesChangedFunc key_statuses_changed_callback)
+// static
+std::unique_ptr<DrmSystem> DrmSystem::Create(std::string_view key_system,
+                                             void* context,
+                                             Callbacks callbacks) {
+  auto drm_system = std::make_unique<DrmSystem>(PassKey<DrmSystem>(),
+                                                key_system, context, callbacks);
+  if (!drm_system->media_drm_bridge_) {
+    return nullptr;
+  }
+  return drm_system;
+}
+
+DrmSystem::DrmSystem(PassKey<DrmSystem>,
+                     std::string_view key_system,
+                     void* context,
+                     Callbacks callbacks)
     : Thread("DrmSystemThread"),
       key_system_(key_system),
+      enable_app_provisioning_(
+          features::FeatureList::IsEnabled(features::kEnableAppProvisioning)),
       context_(context),
-      update_request_callback_(update_request_callback),
-      session_updated_callback_(session_updated_callback),
-      key_statuses_changed_callback_(key_statuses_changed_callback),
-      j_media_drm_bridge_(NULL),
-      j_media_crypto_(NULL),
-      hdcp_lost_(false) {
+      callbacks_(callbacks),
+      hdcp_lost_(false),
+      session_id_mapper_(enable_app_provisioning_
+                             ? std::make_unique<DrmSessionIdMapper>()
+                             : nullptr),
+      media_drm_bridge_(
+          MediaDrmBridge::Create(base::raw_ref<MediaDrmBridge::Host>(*this),
+                                 key_system_,
+                                 enable_app_provisioning_)) {
+  SB_CHECK(callbacks_.update_request);
+  SB_CHECK(callbacks_.session_updated);
+  SB_CHECK(callbacks_.key_statuses_changed);
+
   ON_INSTANCE_CREATED(AndroidDrmSystem);
 
-  JniEnvExt* env = JniEnvExt::Get();
-  ScopedLocalJavaRef<jstring> j_key_system(
-      env->NewStringStandardUTFOrAbort(key_system));
-  j_media_drm_bridge_ = env->CallStaticObjectMethodOrAbort(
-      "dev/cobalt/media/MediaDrmBridge", "create",
-      "(Ljava/lang/String;J)Ldev/cobalt/media/MediaDrmBridge;",
-      j_key_system.Get(), reinterpret_cast<jlong>(this));
-  if (!j_media_drm_bridge_) {
-    SB_LOG(ERROR) << "Failed to create MediaDrmBridge.";
+  if (!media_drm_bridge_) {
     return;
   }
-  j_media_drm_bridge_ = env->ConvertLocalRefToGlobalRef(j_media_drm_bridge_);
-  j_media_crypto_ = env->CallObjectMethodOrAbort(
-      j_media_drm_bridge_, "getMediaCrypto", "()Landroid/media/MediaCrypto;");
-  if (!j_media_crypto_) {
-    SB_LOG(ERROR) << "Failed to create MediaCrypto.";
-    return;
-  }
-  j_media_crypto_ = env->ConvertLocalRefToGlobalRef(j_media_crypto_);
+  SB_LOG(INFO) << "Creating DrmSystem: key_system=" << key_system
+               << ", enable_app_provisioning="
+               << ToString(enable_app_provisioning_);
 
-  Start();
+  if (!enable_app_provisioning_) {
+    Start();
+  }
 }
 
 void DrmSystem::Run() {
-  JniEnvExt* env = JniEnvExt::Get();
-  bool result = env->CallBooleanMethodOrAbort(
-      j_media_drm_bridge_, "createMediaCryptoSession", "()Z");
-  if (result) {
+  SB_CHECK(!enable_app_provisioning_);
+
+  if (media_drm_bridge_->CreateMediaCryptoSession()) {
     created_media_crypto_session_.store(true);
-  }
-  if (!result && j_media_crypto_) {
-    env->DeleteGlobalRef(j_media_crypto_);
-    j_media_crypto_ = NULL;
+  } else {
+    SB_LOG(INFO) << "Could not create media crypto session";
     return;
   }
 
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   if (!deferred_session_update_requests_.empty()) {
     for (const auto& update_request : deferred_session_update_requests_) {
-      update_request->Generate(j_media_drm_bridge_);
+      update_request->Generate(media_drm_bridge_.get());
     }
     deferred_session_update_requests_.clear();
   }
@@ -240,75 +125,58 @@ void DrmSystem::Run() {
 
 DrmSystem::~DrmSystem() {
   ON_INSTANCE_RELEASED(AndroidDrmSystem);
-  Join();
-
-  JniEnvExt* env = JniEnvExt::Get();
-  if (j_media_crypto_) {
-    env->DeleteGlobalRef(j_media_crypto_);
-    j_media_crypto_ = NULL;
-  }
-  if (j_media_drm_bridge_) {
-    env->CallVoidMethodOrAbort(j_media_drm_bridge_, "destroy", "()V");
-    env->DeleteGlobalRef(j_media_drm_bridge_);
-    j_media_drm_bridge_ = NULL;
+  if (!enable_app_provisioning_) {
+    Join();
   }
 }
 
 DrmSystem::SessionUpdateRequest::SessionUpdateRequest(
     int ticket,
-    const char* type,
-    const void* initialization_data,
-    int initialization_data_size) {
-  JniEnvExt* env = JniEnvExt::Get();
-  j_ticket_ = static_cast<jint>(ticket);
-  j_init_data_ =
-      ByteArrayFromRaw(initialization_data, initialization_data_size);
-  j_mime_ = env->NewStringStandardUTFOrAbort(type);
-}
+    std::string_view mime_type,
+    std::string_view initialization_data)
+    : ticket_(ticket), init_data_(initialization_data), mime_(mime_type) {}
 
-void DrmSystem::SessionUpdateRequest::ConvertLocalRefToGlobalRef() {
-  if (!references_are_global_) {
-    JniEnvExt* env = JniEnvExt::Get();
-    j_init_data_ = env->ConvertLocalRefToGlobalRef(j_init_data_);
-    j_mime_ = env->ConvertLocalRefToGlobalRef(j_mime_);
-    references_are_global_ = true;
-  }
-}
-
-DrmSystem::SessionUpdateRequest::~SessionUpdateRequest() {
-  JniEnvExt* env = JniEnvExt::Get();
-  if (references_are_global_) {
-    env->DeleteGlobalRef(j_init_data_);
-    env->DeleteGlobalRef(j_mime_);
-  } else {
-    env->DeleteLocalRef(j_init_data_);
-    env->DeleteLocalRef(j_mime_);
-  }
-  j_init_data_ = nullptr;
-  j_mime_ = nullptr;
+int DrmSystem::SessionUpdateRequest::TakeTicket() {
+  return std::exchange(ticket_, kSpontaneousDrmTicketId);
 }
 
 void DrmSystem::SessionUpdateRequest::Generate(
-    jobject j_media_drm_bridge) const {
-  JniEnvExt* env = JniEnvExt::Get();
-  env->CallVoidMethodOrAbort(j_media_drm_bridge, "createSession",
-                             "(I[BLjava/lang/String;)V", j_ticket_,
-                             j_init_data_, j_mime_);
+    const MediaDrmBridge* media_drm_bridge) const {
+  SB_LOG(INFO) << __func__;
+  SB_CHECK(media_drm_bridge);
+  media_drm_bridge->CreateSession(ticket_, init_data_, mime_);
+}
+
+MediaDrmBridge::OperationResult
+DrmSystem::SessionUpdateRequest::GenerateWithAppProvisioning(
+    const MediaDrmBridge* media_drm_bridge) const {
+  SB_LOG(INFO) << __func__;
+  SB_CHECK(media_drm_bridge);
+  return media_drm_bridge->CreateSessionWithAppProvisioning(ticket_, init_data_,
+                                                            mime_);
 }
 
 void DrmSystem::GenerateSessionUpdateRequest(int ticket,
                                              const char* type,
                                              const void* initialization_data,
                                              int initialization_data_size) {
-  std::unique_ptr<SessionUpdateRequest> session_update_request(
-      new SessionUpdateRequest(ticket, type, initialization_data,
-                               initialization_data_size));
+  SB_CHECK(thread_checker_.CalledOnValidThread());
+  auto session_update_request = std::make_unique<SessionUpdateRequest>(
+      ticket, type,
+      std::string_view(static_cast<const char*>(initialization_data),
+                       initialization_data_size));
+  if (enable_app_provisioning_) {
+    GenerateSessionUpdateRequestWithAppProvisioning(
+        std::move(session_update_request));
+    return;
+  }
+
+  SB_LOG(INFO) << __func__;
   if (created_media_crypto_session_.load()) {
-    session_update_request->Generate(j_media_drm_bridge_);
+    session_update_request->Generate(media_drm_bridge_.get());
   } else {
     // Defer generating the update request.
-    session_update_request->ConvertLocalRefToGlobalRef();
-    ScopedLock scoped_lock(mutex_);
+    std::lock_guard scoped_lock(mutex_);
     deferred_session_update_requests_.push_back(
         std::move(session_update_request));
   }
@@ -316,56 +184,154 @@ void DrmSystem::GenerateSessionUpdateRequest(int ticket,
   // |onSessionMessage|.
 }
 
+void DrmSystem::GenerateSessionUpdateRequestWithAppProvisioning(
+    std::unique_ptr<SessionUpdateRequest> request) {
+  SB_CHECK(enable_app_provisioning_);
+
+  {
+    std::lock_guard scoped_lock(mutex_);
+    if (!deferred_session_update_requests_.empty()) {
+      SB_LOG(INFO)
+          << "A provisioning request is in progress. Defer this request.";
+      deferred_session_update_requests_.push_back(std::move(request));
+      return;
+    }
+  }
+
+  SB_LOG(INFO) << __func__;
+  // |update_request_callback_| will be called asynchronously by Java calling
+  // into |OnSessionUpdate| or |OnProvisioningRequest|.
+  MediaDrmBridge::OperationResult result =
+      request->GenerateWithAppProvisioning(media_drm_bridge_.get());
+  switch (result.status) {
+    case DRM_OPERATION_STATUS_SUCCESS:
+      created_media_crypto_session_ = true;
+      return;
+    case DRM_OPERATION_STATUS_NOT_PROVISIONED:
+      SB_LOG(INFO) << "Device is not provisioned. Generating provision request";
+      {
+        std::lock_guard scoped_lock(mutex_);
+        deferred_session_update_requests_.push_back(std::move(request));
+      }
+      OnProvisioningRequest(media_drm_bridge_->GenerateProvisionRequest());
+      return;
+    case DRM_OPERATION_STATUS_OPERATION_FAILED:
+    default:
+      SB_LOG(ERROR) << "GenerateWithAppProvisioning failed: " << result;
+      return;
+  }
+}
+
 void DrmSystem::UpdateSession(int ticket,
                               const void* key,
                               int key_size,
                               const void* session_id,
                               int session_id_size) {
-  ScopedLocalJavaRef<jbyteArray> j_session_id(
-      ByteArrayFromRaw(session_id, session_id_size));
-  ScopedLocalJavaRef<jbyteArray> j_response(ByteArrayFromRaw(key, key_size));
+  SB_CHECK(thread_checker_.CalledOnValidThread());
+  if (enable_app_provisioning_) {
+    UpdateSessionWithAppProvisioning(
+        ticket, std::string_view(static_cast<const char*>(key), key_size),
+        std::string_view(static_cast<const char*>(session_id),
+                         session_id_size));
+    return;
+  }
 
-  auto env = JniEnvExt::Get();
-  ScopedLocalJavaRef<jobject> update_result(env->CallObjectMethodOrAbort(
-      j_media_drm_bridge_, "updateSession",
-      "(I[B[B)Ldev/cobalt/media/MediaDrmBridge$UpdateSessionResult;",
-      static_cast<jint>(ticket), j_session_id.Get(), j_response.Get()));
-  jboolean update_success =
-      env->CallBooleanMethodOrAbort(update_result.Get(), "isSuccess", "()Z");
-  ScopedLocalJavaRef<jstring> error_msg_java(env->CallObjectMethodOrAbort(
-      update_result.Get(), "getErrorMessage", "()Ljava/lang/String;"));
-  std::string error_msg =
-      env->GetStringStandardUTFOrAbort(error_msg_java.Get());
-  session_updated_callback_(this, context_, ticket,
-                            update_success == JNI_TRUE
-                                ? kSbDrmStatusSuccess
-                                : kSbDrmStatusUnknownError,
-                            error_msg.c_str(), session_id, session_id_size);
+  MediaDrmBridge::OperationResult result = media_drm_bridge_->UpdateSession(
+      ticket, std::string_view(static_cast<const char*>(key), key_size),
+      std::string_view(static_cast<const char*>(session_id), session_id_size));
+  callbacks_.session_updated(
+      this, context_, ticket,
+      result.ok() ? kSbDrmStatusSuccess : kSbDrmStatusUnknownError,
+      result.error_message.c_str(), session_id, session_id_size);
 }
 
-void DrmSystem::CloseSession(const void* session_id, int session_id_size) {
-  JniEnvExt* env = JniEnvExt::Get();
-  ScopedLocalJavaRef<jbyteArray> j_session_id(
-      ByteArrayFromRaw(session_id, session_id_size));
-  std::string session_id_as_string(
-      static_cast<const char*>(session_id),
-      static_cast<const char*>(session_id) + session_id_size);
+void DrmSystem::UpdateSessionWithAppProvisioning(int ticket,
+                                                 std::string_view key,
+                                                 std::string_view session_id) {
+  SB_CHECK(enable_app_provisioning_);
 
+  const auto media_drm_session_id =
+      [this, &session_id]() -> std::optional<std::string> {
+    std::lock_guard lock(mutex_);
+    if (!deferred_session_update_requests_.empty()) {
+      return std::nullopt;
+    }
+    return std::string(session_id_mapper_->GetMediaDrmSessionId(session_id));
+  }();
+
+  bool provisioning_ok = false;
+  const MediaDrmBridge::OperationResult result = [this, ticket, key,
+                                                  media_drm_session_id,
+                                                  &provisioning_ok]() {
+    if (!media_drm_session_id) {
+      SB_LOG(INFO) << " >  Handles the given key as provision response.";
+      auto result = media_drm_bridge_->ProvideProvisionResponse(key);
+      if (result.ok()) {
+        provisioning_ok = true;
+      }
+      return result;
+    }
+
+    return media_drm_bridge_->UpdateSession(ticket, key, *media_drm_session_id);
+  }();
+
+  SB_LOG_IF(ERROR, !result.ok()) << "UpdateSession failed: " << result;
+
+  callbacks_.session_updated(
+      this, context_, ticket,
+      result.ok() ? kSbDrmStatusSuccess : kSbDrmStatusUnknownError,
+      result.error_message.c_str(), session_id.data(), session_id.size());
+
+  if (provisioning_ok) {
+    HandlePendingRequests();
+  }
+}
+
+void DrmSystem::HandlePendingRequests() {
+  SB_LOG(INFO) << __func__;
+  std::vector<std::unique_ptr<SessionUpdateRequest>> pending_requests;
   {
-    ScopedLock scoped_lock(mutex_);
-    auto iter = cached_drm_key_ids_.find(session_id_as_string);
+    std::lock_guard scoped_lock(mutex_);
+    pending_requests.swap(deferred_session_update_requests_);
+  }
+
+  for (auto& request : pending_requests) {
+    GenerateSessionUpdateRequestWithAppProvisioning(std::move(request));
+  }
+}
+
+void DrmSystem::CloseSession(const void* session_id_data, int session_id_size) {
+  SB_CHECK(thread_checker_.CalledOnValidThread());
+  std::string session_id(static_cast<const char*>(session_id_data),
+                         session_id_size);
+  {
+    std::lock_guard scoped_lock(mutex_);
+    auto iter = cached_drm_key_ids_.find(session_id);
     if (iter != cached_drm_key_ids_.end()) {
       cached_drm_key_ids_.erase(iter);
     }
   }
-  env->CallVoidMethodOrAbort(j_media_drm_bridge_, "closeSession", "([B)V",
-                             j_session_id.Get());
+
+  if (enable_app_provisioning_) {
+    std::string media_drm_session_id = [this, &session_id] {
+      std::lock_guard lock(mutex_);
+      return std::string(session_id_mapper_->GetMediaDrmSessionId(session_id));
+    }();
+    if (media_drm_session_id.empty()) {
+      // Skip closing the session because it's a provisioning session, which
+      // doesn't have a corresponding session in MediaDrm.
+      return;
+    }
+    media_drm_bridge_->CloseSession(media_drm_session_id);
+    return;
+  }
+
+  media_drm_bridge_->CloseSession(session_id);
 }
 
 DrmSystem::DecryptStatus DrmSystem::Decrypt(InputBuffer* buffer) {
   SB_DCHECK(buffer);
   SB_DCHECK(buffer->drm_info());
-  SB_DCHECK(j_media_crypto_);
   // The actual decryption will take place by calling |queueSecureInputBuffer|
   // in the decoders.  Our existence implies that there is enough information
   // to perform the decryption.
@@ -375,53 +341,73 @@ DrmSystem::DecryptStatus DrmSystem::Decrypt(InputBuffer* buffer) {
 }
 
 const void* DrmSystem::GetMetrics(int* size) {
-  JniEnvExt* env = JniEnvExt::Get();
-  jbyteArray j_metrics = static_cast<jbyteArray>(env->CallObjectMethodOrAbort(
-      j_media_drm_bridge_, "getMetricsInBase64", "()[B"));
+  SB_CHECK(thread_checker_.CalledOnValidThread());
+  return media_drm_bridge_->GetMetrics(size);
+}
 
-  if (!j_metrics) {
-    *size = 0;
-    return nullptr;
+void DrmSystem::OnSessionUpdate(int ticket,
+                                SbDrmSessionRequestType request_type,
+                                std::string_view session_id,
+                                std::string_view content) {
+  std::string_view eme_session_id;
+  if (enable_app_provisioning_) {
+    std::lock_guard lock(mutex_);
+    if (session_id_mapper_->IsMediaDrmSessionIdForProvisioningRequired()) {
+      session_id_mapper_->RegisterMediaDrmSessionIdForProvisioning(session_id);
+    }
+    eme_session_id = session_id_mapper_->GetEmeSessionId(session_id);
+  } else {
+    eme_session_id = session_id;
   }
 
-  jbyte* metrics_elements = env->GetByteArrayElements(j_metrics, NULL);
-  jsize metrics_size = env->GetArrayLength(j_metrics);
-  SB_DCHECK(metrics_elements);
-
-  metrics_.assign(metrics_elements, metrics_elements + metrics_size);
-
-  env->ReleaseByteArrayElements(j_metrics, metrics_elements, JNI_ABORT);
-  *size = static_cast<int>(metrics_.size());
-  return metrics_.data();
+  callbacks_.update_request(this, context_, ticket, kSbDrmStatusSuccess,
+                            request_type, /*error_message=*/nullptr,
+                            eme_session_id.data(), eme_session_id.size(),
+                            content.data(), content.size(), kNoUrl);
 }
 
-void DrmSystem::CallUpdateRequestCallback(int ticket,
-                                          SbDrmSessionRequestType request_type,
-                                          const void* session_id,
-                                          int session_id_size,
-                                          const void* content,
-                                          int content_size,
-                                          const char* url) {
-  update_request_callback_(this, context_, ticket, kSbDrmStatusSuccess,
-                           request_type, NULL, session_id, session_id_size,
-                           content, content_size, url);
+void DrmSystem::OnProvisioningRequest(std::string_view content) {
+  SB_CHECK(enable_app_provisioning_);
+
+  SB_LOG(INFO) << __func__;
+  std::string eme_session_id;
+  int ticket;
+  {
+    std::lock_guard lock(mutex_);
+    SB_CHECK(!deferred_session_update_requests_.empty())
+        << "Provisioning request is sent, even though there is no pending "
+           "session update request.";
+    eme_session_id = session_id_mapper_->CreateOrGetBridgeEmeSessionId();
+    SB_CHECK(!eme_session_id.empty());
+    ticket = deferred_session_update_requests_.front()->TakeTicket();
+  }
+
+  SB_LOG(INFO) << "Return provision request using pending ticket=" << ticket;
+  callbacks_.update_request(this, context_, ticket, kSbDrmStatusSuccess,
+                            kSbDrmSessionRequestTypeIndividualizationRequest,
+                            /*error_message=*/nullptr, eme_session_id.data(),
+                            eme_session_id.size(), content.data(),
+                            content.size(), kNoUrl);
 }
 
-void DrmSystem::CallDrmSessionKeyStatusesChangedCallback(
-    const void* session_id,
-    int session_id_size,
+void DrmSystem::OnKeyStatusChange(
+    std::string_view session_id,
     const std::vector<SbDrmKeyId>& drm_key_ids,
     const std::vector<SbDrmKeyStatus>& drm_key_statuses) {
-  SB_DCHECK(drm_key_ids.size() == drm_key_statuses.size());
+  SB_CHECK_EQ(drm_key_ids.size(), drm_key_statuses.size());
 
-  std::string session_id_as_string(
-      static_cast<const char*>(session_id),
-      static_cast<const char*>(session_id) + session_id_size);
+  std::string eme_session_id;
+  if (enable_app_provisioning_) {
+    std::lock_guard lock(mutex_);
+    eme_session_id = session_id_mapper_->GetEmeSessionId(session_id);
+  } else {
+    eme_session_id = session_id;
+  }
 
   {
-    ScopedLock scoped_lock(mutex_);
-    if (cached_drm_key_ids_[session_id_as_string] != drm_key_ids) {
-      cached_drm_key_ids_[session_id_as_string] = drm_key_ids;
+    std::lock_guard scoped_lock(mutex_);
+    if (cached_drm_key_ids_[eme_session_id] != drm_key_ids) {
+      cached_drm_key_ids_[eme_session_id] = drm_key_ids;
       if (hdcp_lost_) {
         CallKeyStatusesChangedCallbackWithKeyStatusRestricted_Locked();
         return;
@@ -429,15 +415,16 @@ void DrmSystem::CallDrmSessionKeyStatusesChangedCallback(
     }
   }
 
-  key_statuses_changed_callback_(this, context_, session_id, session_id_size,
-                                 static_cast<int>(drm_key_ids.size()),
-                                 drm_key_ids.data(), drm_key_statuses.data());
+  callbacks_.key_statuses_changed(this, context_, eme_session_id.data(),
+                                  eme_session_id.size(),
+                                  static_cast<int>(drm_key_ids.size()),
+                                  drm_key_ids.data(), drm_key_statuses.data());
 }
 
 void DrmSystem::OnInsufficientOutputProtection() {
   // HDCP has lost, update the statuses of all keys in all known sessions to be
   // restricted.
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   if (hdcp_lost_) {
     return;
   }
@@ -446,21 +433,21 @@ void DrmSystem::OnInsufficientOutputProtection() {
 }
 
 void DrmSystem::CallKeyStatusesChangedCallbackWithKeyStatusRestricted_Locked() {
-  mutex_.DCheckAcquired();
-
   for (auto& iter : cached_drm_key_ids_) {
     const std::string& session_id = iter.first;
     const std::vector<SbDrmKeyId>& drm_key_ids = iter.second;
     std::vector<SbDrmKeyStatus> drm_key_statuses(drm_key_ids.size(),
                                                  kSbDrmKeyStatusRestricted);
 
-    key_statuses_changed_callback_(this, context_, session_id.data(),
-                                   session_id.size(),
-                                   static_cast<int>(drm_key_ids.size()),
-                                   drm_key_ids.data(), drm_key_statuses.data());
+    callbacks_.key_statuses_changed(
+        this, context_, session_id.data(), session_id.size(),
+        static_cast<int>(drm_key_ids.size()), drm_key_ids.data(),
+        drm_key_statuses.data());
   }
 }
 
-}  // namespace shared
-}  // namespace android
+bool DrmSystem::IsReady() {
+  return created_media_crypto_session_.load();
+}
+
 }  // namespace starboard

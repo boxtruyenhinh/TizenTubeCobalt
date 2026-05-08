@@ -1,7 +1,6 @@
 // Copyright 2019 Google LLC.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 #include "tools/fiddle/examples.h"
-// HASH=b2cbbbbcffb618865d8aae3bc04b2a62
 REG_FIDDLE(Bitmap_readPixels, 256, 128, false, 0) {
 void draw(SkCanvas* canvas) {
     const int width = 256;
@@ -11,7 +10,7 @@ void draw(SkCanvas* canvas) {
     SkPoint  gradPoints[] = { { 0, 0 }, { 256, 0 } };
     SkPaint paint;
     paint.setShader(SkGradientShader::MakeLinear(gradPoints, gradColors, nullptr,
-                    SK_ARRAY_COUNT(gradColors), SkTileMode::kClamp));
+                    std::size(gradColors), SkTileMode::kClamp));
     SkBitmap bitmap;
     bitmap.allocPixels(srcInfo);
     SkCanvas srcCanvas(bitmap);

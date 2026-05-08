@@ -258,8 +258,11 @@ bg{
         "America:Chihuahua"{
             ec{"Чиуауа"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"Сиудад Хуарес"}
+        }
         "America:Coral_Harbour"{
-            ec{"Корал Харбър"}
+            ec{"Атикокан"}
         }
         "America:Cordoba"{
             ec{"Кордоба"}
@@ -1223,6 +1226,9 @@ bg{
         "Pacific:Johnston"{
             ec{"Джонстън"}
         }
+        "Pacific:Kanton"{
+            ec{"Кантон"}
+        }
         "Pacific:Kiritimati"{
             ec{"Киритимати"}
         }
@@ -1898,11 +1904,11 @@ bg{
             lg{"Екатеринбургско време"}
             ls{"Екатеринбургско стандартно време"}
         }
-        fallbackFormat{"{1} ({0})"}
+        "meta:Yukon"{
+            ls{"Юкон"}
+        }
         gmtFormat{"Гринуич{0}"}
         gmtZeroFormat{"Гринуич"}
-        hourFormat{"+HH:mm;-HH:mm"}
-        regionFormat{"{0}"}
         regionFormatDaylight{"{0} – лятно часово време"}
         regionFormatStandard{"{0} – стандартно време"}
     }

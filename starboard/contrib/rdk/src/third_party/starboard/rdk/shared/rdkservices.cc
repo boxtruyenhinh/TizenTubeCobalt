@@ -21,10 +21,12 @@
 
 #include "third_party/starboard/rdk/shared/rdkservices.h"
 
+#include <atomic>
 #include <string>
 #include <cstring>
 #include <algorithm>
 #include <memory>
+#include <mutex>
 
 #include <websocket/JSONRPCLink.h>
 
@@ -37,14 +39,10 @@
 #include <securityagent/securityagent.h>
 #endif
 
-#include "starboard/atomic.h"
 #include "starboard/audio_sink.h"
 #include "starboard/event.h"
 #include "starboard/media.h"
 #include "starboard/common/once.h"
-#include "starboard/common/atomic.h"
-#include "starboard/common/condition_variable.h"
-#include "starboard/common/mutex.h"
 #include "starboard/common/media.h"
 #include "starboard/extension/accessibility.h"
 #include "starboard/common/file.h"
@@ -245,7 +243,7 @@ SB_ONCE_INITIALIZE_FUNCTION(DeviceIdImpl, GetDeviceIdImpl);
 
 struct AccessibilityImpl {
 private:
-  ::starboard::Mutex mutex_;
+  std::mutex mutex_;
   SbAccessibilityDisplaySettings display_settings_ { };
   SbAccessibilityCaptionSettings caption_settings_ { };
   bool is_voice_guidance_enabled_ { false };
@@ -281,7 +279,7 @@ public:
       return;
     }
 
-    ::starboard::ScopedLock lock(mutex_);
+    std::lock_guard lock(mutex_);
 
     bool was_cc_enabled = caption_settings_.is_enabled;
     bool was_highcontrast_enabled = display_settings_.is_high_contrast_text_enabled;
@@ -337,21 +335,13 @@ public:
       display_settings_.is_high_contrast_text_enabled =
         settings.TextDisplay.IsHighContrastTextEnabled.Value();
     }
-
-    if (auto* app = Application::Get(); app != nullptr) {
-      if (was_cc_enabled != caption_settings_.is_enabled)
-        app->InjectAccessibilityCaptionSettingsChanged();
-
-      if (was_highcontrast_enabled != display_settings_.is_high_contrast_text_enabled)
-        app->InjectAccessibilitySettingsChanged();
-    }
   }
 
   bool GetSettings(std::string& out_json) {
     JsonData::Accessibility::AccessibilityData settings;
 
     {
-      ::starboard::ScopedLock lock(mutex_);
+      std::lock_guard lock(mutex_);
       if (caption_settings_.supports_is_enabled) {
         auto& cc = settings.ClosedCaptions;
         cc.IsEnabled = caption_settings_.is_enabled;
@@ -382,18 +372,18 @@ public:
     return settings.ToString(out_json);
   }
 
-  bool GetCaptionSettings(SbAccessibilityCaptionSettings* out) const {
+  bool GetCaptionSettings(SbAccessibilityCaptionSettings* out) {
     if (out) {
-      ::starboard::ScopedLock lock(mutex_);
+      std::lock_guard lock(mutex_);
       memcpy(out, &caption_settings_,  sizeof(caption_settings_));
       return true;
     }
     return false;
   }
 
-  bool GetDisplaySettings(SbAccessibilityDisplaySettings* out) const {
+  bool GetDisplaySettings(SbAccessibilityDisplaySettings* out) {
     if (out) {
-      ::starboard::ScopedLock lock(mutex_);
+      std::lock_guard lock(mutex_);
       memcpy(out, &display_settings_,  sizeof(display_settings_));
       return true;
     }
@@ -402,42 +392,34 @@ public:
 
   void SetCaptionEnabled(bool enabled, bool notify_on_change = true) {
     {
-      ::starboard::ScopedLock lock(mutex_);
+      std::lock_guard lock(mutex_);
        notify_on_change &= (caption_settings_.is_enabled != enabled);
        caption_settings_.is_enabled = enabled;
-    }
-    if (notify_on_change && Application::Get()) {
-      SB_LOG(INFO) << "Accessibility closed caption setting changed, enabled = " << enabled;
-      Application::Get()->InjectAccessibilityCaptionSettingsChanged();
     }
   }
 
   void SetHighContrastEnabled(bool enabled, bool notify_on_change = true) {
     {
-      ::starboard::ScopedLock lock(mutex_);
+      std::lock_guard lock(mutex_);
       notify_on_change &= (display_settings_.is_high_contrast_text_enabled != enabled);
       display_settings_.is_high_contrast_text_enabled = enabled;
-    }
-    if (notify_on_change && Application::Get()) {
-      SB_LOG(INFO) << "Accessibility high contrast text setting changed, enabled = " << enabled;
-      Application::Get()->InjectAccessibilitySettingsChanged();
     }
   }
 
   void SetVoiceGuidanceEnabled(bool enabled, bool notify_on_change = true) {
     {
-      ::starboard::ScopedLock lock(mutex_);
+      std::lock_guard lock(mutex_);
       notify_on_change &= (is_voice_guidance_enabled_ != enabled);
       is_voice_guidance_enabled_ = enabled;
     }
     if (notify_on_change && Application::Get()) {
       SB_LOG(INFO) << "Accessibility voice guidance setting changed, enabled = " << enabled;
-      Application::Get()->InjectAccessibilityTextToSpeechSettingsChanged();
+      Application::Get()->InjectAccessibilityTextToSpeechSettingsChanged(enabled);
     }
   }
 
-  bool GetVoiceGuidanceEnabled() const {
-    ::starboard::ScopedLock lock(mutex_);
+  bool GetVoiceGuidanceEnabled() {
+    std::lock_guard lock(mutex_);
     return is_voice_guidance_enabled_;
   }
 };
@@ -446,14 +428,14 @@ SB_ONCE_INITIALIZE_FUNCTION(AccessibilityImpl, GetAccessibility);
 
 struct TextToSpeechImpl {
 private:
-  ::starboard::atomic_bool is_enabled_ { false };
-  ::starboard::atomic_bool needs_refresh_ { true };
-  ::starboard::atomic_bool did_subscribe_ { false };
+  std::atomic_bool is_enabled_ { false };
+  std::atomic_bool needs_refresh_ { true };
+  std::atomic_bool did_subscribe_ { false };
   int64_t speech_id_ { -1 };
   int32_t speech_request_num_ { 0 };
   ServiceLink tts_link_ { kTTSCallsign };
-  ::starboard::Mutex mutex_;
-  ::starboard::ConditionVariable condition_ { mutex_ };
+  std::mutex mutex_;
+  std::condition_variable condition_;
   std::string client_id_;
 
   struct IsTTSEnabledInfo : public Core::JSON::Container {
@@ -504,7 +486,7 @@ private:
   }
 
   void OnSpeakResult(const SpeakResult& result, const Core::JSONRPC::Error* err) {
-    ::starboard::ScopedLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     if (err) {
       SB_LOG(ERROR)
           << "TTS speak request failed. Error code: "
@@ -517,7 +499,7 @@ private:
       speech_id_ = result.SpeechId;
     }
     --speech_request_num_;
-    condition_.Broadcast();
+    condition_.notify_all();
   }
 
 public:
@@ -533,7 +515,7 @@ public:
 
     uint64_t rc = tts_link_.Dispatch(kDefaultTimeoutMs, "speak", params, &TextToSpeechImpl::OnSpeakResult, this);
     if (Core::ERROR_NONE == rc) {
-      ::starboard::ScopedLock lock(mutex_);
+      std::lock_guard lock(mutex_);
       ++speech_request_num_;
     }
   }
@@ -542,9 +524,9 @@ public:
     int64_t speechId = -1;
 
     {
-      ::starboard::ScopedLock lock(mutex_);
+      std::unique_lock lock(mutex_);
       if (speech_request_num_ != 0) {
-        if (!condition_.WaitTimed(kSbTimeMillisecond) || speech_request_num_ != 0)
+        if (condition_.wait_for(lock, std::chrono::microseconds(kSbTimeMillisecond)) == std::cv_status::timeout || speech_request_num_ != 0)
           return;
       }
       speechId = std::exchange(speech_id_, -1);
@@ -647,7 +629,7 @@ struct SystemPropertiesImpl {
   };
 
   void SetSettings(const std::string& json) {
-    ::starboard::ScopedLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     Core::OptionalType<Core::JSON::Error> error;
     if ( !props_.FromString(json, error) ) {
       props_.Clear();
@@ -657,13 +639,13 @@ struct SystemPropertiesImpl {
     }
   }
 
-  bool GetSettings(std::string& out_json) const {
-    ::starboard::ScopedLock lock(mutex_);
+  bool GetSettings(std::string& out_json) {
+    std::lock_guard lock(mutex_);
     return props_.ToString(out_json);
   }
 
-  bool GetModelName(std::string &out) const {
-    ::starboard::ScopedLock lock(mutex_);
+  bool GetModelName(std::string &out) {
+    std::lock_guard lock(mutex_);
     if (props_.ModelName.IsSet() && !props_.ModelName.Value().empty()) {
       out = props_.ModelName.Value();
       return true;
@@ -671,8 +653,8 @@ struct SystemPropertiesImpl {
     return false;
   }
 
-  bool GetBrandName(std::string &out) const {
-    ::starboard::ScopedLock lock(mutex_);
+  bool GetBrandName(std::string &out) {
+    std::lock_guard lock(mutex_);
     if (props_.BrandName.IsSet() && !props_.BrandName.Value().empty()) {
       out = props_.BrandName.Value();
       return true;
@@ -680,8 +662,8 @@ struct SystemPropertiesImpl {
     return false;
   }
 
-  bool GetModelYear(std::string &out) const {
-    ::starboard::ScopedLock lock(mutex_);
+  bool GetModelYear(std::string &out) {
+    std::lock_guard lock(mutex_);
     if (props_.ModelYear.IsSet() && !props_.ModelYear.Value().empty()) {
       out = props_.ModelYear.Value();
       return true;
@@ -689,8 +671,8 @@ struct SystemPropertiesImpl {
     return false;
   }
 
-  bool GetChipset(std::string &out) const {
-    ::starboard::ScopedLock lock(mutex_);
+  bool GetChipset(std::string &out) {
+    std::lock_guard lock(mutex_);
     if (props_.ChipsetModelNumber.IsSet() && !props_.ChipsetModelNumber.Value().empty()) {
       out = props_.ChipsetModelNumber.Value();
       return true;
@@ -698,8 +680,8 @@ struct SystemPropertiesImpl {
     return false;
   }
 
-  bool GetFirmwareVersion(std::string &out) const {
-    ::starboard::ScopedLock lock(mutex_);
+  bool GetFirmwareVersion(std::string &out) {
+    std::lock_guard lock(mutex_);
     if (props_.FirmwareVersion.IsSet() && !props_.FirmwareVersion.Value().empty()) {
       out = props_.FirmwareVersion.Value();
       return true;
@@ -707,8 +689,8 @@ struct SystemPropertiesImpl {
     return false;
   }
 
-  bool GetIntegratorName(std::string &out) const {
-    ::starboard::ScopedLock lock(mutex_);
+  bool GetIntegratorName(std::string &out) {
+    std::lock_guard lock(mutex_);
     if (props_.IntegratorName.IsSet() && !props_.IntegratorName.Value().empty()) {
       out = props_.IntegratorName.Value();
       return true;
@@ -716,8 +698,8 @@ struct SystemPropertiesImpl {
     return false;
   }
 
-  bool GetFriendlyName(std::string &out) const {
-    ::starboard::ScopedLock lock(mutex_);
+  bool GetFriendlyName(std::string &out) {
+    std::lock_guard lock(mutex_);
     if (props_.FriendlyName.IsSet() && !props_.FriendlyName.Value().empty()) {
       out = props_.FriendlyName.Value();
       return true;
@@ -725,8 +707,8 @@ struct SystemPropertiesImpl {
     return false;
   }
 
-  bool GetDeviceType(std::string &out) const {
-    ::starboard::ScopedLock lock(mutex_);
+  bool GetDeviceType(std::string &out) {
+    std::lock_guard lock(mutex_);
     if (props_.DeviceType.IsSet() && !props_.DeviceType.Value().empty()) {
       out = props_.DeviceType.Value();
       return true;
@@ -735,7 +717,7 @@ struct SystemPropertiesImpl {
   }
 
 private:
-  ::starboard::Mutex mutex_;
+  std::mutex mutex_;
   SystemPropertiesData props_;
 };
 
@@ -758,7 +740,7 @@ struct AdvertisingIdImpl {
   };
 
   void SetSettings(const std::string& json) {
-    ::starboard::ScopedLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     Core::OptionalType<Core::JSON::Error> error;
     if ( !props_.FromString(json, error) ) {
       props_.Clear();
@@ -768,13 +750,13 @@ struct AdvertisingIdImpl {
     }
   }
 
-  bool GetSettings(std::string& out_json) const {
-    ::starboard::ScopedLock lock(mutex_);
+  bool GetSettings(std::string& out_json) {
+    std::lock_guard lock(mutex_);
     return props_.ToString(out_json);
   }
 
-  bool GetIfa(std::string &out) const {
-    ::starboard::ScopedLock lock(mutex_);
+  bool GetIfa(std::string &out) {
+    std::lock_guard lock(mutex_);
     if (props_.Ifa.IsSet() && !props_.Ifa.Value().empty()) {
       out = props_.Ifa.Value();
       return true;
@@ -782,8 +764,8 @@ struct AdvertisingIdImpl {
     return false;
   }
 
-  bool GetIfaType(std::string &out) const {
-    ::starboard::ScopedLock lock(mutex_);
+  bool GetIfaType(std::string &out) {
+    std::lock_guard lock(mutex_);
     if (props_.IfaType.IsSet() && !props_.IfaType.Value().empty()) {
       out = props_.IfaType.Value();
       return true;
@@ -791,8 +773,8 @@ struct AdvertisingIdImpl {
     return false;
   }
 
-  bool GetLmtAdTracking(std::string &out) const {
-    ::starboard::ScopedLock lock(mutex_);
+  bool GetLmtAdTracking(std::string &out) {
+    std::lock_guard lock(mutex_);
     if (props_.Lmt.IsSet() && !props_.Lmt.Value().empty()) {
       out = props_.Lmt.Value();
       return true;
@@ -801,7 +783,7 @@ struct AdvertisingIdImpl {
   }
 
 private:
-  ::starboard::Mutex mutex_;
+  std::mutex mutex_;
   AdvertisingData props_;
 };
 
@@ -816,7 +798,7 @@ struct AuthServiceImpl {
     if (!IsAvailable())
       return false;
 
-    ::starboard::ScopedLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     if (!experience_.empty()) {
       out = experience_;
       return true;
@@ -849,7 +831,7 @@ struct AuthServiceImpl {
   }
 
 private:
-  ::starboard::Mutex mutex_;
+  std::mutex mutex_;
   bool is_available_ { true };
   std::string experience_;
 };
@@ -887,8 +869,8 @@ private:
   ResolutionInfo resolution_info_ { };
   uint32_t hdr_caps_ { DisplayInfo::kHdrNone };
   float diagonal_size_in_inches_ { 0.f };
-  ::starboard::atomic_bool needs_refresh_ { true };
-  ::starboard::atomic_bool did_subscribe_ { false };
+  std::atomic_bool needs_refresh_ { true };
+  std::atomic_bool did_subscribe_ { false };
 };
 
 SB_ONCE_INITIALIZE_FUNCTION(DisplayInfoImpl, GetDisplayInfo);
@@ -1007,7 +989,7 @@ void DisplayInfoImpl::Refresh() {
 
   if (needs_refresh) {
     SbEventSchedule([](void* data) {
-      using ::starboard::shared::starboard::media::MimeSupportabilityCache;
+      using ::starboard::MimeSupportabilityCache;
       MimeSupportabilityCache::GetInstance()->ClearCachedMimeSupportabilities();
       GetDisplayInfo()->ForceNeedsRefresh();
     }, nullptr, kSbTimeSecond);
@@ -1025,7 +1007,7 @@ void DisplayInfoImpl::OnUpdated(const Core::JSON::String&) {
   if (needs_refresh_.load() == false) {
     needs_refresh_.store(true);
     SbEventSchedule([](void* data) {
-      using ::starboard::shared::starboard::media::MimeSupportabilityCache;
+      using ::starboard::MimeSupportabilityCache;
       // Clear mime cache until display info is updated
       MimeSupportabilityCache::GetInstance()->ClearCachedMimeSupportabilities();
       Application::Get()->DisplayInfoChanged();
@@ -1036,11 +1018,11 @@ void DisplayInfoImpl::OnUpdated(const Core::JSON::String&) {
 struct NetworkInfoImpl {
 private:
   ServiceLink network_link_ { kNetworkCallsign };
-  ::starboard::atomic_bool needs_refresh_ { true };
-  ::starboard::atomic_bool did_subscribe_ { false };
-  ::starboard::atomic_bool is_connected_  { false };
-  ::starboard::atomic_bool is_connection_type_wireless_ { false };
-  ::starboard::Mutex mutex_;
+  std::atomic_bool needs_refresh_ { true };
+  std::atomic_bool did_subscribe_ { false };
+  std::atomic_bool is_connected_  { false };
+  std::atomic_bool is_connection_type_wireless_ { false };
+  std::mutex mutex_;
   SbEventId event_id_ { kSbEventIdInvalid };
 
   struct InterfaceInfo : public Core::JSON::Container {
@@ -1079,14 +1061,14 @@ private:
   };
 
   void ScheduleRefresh(int64_t timeout) {
-    ::starboard::ScopedLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     if (event_id_ == kSbEventIdInvalid) {
       needs_refresh_.store(true);
       event_id_ = SbEventSchedule([](void* data) {
         auto& self = *static_cast<NetworkInfoImpl*>(data);
-        self.mutex_.Acquire();
+        self.mutex_.lock();
         self.event_id_ = kSbEventIdInvalid;
-        self.mutex_.Release();
+        self.mutex_.unlock();
         self.Refresh();
       }, this, timeout);
     }
@@ -1169,6 +1151,10 @@ private:
   }
 
 public:
+  void Initialize() {
+    Refresh();
+  }
+
   bool IsDisconnected() {
     Refresh();
     return !is_connected_.load();
@@ -1186,7 +1172,7 @@ public:
     }
     network_link_.Teardown();
     needs_refresh_.store(true);
-    ::starboard::ScopedLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     if (event_id_ != kSbEventIdInvalid) {
       SbEventCancel(event_id_);
       event_id_ = kSbEventIdInvalid;
@@ -1297,10 +1283,10 @@ private:
   ServiceLink device_info_ { kDeviceInfoCallsign };
   ServiceLink bluetooth_ { kBluetoothCallsign };
 
-  ::starboard::atomic_bool did_subscribe_ { false };
-  ::starboard::atomic_bool needs_refresh_ { true };
-  ::starboard::atomic_bool has_bluetooth_audio_connected_ { false };
-  ::starboard::Mutex mutex_;
+  std::atomic_bool did_subscribe_ { false };
+  std::atomic_bool needs_refresh_ { true };
+  std::atomic_bool has_bluetooth_audio_connected_ { false };
+  std::mutex mutex_;
 
   std::vector<SbMediaAudioConfiguration> audio_configurations_;
   Core::OptionalType<std::string> brand_name_;
@@ -1352,7 +1338,7 @@ void DeviceInfoImpl::OnBluetoothStatusChanged(const StatusChangedData& data) {
                << " connected: " << (data.Connected.Value() ? "yes" : "no");
 
   const auto& hasBluetoothConnector = [&]() -> bool {
-    ::starboard::ScopedLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     return std::find_if(audio_configurations_.begin(), audio_configurations_.end(), [](const SbMediaAudioConfiguration& cfg) {
       return cfg.connector == kSbMediaAudioConnectorBluetooth;
     }) != audio_configurations_.end();
@@ -1455,7 +1441,7 @@ void DeviceInfoImpl::Refresh() {
     SB_LOG(INFO) << " connector: " << (uint32_t) config.connector << " (" << ::starboard::GetMediaAudioConnectorName(config.connector) << ")";
   }
 
-  ::starboard::ScopedLock lock(mutex_);
+  std::lock_guard lock(mutex_);
   std::swap(audio_configurations_, audio_configs);
 }
 
@@ -1468,7 +1454,7 @@ bool DeviceInfoImpl::GetAudioConfiguration(int output_index, SbMediaAudioConfigu
 
   Refresh();
 
-  ::starboard::ScopedLock lock(mutex_);
+  std::lock_guard lock(mutex_);
   size_t index = output_index;
   if (index < audio_configurations_.size()) {
     *out_configuration = audio_configurations_[index];
@@ -1511,7 +1497,7 @@ bool DeviceInfoImpl::GetBrandName(std::string& out) {
 
 struct UserSettingsImpl {
 private:
-  ::starboard::Mutex mutex_;
+  std::mutex mutex_;
   std::vector<std::string> subscriptions_ { };
   bool needs_refresh_ { true };
   ServiceLink link_ { kUserSetingsCallsign };
@@ -1561,8 +1547,6 @@ private:
 
     uint32_t rc;
 
-    mutex_.DCheckAcquired();
-
     for (const auto& kv : kNotificationHandlers) {
       const auto& name = kv.first;
       const auto& callback = kv.second;
@@ -1599,7 +1583,7 @@ public:
   UserSettingsImpl() = default;
 
   void Refresh() {
-    ::starboard::ScopedLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     if (!needs_refresh_)
       return;
 
@@ -1640,7 +1624,7 @@ public:
   }
 
   void Teardown() {
-    ::starboard::ScopedLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     for (const auto& subscription : subscriptions_)
       link_.Unsubscribe(kDefaultTimeoutMs, subscription.c_str());
     link_.Teardown();
@@ -1671,6 +1655,10 @@ std::string DeviceIdentification::GetChipset() {
 
 std::string DeviceIdentification::GetFirmwareVersion() {
   return GetDeviceIdImpl()->firmware_version;
+}
+
+void NetworkInfo::Initialize() {
+  GetNetworkInfo()->Initialize();
 }
 
 bool NetworkInfo::IsConnectionTypeWireless() {

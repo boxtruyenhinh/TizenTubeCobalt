@@ -14,15 +14,12 @@
 
 #include "starboard/android/shared/graphics.h"
 
+#include "starboard/android/shared/starboard_bridge.h"
 #include "starboard/common/log.h"
-
-#include "starboard/android/shared/application_android.h"
-#include "starboard/android/shared/jni_env_ext.h"
 #include "starboard/extension/graphics.h"
+#include "third_party/jni_zero/jni_zero.h"
 
 namespace starboard {
-namespace android {
-namespace shared {
 
 namespace {
 
@@ -35,9 +32,11 @@ float GetMinimumFrameIntervalInMilliseconds() {
 }
 
 bool IsMapToMeshEnabled() {
-  bool supports_spherical_videos =
-      starboard::android::shared::ApplicationAndroid::Get()
-          ->GetOverlayedBoolValue("supports_spherical_videos");
+  // TODO(cobalt b/375669373): revisit RRO settings.
+  // bool supports_spherical_videos =
+  //     starboard::RuntimeResourceOverlay::GetInstance()
+  //         ->supports_spherical_videos();
+  bool supports_spherical_videos = false;
   return supports_spherical_videos;
 }
 
@@ -70,7 +69,8 @@ bool DefaultGetRenderRootTransform(float* m00,
 }
 
 void ReportFullyDrawn() {
-  JniEnvExt::Get()->CallStarboardVoidMethodOrAbort("reportFullyDrawn", "()V");
+  JNIEnv* env = jni_zero::AttachCurrentThread();
+  StarboardBridge::GetInstance()->ReportFullyDrawn(env);
 }
 
 const CobaltExtensionGraphicsApi kGraphicsApi = {
@@ -91,6 +91,4 @@ const void* GetGraphicsApi() {
   return &kGraphicsApi;
 }
 
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard

@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/shared/signal/crash_signals.h"
+// clang-format on
 
 #include <signal.h>
 
@@ -22,8 +24,6 @@
 #include "starboard/system.h"
 
 namespace starboard {
-namespace shared {
-namespace signal {
 
 namespace {
 
@@ -36,7 +36,7 @@ const int kStopSignalsToTrap[] = {
 };
 
 void SetSignalHandler(int signal_id, SignalHandlerFunction handler) {
-  struct sigaction action = {0};
+  struct sigaction action = {};
 
   action.sa_handler = handler;
   action.sa_flags = 0;
@@ -84,6 +84,4 @@ void UninstallCrashSignalHandlers() {
   SetSignalHandler(SIGQUIT, SIG_DFL);
 }
 
-}  // namespace signal
-}  // namespace shared
 }  // namespace starboard

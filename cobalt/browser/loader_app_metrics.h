@@ -1,4 +1,4 @@
-// Copyright 2024 The Cobalt Authors. All Rights Reserved.
+// Copyright 2025 The Cobalt Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,14 +15,10 @@
 #ifndef COBALT_BROWSER_LOADER_APP_METRICS_H_
 #define COBALT_BROWSER_LOADER_APP_METRICS_H_
 
-#include "starboard/extension/loader_app_metrics.h"
-
 namespace cobalt {
 namespace browser {
 
-// Records UMA histograms using data from the given struct instance.
-void RecordLoaderAppMetrics(
-    const StarboardExtensionLoaderAppMetricsApi* metrics_extension);
+void RecordLoaderAppMetrics();
 
 }  // namespace browser
 }  // namespace cobalt

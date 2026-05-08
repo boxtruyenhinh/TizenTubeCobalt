@@ -7,11 +7,11 @@
 #ifndef SkPathOps_DEFINED
 #define SkPathOps_DEFINED
 
+#include "include/core/SkPath.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTDArray.h"
 
-class SkPath;
 struct SkRect;
 
 
@@ -65,7 +65,15 @@ bool SK_API Simplify(const SkPath& path, SkPath* result);
     @param result The tight bounds of the path.
     @return True if the bounds could be computed.
   */
-bool SK_API TightBounds(const SkPath& path, SkRect* result);
+[[deprecated]]
+static inline bool TightBounds(const SkPath& path, SkRect* result) {
+    auto rect = path.computeTightBounds();
+    if (rect.isFinite()) {
+        *result = rect;
+        return true;
+    }
+    return false;
+}
 
 /** Set the result with fill type winding to area equivalent to path.
     Returns true if successful. Does not detect if path contains contours which
@@ -102,7 +110,7 @@ public:
     bool resolve(SkPath* result);
 
 private:
-    SkTArray<SkPath> fPathRefs;
+    skia_private::TArray<SkPath> fPathRefs;
     SkTDArray<SkPathOp> fOps;
 
     static bool FixWinding(SkPath* path);

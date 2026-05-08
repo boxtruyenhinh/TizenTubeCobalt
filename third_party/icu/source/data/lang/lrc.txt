@@ -238,7 +238,6 @@ lrc{
     Languages%short{
         az{"آذأری"}
         en_GB{"ئینگیلیسی بئریتانیا گأپ"}
-        en_US{"ئینگیلیسی ئمریکایی"}
     }
     Scripts{
         Arab{"عأرأڤی"}
@@ -296,15 +295,5 @@ lrc{
             arab{"أدأدیا عأرأڤی"}
             latn{"عأدأدیا لاتین"}
         }
-    }
-    codePatterns{
-        language{"{0}"}
-        script{"{0}"}
-        territory{"{0}"}
-    }
-    localeDisplayPattern{
-        keyTypePattern{"{0}: {1}"}
-        pattern{"{0} ({1})"}
-        separator{"{0}, {1}"}
     }
 }

@@ -5,14 +5,20 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkColorFilter.h"
-#include "include/effects/SkImageFilters.h"
-#include "include/private/SkColorData.h"
-#include "modules/svg/include/SkSVGAttributeParser.h"
 #include "modules/svg/include/SkSVGFeColorMatrix.h"
+
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkScalar.h"
+#include "include/effects/SkImageFilters.h"
+#include "include/private/base/SkAssert.h"
+#include "modules/svg/include/SkSVGAttributeParser.h"
 #include "modules/svg/include/SkSVGFilterContext.h"
-#include "modules/svg/include/SkSVGRenderContext.h"
-#include "modules/svg/include/SkSVGValue.h"
+#include "src/core/SkColorData.h"
+
+#include <tuple>
+
+class SkImageFilter;
+class SkSVGRenderContext;
 
 bool SkSVGFeColorMatrix::parseAndSetAttribute(const char* name, const char* value) {
     return INHERITED::parseAndSetAttribute(name, value) ||
@@ -29,17 +35,17 @@ SkColorMatrix SkSVGFeColorMatrix::makeMatrixForType() const {
 
     switch (fType) {
         case SkSVGFeColorMatrixType::kMatrix: {
-            if (fValues.count() < 20) {
+            if (fValues.size() < 20) {
                 return SkColorMatrix();
             }
             SkColorMatrix m;
-            m.setRowMajor(this->fValues.begin());
+            m.setRowMajor(fValues.data());
             return m;
         }
         case SkSVGFeColorMatrixType::kSaturate:
-            return MakeSaturate(fValues.count() > 0 ? fValues[0] : 1);
+            return MakeSaturate(!fValues.empty() ? fValues[0] : 1);
         case SkSVGFeColorMatrixType::kHueRotate:
-            return MakeHueRotate(fValues.count() > 0 ? fValues[0] : 0);
+            return MakeHueRotate(!fValues.empty() ? fValues[0] : 0);
         case SkSVGFeColorMatrixType::kLuminanceToAlpha:
             return MakeLuminanceToAlpha();
     }
@@ -95,23 +101,6 @@ sk_sp<SkImageFilter> SkSVGFeColorMatrix::onMakeImageFilter(const SkSVGRenderCont
             SkColorFilters::Matrix(makeMatrixForType()),
             fctx.resolveInput(ctx, this->getIn(), this->resolveColorspace(ctx, fctx)),
             this->resolveFilterSubregion(ctx, fctx));
-}
-
-template <> bool SkSVGAttributeParser::parse(SkSVGFeColorMatrixValues* values) {
-    SkSVGNumberType value;
-    if (!this->parse(&value)) {
-        return false;
-    }
-
-    values->push_back(value);
-    while (true) {
-        if (!this->parse(&value) || values->count() >= 20) {
-            break;
-        }
-        values->push_back(value);
-    }
-
-    return this->parseEOSToken();
 }
 
 template <> bool SkSVGAttributeParser::parse(SkSVGFeColorMatrixType* type) {

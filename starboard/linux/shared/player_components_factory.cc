@@ -15,6 +15,7 @@
 #include <memory>
 
 #include "starboard/common/log.h"
+#include "starboard/common/media.h"
 #include "starboard/common/ref_counted.h"
 #include "starboard/common/string.h"
 #include "starboard/gles.h"
@@ -41,155 +42,112 @@
 #include "starboard/shared/starboard/player/filter/video_render_algorithm_impl.h"
 #include "starboard/shared/starboard/player/filter/video_renderer_sink.h"
 
-#if SB_API_VERSION >= 15 && ENABLE_IAMF_DECODE
-#include "starboard/shared/libiamf/iamf_audio_decoder.h"
-#endif  // SB_API_VERSION >= 15 && ENABLE_IAMF_DECODE
-
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 namespace {
 
-using ::starboard::shared::openh264::is_openh264_supported;
-
 class PlayerComponentsFactory : public PlayerComponents::Factory {
  public:
-  bool CreateSubComponents(
-      const CreationParameters& creation_parameters,
-      std::unique_ptr<AudioDecoder>* audio_decoder,
-      std::unique_ptr<AudioRendererSink>* audio_renderer_sink,
-      std::unique_ptr<VideoDecoder>* video_decoder,
-      std::unique_ptr<VideoRenderAlgorithm>* video_render_algorithm,
-      scoped_refptr<VideoRendererSink>* video_renderer_sink,
-      std::string* error_message) override {
-    SB_DCHECK(error_message);
+  Result<MediaComponents> CreateSubComponents(
+      const CreationParameters& creation_parameters) override {
+    MediaComponents components;
+    JobQueue* job_queue = creation_parameters.job_queue();
 
     if (creation_parameters.audio_codec() != kSbMediaAudioCodecNone) {
-      SB_DCHECK(audio_decoder);
-      SB_DCHECK(audio_renderer_sink);
-
-      typedef ::starboard::shared::ffmpeg::AudioDecoder FfmpegAudioDecoder;
-      typedef ::starboard::shared::opus::OpusAudioDecoder OpusAudioDecoder;
-      typedef ::starboard::shared::libfdkaac::FdkAacAudioDecoder
-          FdkAacAudioDecoder;
-
-      auto decoder_creator = [](const media::AudioStreamInfo& audio_stream_info,
-                                SbDrmSystem drm_system) {
+      auto decoder_creator =
+          [job_queue](const AudioStreamInfo& audio_stream_info,
+                      SbDrmSystem drm_system) -> std::unique_ptr<AudioDecoder> {
         if (audio_stream_info.codec == kSbMediaAudioCodecOpus) {
-          std::unique_ptr<OpusAudioDecoder> audio_decoder_impl(
-              new OpusAudioDecoder(audio_stream_info));
-          if (audio_decoder_impl->is_valid()) {
-            return std::unique_ptr<AudioDecoder>(std::move(audio_decoder_impl));
-          }
+          return OpusAudioDecoder::Create(job_queue, audio_stream_info);
         } else if (audio_stream_info.codec == kSbMediaAudioCodecAac &&
                    audio_stream_info.number_of_channels <=
                        FdkAacAudioDecoder::kMaxChannels &&
-                   libfdkaac::LibfdkaacHandle::GetHandle()->IsLoaded()) {
+                   LibfdkaacHandle::GetHandle()->IsLoaded()) {
           SB_LOG(INFO) << "Playing audio using FdkAacAudioDecoder.";
-          return std::unique_ptr<AudioDecoder>(new FdkAacAudioDecoder());
-#if SB_API_VERSION >= 15 && ENABLE_IAMF_DECODE
-        } else if (audio_stream_info.codec == kSbMediaAudioCodecIamf) {
-          using ::starboard::shared::libiamf::IamfAudioDecoder;
-          std::unique_ptr<IamfAudioDecoder> audio_decoder_impl(
-              new IamfAudioDecoder(audio_stream_info));
-          if (audio_decoder_impl->is_valid()) {
-            SB_LOG(INFO) << "Playing audio using IamfAudioDecoder.";
-            return std::unique_ptr<AudioDecoder>(std::move(audio_decoder_impl));
-          }
-#endif  // SB_API_VERSION >= 15 && ENABLE_IAMF_DECODE
+          return std::make_unique<FdkAacAudioDecoder>(job_queue);
         } else {
-          std::unique_ptr<FfmpegAudioDecoder> audio_decoder_impl(
-              FfmpegAudioDecoder::Create(audio_stream_info));
-          if (audio_decoder_impl && audio_decoder_impl->is_valid()) {
+          auto ffmpeg_audio_decoder =
+              FfmpegAudioDecoder::Create(job_queue, audio_stream_info);
+          if (ffmpeg_audio_decoder) {
             SB_LOG(INFO) << "Playing audio using FfmpegAudioDecoder";
-            return std::unique_ptr<AudioDecoder>(std::move(audio_decoder_impl));
+          } else {
+            SB_LOG(ERROR) << "Failed to create audio decoder for codec "
+                          << GetMediaAudioCodecName(audio_stream_info.codec);
           }
+          return ffmpeg_audio_decoder;
         }
-        return std::unique_ptr<AudioDecoder>();
+        SB_NOTREACHED();
       };
 
-      audio_decoder->reset(new AdaptiveAudioDecoder(
-          creation_parameters.audio_stream_info(),
-          creation_parameters.drm_system(), decoder_creator));
-      audio_renderer_sink->reset(new AudioRendererSinkImpl);
+      components.audio.decoder = std::make_unique<AdaptiveAudioDecoder>(
+          job_queue, creation_parameters.audio_stream_info(),
+          creation_parameters.drm_system(), decoder_creator);
+      components.audio.renderer_sink =
+          std::make_unique<AudioRendererSinkImpl>();
     }
 
     if (creation_parameters.video_codec() != kSbMediaVideoCodecNone) {
-      typedef ::starboard::shared::libdav1d::VideoDecoder Av1VideoDecoderImpl;
-      typedef ::starboard::shared::de265::VideoDecoder H265VideoDecoderImpl;
-      typedef ::starboard::shared::ffmpeg::VideoDecoder FfmpegVideoDecoderImpl;
-      typedef ::starboard::shared::vpx::VideoDecoder VpxVideoDecoderImpl;
-      typedef ::starboard::shared::openh264::VideoDecoder
-          Openh264VideoDecoderImpl;
-
       const int64_t kVideoSinkRenderIntervalUsec = 10'000;
 
-      SB_DCHECK(video_decoder);
-      SB_DCHECK(video_render_algorithm);
-      SB_DCHECK(video_renderer_sink);
-
-      video_decoder->reset();
+      components.video.decoder.reset();
 
       const SbMediaVideoCodec kAv1VideoCodec = kSbMediaVideoCodecAv1;
 
       if (creation_parameters.video_codec() == kSbMediaVideoCodecVp9) {
-        video_decoder->reset(new VpxVideoDecoderImpl(
-            creation_parameters.video_codec(),
+        components.video.decoder = std::make_unique<VpxVideoDecoder>(
+            job_queue, creation_parameters.video_codec(),
             creation_parameters.output_mode(),
-            creation_parameters.decode_target_graphics_context_provider()));
+            creation_parameters.decode_target_graphics_context_provider());
       } else if (creation_parameters.video_codec() == kAv1VideoCodec) {
-        video_decoder->reset(new Av1VideoDecoderImpl(
-            creation_parameters.video_codec(),
+        components.video.decoder = std::make_unique<Dav1dVideoDecoder>(
+            job_queue, creation_parameters.video_codec(),
             creation_parameters.output_mode(),
-            creation_parameters.decode_target_graphics_context_provider()));
+            creation_parameters.decode_target_graphics_context_provider(),
+            /* may_reduce_quality_for_speed = */ true);
       } else if (creation_parameters.video_codec() == kSbMediaVideoCodecH265) {
-        video_decoder->reset(new H265VideoDecoderImpl(
-            creation_parameters.video_codec(),
+        components.video.decoder = std::make_unique<De265VideoDecoder>(
+            job_queue, creation_parameters.video_codec(),
             creation_parameters.output_mode(),
-            creation_parameters.decode_target_graphics_context_provider()));
+            creation_parameters.decode_target_graphics_context_provider());
       } else if ((creation_parameters.video_codec() ==
                   kSbMediaVideoCodecH264) &&
                  is_openh264_supported()) {
         SB_LOG(INFO) << "Playing video using openh264::VideoDecoder.";
-        video_decoder->reset(new Openh264VideoDecoderImpl(
+        components.video.decoder = std::make_unique<OpenH264VideoDecoder>(
+            job_queue, creation_parameters.video_codec(),
+            creation_parameters.output_mode(),
+            creation_parameters.decode_target_graphics_context_provider());
+      } else {
+        auto ffmpeg_video_decoder = FfmpegVideoDecoder::Create(
             creation_parameters.video_codec(),
             creation_parameters.output_mode(),
-            creation_parameters.decode_target_graphics_context_provider()));
-      } else {
-        std::unique_ptr<FfmpegVideoDecoderImpl> ffmpeg_video_decoder(
-            FfmpegVideoDecoderImpl::Create(
-                creation_parameters.video_codec(),
-                creation_parameters.output_mode(),
-                creation_parameters.decode_target_graphics_context_provider()));
-        if (ffmpeg_video_decoder && ffmpeg_video_decoder->is_valid()) {
+            creation_parameters.decode_target_graphics_context_provider());
+        if (ffmpeg_video_decoder) {
           SB_LOG(INFO) << "Playing video using ffmpeg::VideoDecoder.";
-          video_decoder->reset(ffmpeg_video_decoder.release());
+          components.video.decoder = std::move(ffmpeg_video_decoder);
         } else {
-          SB_LOG(ERROR) << "Failed to create video decoder for codec "
-                        << creation_parameters.video_codec();
-          *error_message =
-              FormatString("Failed to create video decoder for codec %d.",
-                           creation_parameters.video_codec());
-          return false;
+          const char* codec_name =
+              GetMediaVideoCodecName(creation_parameters.video_codec());
+          return Failure(FormatString(
+              "Failed to create video decoder for codec %s.", codec_name));
         }
       }
 
-      video_render_algorithm->reset(new VideoRenderAlgorithmImpl([]() {
-        return 60.;  // default refresh rate
-      }));
+      components.video.render_algorithm =
+          std::make_unique<VideoRenderAlgorithmImpl>([] {
+            return 60.;  // default refresh rate
+          });
       if (creation_parameters.output_mode() ==
           kSbPlayerOutputModeDecodeToTexture) {
-        *video_renderer_sink = NULL;
+        components.video.renderer_sink = nullptr;
       } else {
-        *video_renderer_sink = new PunchoutVideoRendererSink(
-            creation_parameters.player(), kVideoSinkRenderIntervalUsec);
+        components.video.renderer_sink =
+            make_scoped_refptr<PunchoutVideoRendererSink>(
+                creation_parameters.player(), kVideoSinkRenderIntervalUsec);
       }
     }
 
-    return true;
+    return components;
   }
 };
 
@@ -197,8 +155,7 @@ class PlayerComponentsFactory : public PlayerComponents::Factory {
 
 // static
 std::unique_ptr<PlayerComponents::Factory> PlayerComponents::Factory::Create() {
-  return std::unique_ptr<PlayerComponents::Factory>(
-      new PlayerComponentsFactory);
+  return std::make_unique<PlayerComponentsFactory>();
 }
 
 // static
@@ -226,8 +183,4 @@ bool PlayerComponents::Factory::OutputModeSupported(
   return false;
 }
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

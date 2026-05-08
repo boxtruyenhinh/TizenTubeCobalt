@@ -5,12 +5,17 @@
  * found in the LICENSE file.
  */
 
-#include "tests/Test.h"
-
+#include "include/core/SkData.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
-#include "src/core/SkArenaAlloc.h"
-#include "src/utils/SkJSON.h"
+#include "modules/jsonreader/SkJSONReader.h"
+#include "src/base/SkArenaAlloc.h"
+#include "tests/Test.h"
+
+#include <cstring>
+#include <string_view>
 
 using namespace skjson;
 
@@ -378,7 +383,7 @@ DEF_TEST(JSON_DOM_build, reporter) {
     check_value<ArrayValue>(reporter, v9, "[]");
 
     const Value values0[] = { v0, v3, v9 };
-    const auto v10 = ArrayValue(values0, SK_ARRAY_COUNT(values0), alloc);
+    const auto v10 = ArrayValue(values0, std::size(values0), alloc);
     check_value<ArrayValue>(reporter, v10, "[null,0,[]]");
 
     const auto v11 = ObjectValue(nullptr, 0, alloc);
@@ -389,7 +394,7 @@ DEF_TEST(JSON_DOM_build, reporter) {
         { StringValue("key_1", 5, alloc), v4  },
         { StringValue("key_2", 5, alloc), v11 },
     };
-    const auto v12 = ObjectValue(members0, SK_ARRAY_COUNT(members0), alloc);
+    const auto v12 = ObjectValue(members0, std::size(members0), alloc);
     check_value<ObjectValue>(reporter, v12, "{"
                                                 "\"key_0\":true,"
                                                 "\"key_1\":42,"
@@ -397,7 +402,7 @@ DEF_TEST(JSON_DOM_build, reporter) {
                                             "}");
 
     const Value values1[] = { v2, v6, v12 };
-    const auto v13 = ArrayValue(values1, SK_ARRAY_COUNT(values1), alloc);
+    const auto v13 = ArrayValue(values1, std::size(values1), alloc);
     check_value<ArrayValue>(reporter, v13, "["
                                                "false,"
                                                "\"\","
@@ -413,7 +418,7 @@ DEF_TEST(JSON_DOM_build, reporter) {
         { StringValue("key_01", 6, alloc), v7  },
         { StringValue("key_02", 6, alloc), v13 },
     };
-    const auto v14 = ObjectValue(members1, SK_ARRAY_COUNT(members1), alloc);
+    const auto v14 = ObjectValue(members1, std::size(members1), alloc);
     check_value<ObjectValue>(reporter, v14, "{"
                                                 "\"key_00\":42.75,"
                                                 "\"key_01\":\" foo \","
@@ -467,4 +472,66 @@ DEF_TEST(JSON_ParseNumber, reporter) {
         REPORTER_ASSERT(reporter, jnumber);
         REPORTER_ASSERT(reporter, SkScalarNearlyEqual(**jnumber, test.value, test.tolerance));
     }
+}
+
+DEF_TEST(JSON_Lookup, r) {
+    const char* json = R"({"foo": { "bar": { "baz": 100 }}})";
+    const DOM dom(json, strlen(json));
+    const Value& root = dom.root();
+
+    REPORTER_ASSERT(r, root.is<ObjectValue>());
+    REPORTER_ASSERT(r, root["foo"].is<ObjectValue>());
+    REPORTER_ASSERT(r, root["foo"]["bar"].is<ObjectValue>());
+    REPORTER_ASSERT(r, root["foo"]["bar"]["baz"].is<NumberValue>());
+
+    REPORTER_ASSERT(r, root["foozz"].is<NullValue>());
+    REPORTER_ASSERT(r, root["foozz"]["barzz"].is<NullValue>());
+    REPORTER_ASSERT(r, root["foozz"]["barzz"]["bazzz"].is<NullValue>());
+}
+
+DEF_TEST(JSON_Writable, r) {
+    const char* json = R"({"null": null, "num": 100})";
+    const DOM dom(json, strlen(json));
+    REPORTER_ASSERT(r, dom.root().is<ObjectValue>());
+    const ObjectValue& root = dom.root().as<ObjectValue>();
+
+    SkArenaAlloc alloc(4096);
+
+    REPORTER_ASSERT(r, root["null"].is<NullValue>());
+    Value& w1 = root.writable("null", alloc);
+    REPORTER_ASSERT(r, w1.is<NullValue>());
+    w1 = NumberValue(42);
+    REPORTER_ASSERT(r, root["null"].is<NumberValue>());
+    REPORTER_ASSERT(r, *root["null"].as<NumberValue>() == 42);
+
+    REPORTER_ASSERT(r, root["num"].is<NumberValue>());
+    Value& w2 = root.writable("num", alloc);
+    REPORTER_ASSERT(r, w2.is<NumberValue>());
+    w2 = StringValue("foo", 3, alloc);
+    REPORTER_ASSERT(r, root["num"].is<StringValue>());
+    REPORTER_ASSERT(r, root["num"].as<StringValue>().str() == "foo");
+
+    // new/insert semantics
+    REPORTER_ASSERT(r, root["new"].is<NullValue>());
+    REPORTER_ASSERT(r, root.size() == 2u);
+    Value& w3 = root.writable("new", alloc);
+    REPORTER_ASSERT(r, w3.is<NullValue>());
+    w3 = BoolValue(true);
+    REPORTER_ASSERT(r, root.size() == 3u);
+    REPORTER_ASSERT(r, root["new"].is<BoolValue>());
+    REPORTER_ASSERT(r, *root["new"].as<BoolValue>());
+
+    root.writable("newobj", alloc) = ObjectValue(nullptr, 0, alloc);
+    REPORTER_ASSERT(r, root.size() == 4u);
+    REPORTER_ASSERT(r, root["newobj"].is<ObjectValue>());
+    const ObjectValue& newobj = root["newobj"].as<ObjectValue>();
+    REPORTER_ASSERT(r, newobj.size() == 0u);
+
+    newobj.writable("newprop", alloc) = NumberValue(-1);
+    REPORTER_ASSERT(r, newobj.size() == 1u);
+    REPORTER_ASSERT(r, root["newobj"]["newprop"].is<NumberValue>());
+    REPORTER_ASSERT(r, *root["newobj"]["newprop"].as<NumberValue>() == -1);
+
+    REPORTER_ASSERT(r, root.toString() ==
+        SkString(R"({"null":42,"num":"foo","new":true,"newobj":{"newprop":-1}})"));
 }

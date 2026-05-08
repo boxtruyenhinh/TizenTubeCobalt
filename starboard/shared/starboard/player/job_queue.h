@@ -15,16 +15,17 @@
 #ifndef STARBOARD_SHARED_STARBOARD_PLAYER_JOB_QUEUE_H_
 #define STARBOARD_SHARED_STARBOARD_PLAYER_JOB_QUEUE_H_
 
+#include <condition_variable>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <utility>
 
-#include "starboard/common/condition_variable.h"
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
-#include "starboard/common/mutex.h"
 #include "starboard/common/time.h"
 #include "starboard/shared/internal_only.h"
-#include "starboard/thread.h"
+#include "starboard/shared/starboard/thread_checker.h"
 
 #ifndef __cplusplus
 #error "Only C++ files can include this header."
@@ -36,9 +37,6 @@
 // #define ENABLE_JOB_QUEUE_PROFILING 1
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
 
 // This class implements a job queue where jobs can be posted to it on any
 // thread and will be processed on one thread that this job queue is linked to.
@@ -65,9 +63,8 @@ class JobQueue {
 
   class JobOwner {
    public:
-    explicit JobOwner(JobQueue* job_queue = JobQueue::current())
-        : job_queue_(job_queue) {
-      SB_DCHECK(job_queue);
+    explicit JobOwner(JobQueue* job_queue) : job_queue_(job_queue) {
+      SB_CHECK(job_queue);
     }
     JobOwner(const JobOwner&) = delete;
     ~JobOwner() { CancelPendingJobs(); }
@@ -96,28 +93,20 @@ class JobQueue {
     enum DetachedState { kDetached };
 
     explicit JobOwner(DetachedState detached_state) : job_queue_(nullptr) {
-      SB_DCHECK(detached_state == kDetached);
+      SB_DCHECK_EQ(detached_state, kDetached);
     }
 
-    // Allow |JobOwner| created on another thread to run on the current thread
-    // if it is created with |kDetached|.
     // Note that this operation is not thread safe.  It is the caller's
     // responsibility to ensure that concurrency hasn't happened yet.
-    void AttachToCurrentThread() {
-      SB_DCHECK(job_queue_ == nullptr);
-      job_queue_ = JobQueue::current();
+    // This is used to associate a JobQueue with a JobOwner that was constructed
+    // in a detached state (e.g. with JobOwner(kDetached)).
+    void Attach(JobQueue* job_queue) {
+      SB_DCHECK_EQ(job_queue_, nullptr);
+      SB_CHECK(job_queue);
+      job_queue_ = job_queue;
     }
 
-    // If a class implementing JobOwner also holds the current thread JobQueue,
-    // that JobQueue will get deleted before the JobOwner dtor runs, which
-    // accesses job_queue_. To avoid making calls on a destroyed object
-    // job_queue_ must be detached before the subclass is destroyed.
-    void DetachFromCurrentThread() {
-      SB_DCHECK(job_queue_ != nullptr);
-      SB_DCHECK(BelongsToCurrentThread());
-      CancelPendingJobs();
-      job_queue_ = nullptr;
-    }
+    JobQueue* job_queue() const { return job_queue_; }
 
    private:
     JobQueue* job_queue_;
@@ -141,7 +130,6 @@ class JobQueue {
   void RunUntilIdle();
 
   bool BelongsToCurrentThread() const;
-  static JobQueue* current();
 
  private:
 #if ENABLE_JOB_QUEUE_PROFILING
@@ -171,9 +159,9 @@ class JobQueue {
   // be run.
   bool TryToRunOneJob(bool wait_for_next_job);
 
-  const SbThreadId thread_id_;
-  Mutex mutex_;
-  ConditionVariable condition_;
+  ThreadChecker thread_checker_;
+  std::mutex mutex_;
+  std::condition_variable condition_;
   int64_t current_job_token_ = JobToken::kInvalidToken + 1;
   TimeToJobRecordMap time_to_job_record_map_;
   bool stopped_ = false;
@@ -187,9 +175,6 @@ class JobQueue {
 #endif  // ENABLE_JOB_QUEUE_PROFILING
 };
 
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_JOB_QUEUE_H_

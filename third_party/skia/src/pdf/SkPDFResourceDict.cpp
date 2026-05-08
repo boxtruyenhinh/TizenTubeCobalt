@@ -5,9 +5,15 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkStream.h"
 #include "src/pdf/SkPDFResourceDict.h"
+
+#include "include/core/SkStream.h"
+#include "include/core/SkString.h"
+#include "include/private/base/SkAssert.h"
 #include "src/pdf/SkPDFTypes.h"
+
+#include <cstddef>
+#include <utility>
 
 // Verify that the values of enum ResourceType correspond to the expected values
 // as defined in the arrays below.
@@ -29,7 +35,7 @@ static char* get_resource_name(char dst[kMaxResourceNameLength], SkPDFResourceTy
         'X',  // kXObject
         'F'   // kFont
     };
-    SkASSERT((unsigned)type < SK_ARRAY_COUNT(kResourceTypePrefixes));
+    SkASSERT((unsigned)type < std::size(kResourceTypePrefixes));
     dst[0] = kResourceTypePrefixes[(unsigned)type];
     return SkStrAppendS32(dst + 1, key);
 }
@@ -49,7 +55,7 @@ static const char* resource_name(SkPDFResourceType type) {
         "XObject",
         "Font"
     };
-    SkASSERT((unsigned)type < SK_ARRAY_COUNT(kResourceTypeNames));
+    SkASSERT((unsigned)type < std::size(kResourceTypeNames));
     return kResourceTypeNames[(unsigned)type];
 }
 
@@ -74,7 +80,7 @@ static void add_subdict(const std::vector<SkPDFIndirectReference>& resourceList,
 static std::unique_ptr<SkPDFArray> make_proc_set() {
     auto procSets = SkPDFMakeArray();
     static const char kProcs[][7] = { "PDF", "Text", "ImageB", "ImageC", "ImageI"};
-    procSets->reserve(SK_ARRAY_COUNT(kProcs));
+    procSets->reserve(std::size(kProcs));
     for (const char* proc : kProcs) {
         procSets->appendName(proc);
     }

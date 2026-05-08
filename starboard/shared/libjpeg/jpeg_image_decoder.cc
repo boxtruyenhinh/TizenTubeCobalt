@@ -19,22 +19,20 @@
 #include <algorithm>
 #include <vector>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 #include "starboard/configuration.h"
-#include "starboard/file.h"
 #include "starboard/linux/shared/decode_target_internal.h"
 
 // Inhibit C++ name-mangling for libjpeg functions.
 extern "C" {
 // clang-format off
-#include "third_party/libjpeg_turbo/jpeglib.h"
-#include "third_party/libjpeg_turbo/jpegint.h"
+#include "third_party/libjpeg_turbo/src/jpeglib.h"
+#include "third_party/libjpeg_turbo/src/jpegint.h"
 // clang-format on
 }
 
 namespace starboard {
-namespace shared {
-namespace libjpeg {
 
 namespace {
 
@@ -231,7 +229,7 @@ bool DecodeProgressiveJPEG(jpeg_decompress_struct* info,
       // The output scan number is the notional scan being processed by the
       // output side. The decompressor will not allow output scan number to get
       // ahead of input scan number.
-      SB_DCHECK(info->input_scan_number >= info->output_scan_number);
+      SB_DCHECK_GE(info->input_scan_number, info->output_scan_number);
       // This scan pass is done, so reset the output scanline.
       info->output_scanline = 0;
       if (info->input_scan_number == info->output_scan_number) {
@@ -336,6 +334,4 @@ SbDecodeTarget Decode(SbDecodeTargetGraphicsContextProvider* context_provider,
                             height, decode_target_format);
 }
 
-}  // namespace libjpeg
-}  // namespace shared
 }  // namespace starboard

@@ -12,25 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/system.h"
+// clang-format on
 
-#include "sys/system_properties.h"
+#include <jni.h>
 
-#include "starboard/android/shared/jni_env_ext.h"
-#include "starboard/android/shared/jni_utils.h"
+#include "starboard/android/shared/starboard_bridge.h"
 #include "starboard/common/device_type.h"
 #include "starboard/common/log.h"
 #include "starboard/common/string.h"
+#include "sys/system_properties.h"
+#include "third_party/jni_zero/jni_zero.h"
 
 #define STRINGIZE_NO_EXPANSION(x) #x
 #define STRINGIZE(x) STRINGIZE_NO_EXPANSION(x)
 
-using starboard::android::shared::JniEnvExt;
-using starboard::android::shared::ScopedLocalJavaRef;
-
 namespace {
 
-const char kFriendlyName[] = "TizenTube";
+using jni_zero::AttachCurrentThread;
+using ::starboard::StarboardBridge;
+
+const char kFriendlyName[] = "Android";
 const char kUnknownValue[] = "unknown";
 
 // This is a format string template and the %s is meant to be replaced by
@@ -41,8 +44,9 @@ const char kPlatformNameFormat[] =
 bool CopyStringAndTestIfSuccess(char* out_value,
                                 int value_length,
                                 const char* from_value) {
-  if (strlen(from_value) + 1 > value_length)
+  if (strlen(from_value) + 1 > static_cast<size_t>(value_length)) {
     return false;
+  }
   starboard::strlcpy(out_value, from_value, value_length);
   return true;
 }
@@ -135,37 +139,27 @@ bool SbSystemGetProperty(SbSystemPropertyId property_id,
     case kSbSystemPropertySpeechApiKey:
       return false;
     case kSbSystemPropertyUserAgentAuxField: {
-      JniEnvExt* env = JniEnvExt::Get();
-      ScopedLocalJavaRef<jstring> aux_string(
-          env->CallStarboardObjectMethodOrAbort("getUserAgentAuxField",
-                                                "()Ljava/lang/String;"));
-
-      std::string utf_str = env->GetStringStandardUTFOrAbort(aux_string.Get());
-      bool success =
-          CopyStringAndTestIfSuccess(out_value, value_length, utf_str.c_str());
-      return success;
+      JNIEnv* env = AttachCurrentThread();
+      return CopyStringAndTestIfSuccess(
+          out_value, value_length,
+          StarboardBridge::GetInstance()->GetUserAgentAuxField(env).c_str());
     }
     case kSbSystemPropertyAdvertisingId: {
-      JniEnvExt* env = JniEnvExt::Get();
-      ScopedLocalJavaRef<jstring> id_string(
-          env->CallStarboardObjectMethodOrAbort("getAdvertisingId",
-                                                "()Ljava/lang/String;"));
-      std::string utf_str = env->GetStringStandardUTFOrAbort(id_string.Get());
-      return CopyStringAndTestIfSuccess(out_value, value_length,
-                                        utf_str.c_str());
+      JNIEnv* env = AttachCurrentThread();
+      return CopyStringAndTestIfSuccess(
+          out_value, value_length,
+          StarboardBridge::GetInstance()->GetAdvertisingId(env).c_str());
     }
     case kSbSystemPropertyLimitAdTracking: {
+      JNIEnv* env = AttachCurrentThread();
       bool limit_ad_tracking_enabled =
-          JniEnvExt::Get()->CallStarboardBooleanMethodOrAbort(
-              "getLimitAdTracking", "()Z") == JNI_TRUE;
+          StarboardBridge::GetInstance()->GetLimitAdTracking(env);
       return CopyStringAndTestIfSuccess(out_value, value_length,
                                         limit_ad_tracking_enabled ? "1" : "0");
     }
-#if SB_API_VERSION >= 15
     case kSbSystemPropertyDeviceType:
       return CopyStringAndTestIfSuccess(out_value, value_length,
                                         starboard::kSystemDeviceTypeAndroidTV);
-#endif
     default:
       SB_DLOG(WARNING) << __FUNCTION__
                        << ": Unrecognized property: " << property_id;

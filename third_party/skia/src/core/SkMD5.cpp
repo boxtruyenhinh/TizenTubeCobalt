@@ -13,8 +13,11 @@
 //SK_CPU_LENDIAN allows 32 bit <=> 8 bit conversions without copies (if alligned).
 //SK_CPU_FAST_UNALIGNED_ACCESS allows 32 bit <=> 8 bit conversions without copies if SK_CPU_LENDIAN.
 
+#include "src/base/SkUtils.h"
 #include "src/core/SkMD5.h"
-#include <string.h>
+
+#include "include/private/base/SkFeatures.h"
+#include "include/private/base/SkMalloc.h"
 
 /** MD5 basic transformation. Transforms state based on block. */
 static void transform(uint32_t state[4], const uint8_t block[64]);
@@ -23,7 +26,7 @@ static void transform(uint32_t state[4], const uint8_t block[64]);
 static void encode(uint8_t output[16], const uint32_t input[4]);
 
 /** Encodes input into output (little endian 64 bit value). */
-static void encode(uint8_t output[8], const uint64_t input);
+static void encode(uint8_t output[8], uint64_t input);
 
 /** Decodes input (4 little endian 32 bit values) into storage, if required. */
 static const uint32_t* decode(uint32_t storage[16], const uint8_t input[64]);
@@ -44,7 +47,7 @@ bool SkMD5::write(const void* buf, size_t inputLength) {
     unsigned int inputIndex;
     if (inputLength >= bufferAvailable) {
         if (bufferIndex) {
-            memcpy(&this->buffer[bufferIndex], input, bufferAvailable);
+            sk_careful_memcpy(&this->buffer[bufferIndex], input, bufferAvailable);
             transform(this->state, this->buffer);
             inputIndex = bufferAvailable;
         } else {
@@ -60,7 +63,7 @@ bool SkMD5::write(const void* buf, size_t inputLength) {
         inputIndex = 0;
     }
 
-    memcpy(&this->buffer[bufferIndex], &input[inputIndex], inputLength - inputIndex);
+    sk_careful_memcpy(&this->buffer[bufferIndex], &input[inputIndex], inputLength - inputIndex);
 
     this->byteCount += inputLength;
     return true;
@@ -94,6 +97,24 @@ SkMD5::Digest SkMD5::finish() {
     memset(this, 0, sizeof(*this));
 #endif
     return digest;
+}
+
+static SkString to_hex_string(const uint8_t* data, const char* hexDigits) {
+    SkString hexString(2 * sizeof(SkMD5::Digest::data));
+    for (size_t i = 0; i < sizeof(SkMD5::Digest::data); ++i) {
+        uint8_t byte = data[i];
+        hexString[2 * i + 0] = hexDigits[byte >> 4];
+        hexString[2 * i + 1] = hexDigits[byte & 0xF];
+    }
+    return hexString;
+}
+
+SkString SkMD5::Digest::toHexString() const {
+    return to_hex_string(data, SkHexadecimalDigits::gUpper);
+}
+
+SkString SkMD5::Digest::toLowercaseHexString() const {
+    return to_hex_string(data, SkHexadecimalDigits::gLower);
 }
 
 struct F { uint32_t operator()(uint32_t x, uint32_t y, uint32_t z) {
@@ -225,7 +246,7 @@ static void encode(uint8_t output[16], const uint32_t input[4]) {
     }
 }
 
-static void encode(uint8_t output[8], const uint64_t input) {
+static void encode(uint8_t output[8], uint64_t input) {
     output[0] = (uint8_t) (input        & 0xff);
     output[1] = (uint8_t)((input >>  8) & 0xff);
     output[2] = (uint8_t)((input >> 16) & 0xff);

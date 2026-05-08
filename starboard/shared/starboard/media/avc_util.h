@@ -15,17 +15,16 @@
 #ifndef STARBOARD_SHARED_STARBOARD_MEDIA_AVC_UTIL_H_
 #define STARBOARD_SHARED_STARBOARD_MEDIA_AVC_UTIL_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 #include "starboard/common/ref_counted.h"
 #include "starboard/shared/starboard/player/input_buffer_internal.h"
-#include "starboard/types.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace media {
 
 // Parse avc nalus produced by the Cobalt demuxer.
 // It makes the following assumptions:
@@ -61,11 +60,11 @@ class AvcParameterSets {
   }
 
   const std::vector<uint8_t>& first_sps() const {
-    SB_DCHECK(first_sps_index_ != -1);
+    SB_DCHECK_NE(first_sps_index_, -1);
     return parameter_sets_[first_sps_index_];
   }
   const std::vector<uint8_t>& first_pps() const {
-    SB_DCHECK(first_pps_index_ != -1);
+    SB_DCHECK_NE(first_pps_index_, -1);
     return parameter_sets_[first_pps_index_];
   }
 
@@ -86,7 +85,7 @@ class AvcParameterSets {
   size_t combined_size_in_bytes() const { return combined_size_in_bytes_; }
 
   size_t combined_size_in_bytes_with_optionals() const {
-    return combined_size_in_bytes_ + optional_combined_size_in_bytes_;
+    return combined_size_in_bytes_ + combined_size_with_optionals_in_bytes_;
   }
 
   std::vector<uint8_t> GetAllSpses() const;
@@ -104,7 +103,7 @@ class AvcParameterSets {
   int first_pps_index_ = -1;
   std::vector<std::vector<uint8_t>> parameter_sets_;
   size_t combined_size_in_bytes_ = 0;
-  size_t optional_combined_size_in_bytes_ = 0;
+  size_t combined_size_with_optionals_in_bytes_ = 0;
 };
 
 // The function will fail only when the input doesn't start with an Annex B
@@ -113,9 +112,6 @@ bool ConvertAnnexBToAvcc(const uint8_t* annex_b_source,
                          size_t size,
                          uint8_t* avcc_destination);
 
-}  // namespace media
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_MEDIA_AVC_UTIL_H_

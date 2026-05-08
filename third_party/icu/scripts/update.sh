@@ -20,13 +20,21 @@ readonly major_minor_version=(${version//-/ })
 # Just the major part of the ICU version number, e.g. "68".
 readonly major_version="${major_minor_version[0]}"
 
-repoprefix="https://github.com/unicode-org/icu/tags/release-"
-repo="${repoprefix}${version}/icu4c"
+tmp_dir=~/tmp/icu-${version}
+repo_url="https://github.com/unicode-org/icu/archive/refs/tags/release-${version}.tar.gz"
+tarball="${tmp_dir}/source.tar.gz"
 treeroot="$(dirname "$0")/.."
 
 # Check if the repo for $version is available.
-svn ls "${repo}" > /dev/null 2>&1  || \
-    { echo "${repo} does not exist." >&2; exit 2; }
+if ! wget --spider $repo_url 2>/dev/null; then
+  echo "$repo_url does not exists"
+  exit 1
+fi
+
+echo "Download ${version} from the upstream repository to tmp directory"
+rm -rf $tmp_dir
+mkdir -p $tmp_dir
+curl -L $repo_url --output $tarball
 
 echo "Cleaning up source/ ..."
 for file in source LICENSE license.html readme.html APIChangeReport.html
@@ -34,14 +42,20 @@ do
   rm -rf "${treeroot}/${file}"
 done
 
-echo "Download ${version} from the upstream repository ..."
-for file in source LICENSE license.html readme.html APIChangeReport.html
+echo "Extracting ${version} to ICU tree root"
+for file in source license.html readme.html APIChangeReport.html
 do
-  svn export --native-eol LF "${repo}/${file}" "${treeroot}/${file}"
+  tar -xf $tarball -C $treeroot "icu-release-${version}/icu4c/${file}" --strip-components=2
 done
 
+echo "Extracting License to ICU tree root"
+tar -xf $tarball -C $treeroot "icu-release-${version}/LICENSE" --strip-components=1
+
+echo "Cleaning up tmp directory"
+rm -rf $tmp_dir
+
 echo "deleting directories we don't care about ..."
-for d in layoutex data/xml test allinone
+for d in layoutex data/xml allinone
 do
   rm -rf "${treeroot}/source/${d}"
 done
@@ -56,9 +70,9 @@ do
   git checkout -- "${treeroot}/source/data/"${line}
 done < "${treeroot}/scripts/data_files_to_preserve.txt"
 
-echo "Patching configure to work without source/{layoutex,test}  ..."
+echo "Patching configure to work without source/{layoutex}  ..."
 sed -i.orig -e '/^ac_config_files=/ s:\ layoutex/Makefile::g' \
-  -e '/^ac_config_files=/ s: test/.* samples/M: samples/M:' \
+  -e '/^ac_config_files=/ s: samples/M: samples/M:' \
   "${treeroot}/source/configure"
 rm -f "${treeroot}/source/configure.orig"
 
@@ -129,17 +143,12 @@ sed   -i \
       /source\/common/ d
    }' icu.gypi
 
-# Update the major version number registered in version.gni.
-cat << EOF > version.gni
-# Copyright 2020 The Chromium Authors. All rights reserved.
-# Use of this source code is governed by a BSD-style license that can be
-# found in the LICENSE file.
-
-declare_args() {
-  # Contains the major version number of the ICU library, for dependencies that
-  # need different configuration based on the library version. Currently this
-  # is only useful in Fuchsia.
-  icu_major_version_number = "${major_version}"
+# Update the major version number registered in version.json.
+# The version is written out into a text file to allow other tools to
+# read it without parsing .gni files.
+cat << EOF > version.json
+{
+ "major_version": "${major_version}"
 }
 EOF
 

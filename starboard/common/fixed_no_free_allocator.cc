@@ -21,10 +21,9 @@
 #include "starboard/common/pointer_arithmetic.h"
 
 namespace starboard {
-namespace common {
 
 FixedNoFreeAllocator::FixedNoFreeAllocator(void* memory_start,
-                                           std::size_t memory_size)
+                                           size_t memory_size)
     : memory_start_(memory_start),
       memory_end_(AsPointer(AsInteger(memory_start) + memory_size)) {
   SB_CHECK(IsAligned(memory_start, kMinAlignment));
@@ -40,20 +39,22 @@ void FixedNoFreeAllocator::Free(void* memory) {
   }
 }
 
-std::size_t FixedNoFreeAllocator::GetCapacity() const {
+size_t FixedNoFreeAllocator::GetCapacity() const {
   return AsInteger(memory_end_) - AsInteger(memory_start_);
 }
 
-std::size_t FixedNoFreeAllocator::GetAllocated() const {
+size_t FixedNoFreeAllocator::GetAllocated() const {
   return AsInteger(next_memory_) - AsInteger(memory_start_);
 }
 
-void FixedNoFreeAllocator::PrintAllocations() const {
+void FixedNoFreeAllocator::PrintAllocations(
+    bool align_allocated_size,
+    int max_allocations_to_print) const {
   SB_NOTIMPLEMENTED();
 }
 
-void* FixedNoFreeAllocator::Allocate(std::size_t* size,
-                                     std::size_t alignment,
+void* FixedNoFreeAllocator::Allocate(size_t* size,
+                                     size_t alignment,
                                      bool align_pointer) {
   // Find the next aligned memory available.
   uint8_t* aligned_next_memory =
@@ -78,5 +79,4 @@ void* FixedNoFreeAllocator::Allocate(std::size_t* size,
   return memory_pointer;
 }
 
-}  // namespace common
 }  // namespace starboard

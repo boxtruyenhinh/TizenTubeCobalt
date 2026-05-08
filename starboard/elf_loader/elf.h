@@ -23,9 +23,10 @@
 #error "Only C++ files can include this header."
 #endif
 
-#include "starboard/types.h"
+#include <cstdint>
 
-namespace starboard {
+#include "starboard/configuration.h"
+
 namespace elf_loader {
 
 // 32 bit data types
@@ -687,5 +688,4 @@ typedef enum RelocationTypes {
 #define SHN_UNDEF 0
 
 }  // namespace elf_loader
-}  // namespace starboard
 #endif  // STARBOARD_ELF_LOADER_ELF_H_

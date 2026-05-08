@@ -15,19 +15,16 @@
 #ifndef STARBOARD_SHARED_STARBOARD_FILE_ATOMIC_REPLACE_WRITE_FILE_H_
 #define STARBOARD_SHARED_STARBOARD_FILE_ATOMIC_REPLACE_WRITE_FILE_H_
 
-#include "starboard/configuration.h"
-#include "starboard/types.h"
+#include <cstdint>
 
-namespace starboard {
-namespace shared {
+#include "starboard/configuration.h"
+
 namespace starboard {
 
 bool SbFileAtomicReplaceWriteFile(const char* path,
                                   const char* data,
                                   int64_t data_size);
 
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_FILE_ATOMIC_REPLACE_WRITE_FILE_H_

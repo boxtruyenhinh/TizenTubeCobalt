@@ -9,7 +9,6 @@
 #if defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include "starboard/shared/win32/posix_emu/include/remove_problematic_windows_macros.h"
 #else
 #include <arpa/inet.h>
 #include <netinet/in.h>

@@ -87,7 +87,7 @@ tr{
         CP{"Clipperton Adası"}
         CR{"Kosta Rika"}
         CU{"Küba"}
-        CV{"Cape Verde"}
+        CV{"Cabo Verde"}
         CW{"Curaçao"}
         CX{"Christmas Adası"}
         CY{"Kıbrıs"}
@@ -298,6 +298,9 @@ tr{
         ZW{"Zimbabve"}
         ZZ{"Bilinmeyen Bölge"}
     }
+    Countries%chagos{
+        IO{"Chagos Takımadaları"}
+    }
     Countries%short{
         GB{"BK"}
         UN{"BM"}
@@ -308,6 +311,7 @@ tr{
         CG{"Kongo Cumhuriyeti"}
         CI{"Fildişi Sahili"}
         CZ{"Çek Cumhuriyeti"}
+        NZ{"Aotearoa Yeni Zelanda"}
         SZ{"Svaziland"}
         TL{"Doğu Timor"}
     }

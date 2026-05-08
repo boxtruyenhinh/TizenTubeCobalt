@@ -258,6 +258,9 @@ be{
         "America:Chihuahua"{
             ec{"Чыўаўа"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"Сьюдад-Хуарэс"}
+        }
         "America:Coral_Harbour"{
             ec{"Атыкокан"}
         }
@@ -1223,6 +1226,9 @@ be{
         "Pacific:Johnston"{
             ec{"Джонстан"}
         }
+        "Pacific:Kanton"{
+            ec{"Кантон"}
+        }
         "Pacific:Kiritimati"{
             ec{"Кірыцімаці"}
         }
@@ -1883,10 +1889,9 @@ be{
             lg{"Екацярынбургскі час"}
             ls{"Екацярынбургскі стандартны час"}
         }
-        fallbackFormat{"{1} ({0})"}
-        gmtFormat{"GMT{0}"}
-        gmtZeroFormat{"GMT"}
-        hourFormat{"+HH:mm;-HH:mm"}
+        "meta:Yukon"{
+            ls{"Час Юкана"}
+        }
         regionFormat{"Час: {0}"}
         regionFormatDaylight{"Летні час: {0}"}
         regionFormatStandard{"Стандартны час: {0}"}

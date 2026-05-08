@@ -7,7 +7,7 @@
 #include "bench/Benchmark.h"
 #include "include/core/SkRegion.h"
 #include "include/core/SkString.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 
 static bool union_proc(SkRegion& a, SkRegion& b) {
     SkRegion result;
@@ -99,7 +99,7 @@ public:
     }
 
     bool isSuitableFor(Backend backend) override {
-        return backend == kNonRendering_Backend;
+        return backend == Backend::kNonRendering;
     }
 
 protected:

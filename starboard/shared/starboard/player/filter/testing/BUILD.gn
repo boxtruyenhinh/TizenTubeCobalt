@@ -13,14 +13,11 @@
 # limitations under the License.
 
 if (current_toolchain == starboard_toolchain) {
-  target(starboard_level_gtest_target_type, "player_filter_tests") {
+  source_set("player_filter_tests") {
     # build_loader = false
     testonly = true
 
     sources = [
-      "//starboard/common/test_main.cc",
-      "//starboard/testing/fake_graphics_context_provider.cc",
-      "//starboard/testing/fake_graphics_context_provider.h",
       "adaptive_audio_decoder_test.cc",
       "audio_channel_layout_mixer_test.cc",
       "audio_decoder_test.cc",
@@ -35,6 +32,7 @@ if (current_toolchain == starboard_toolchain) {
       "video_decoder_test_fixture.h",
       "video_frame_cadence_pattern_generator_test.cc",
       "video_frame_rate_estimator_test.cc",
+      "wsola_internal_test.cc",
     ]
 
     public_deps = [
@@ -45,27 +43,30 @@ if (current_toolchain == starboard_toolchain) {
     ]
 
     deps = cobalt_platform_dependencies
-
-    data_deps =
-        [ "//starboard/shared/starboard/player:player_download_test_data" ]
+    deps += [
+      "//$starboard_path:starboard_platform",
+      "//starboard/egl_and_gles:buildflags",
+      "//starboard/shared/starboard/player:player_test_data",
+      "//starboard/shared/starboard/player/filter:filter_based_player_sources",
+      "//starboard/testing:fake_graphics_context_provider",
+    ]
   }
 
-  if (host_os != "win") {
-    target(final_executable_type, "player_filter_benchmarks") {
-      testonly = true
+  target(final_executable_type, "player_filter_benchmarks") {
+    testonly = true
 
-      sources = [
-        "//starboard/common/benchmark_main.cc",
-        "audio_decoder_benchmark.cc",
-      ]
+    sources = [
+      "//starboard/common/benchmark_main.cc",
+      "audio_decoder_benchmark.cc",
+    ]
 
-      public_deps = [
-        ":test_util",
-        "//third_party/google_benchmark",
-      ]
+    public_deps = [
+      ":test_util",
+      "//third_party/google_benchmark",
+    ]
 
-      deps = cobalt_platform_dependencies
-    }
+    deps = cobalt_platform_dependencies
+    deps += [ "//$starboard_path:starboard_platform" ]
   }
 
   static_library("test_util") {
@@ -81,9 +82,14 @@ if (current_toolchain == starboard_toolchain) {
     public_deps = [
       "//starboard:starboard_group",
       "//starboard/shared/starboard/media:media_util",
-      "//starboard/shared/starboard/player:player_download_test_data",
+      "//starboard/shared/starboard/player:player_test_data",
       "//starboard/shared/starboard/player:video_dmp",
       "//testing/gtest",
+    ]
+
+    deps = [
+      "//$starboard_path:starboard_platform",
+      "//starboard/shared/starboard/player/filter:filter_based_player_sources",
     ]
   }
 }

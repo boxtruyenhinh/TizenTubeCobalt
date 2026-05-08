@@ -17,7 +17,9 @@
 
 #include <libde265/de265.h>
 
+#include <limits>
 #include <memory>
+#include <mutex>
 #include <queue>
 #include <string>
 
@@ -33,22 +35,22 @@
 #include "starboard/thread.h"
 
 namespace starboard {
-namespace shared {
-namespace de265 {
 
-class VideoDecoder : public starboard::player::filter::VideoDecoder,
-                     private starboard::player::JobQueue::JobOwner {
+class De265VideoDecoder : public VideoDecoder, private JobQueue::JobOwner {
  public:
-  VideoDecoder(SbMediaVideoCodec video_codec,
-               SbPlayerOutputMode output_mode,
-               SbDecodeTargetGraphicsContextProvider*
-                   decode_target_graphics_context_provider);
-  ~VideoDecoder() override;
+  De265VideoDecoder(JobQueue* job_queue,
+                    SbMediaVideoCodec video_codec,
+                    SbPlayerOutputMode output_mode,
+                    SbDecodeTargetGraphicsContextProvider*
+                        decode_target_graphics_context_provider);
+  ~De265VideoDecoder() override;
 
   void Initialize(const DecoderStatusCB& decoder_status_cb,
                   const ErrorCB& error_cb) override;
   size_t GetPrerollFrameCount() const override { return 8; }
-  int64_t GetPrerollTimeout() const override { return kSbInt64Max; }
+  int64_t GetPrerollTimeout() const override {
+    return std::numeric_limits<int64_t>::max();
+  }
   size_t GetMaxNumberOfCachedFrames() const override { return 12; }
 
   void WriteInputBuffers(const InputBuffers& input_buffers) override;
@@ -56,9 +58,6 @@ class VideoDecoder : public starboard::player::filter::VideoDecoder,
   void Reset() override;
 
  private:
-  typedef ::starboard::shared::starboard::player::filter::CpuVideoFrame
-      CpuVideoFrame;
-
   void ReportError(const std::string& error_message);
 
   // The following four functions are only called on the decoder thread except
@@ -85,7 +84,7 @@ class VideoDecoder : public starboard::player::filter::VideoDecoder,
   bool error_occurred_ = false;
 
   // Working thread to avoid lengthy decoding work block the player thread.
-  starboard::player::ScopedJobThreadPtr decoder_thread_;
+  std::unique_ptr<JobThread> decoder_thread_;
 
   // Decode-to-texture related state.
   SbPlayerOutputMode output_mode_;
@@ -101,13 +100,11 @@ class VideoDecoder : public starboard::player::filter::VideoDecoder,
   // to obtain the current decode target (which ultimately ends up being a
   // copy of |decode_target_|), we need to safe-guard access to |decode_target_|
   // and we do so through this mutex.
-  Mutex decode_target_mutex_;
+  std::mutex decode_target_mutex_;
 
   std::queue<scoped_refptr<CpuVideoFrame>> frames_;
 };
 
-}  // namespace de265
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_LIBDE265_DE265_VIDEO_DECODER_H_

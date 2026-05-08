@@ -11,7 +11,7 @@
 #include <string>
 
 #include "net/base/completion_once_callback.h"
-#if defined(STARBOARD)
+#if BUILDFLAG(IS_COBALT)
 #include "net/base/io_buffer.h"
 #endif
 #include "net/base/net_export.h"
@@ -41,12 +41,24 @@ class NET_EXPORT Socket {
   virtual int Read(IOBuffer* buf,
                    int buf_len,
                    CompletionOnceCallback callback) = 0;
-#if defined(STARBOARD)
+
+// The structs' raw pointers (char* buffer and ReadPacketResult* packets) are both 
+// safely deallocated when the QuicChromiumPacketReader itself is destroyed. It 
+// calls ReadPacketResults' destructor, which safely deallocates ReadPacketResult* 
+// buffer and also frees the scoped_refptr<IOBufferWithSize> buffer. As used in 
+// udp_socket_posix.cc, this buffer holds all of the allocated memory which is then 
+// divided into smaller chunks with multiple ReadPacketResult char* buffer pointers 
+// point to. Thus, when the scoped_refptr<IOBufferWithSize> buffer is freed, it also 
+// frees the char* pointers. 
+#if BUILDFLAG(IS_COBALT)
   struct ReadPacketResult {
-    char* buffer;
+    RAW_PTR_EXCLUSION char* buffer;
     int result;
   };
   struct ReadPacketResults {
+    ReadPacketResults();
+    ~ReadPacketResults();
+
     void clear() {
       buffer = nullptr;
       result = 0;
@@ -56,7 +68,7 @@ class NET_EXPORT Socket {
     scoped_refptr<IOBufferWithSize> buffer;
     int result = 0;
     int packet_buffer_size = 0;
-    ReadPacketResult* packets = nullptr;
+    RAW_PTR_EXCLUSION ReadPacketResult* packets = nullptr;
   };
   virtual int ReadMultiplePackets(ReadPacketResults* results,
                                   int read_buffer_size,

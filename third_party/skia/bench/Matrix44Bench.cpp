@@ -8,7 +8,7 @@
 #include "bench/Benchmark.h"
 #include "include/core/SkM44.h"
 #include "include/core/SkString.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkMatrixPriv.h"
 
 class M4Bench : public Benchmark {
@@ -27,7 +27,7 @@ public:
     }
 
     bool isSuitableFor(Backend backend) override {
-        return backend == kNonRendering_Backend;
+        return backend == Backend::kNonRendering;
     }
 
     virtual void performTest() = 0;
@@ -193,7 +193,7 @@ public:
         fName.printf("mapRect_%s_%s", name, typeName);
     }
 
-    bool isSuitableFor(Backend backend) override { return backend == kNonRendering_Backend; }
+    bool isSuitableFor(Backend backend) override { return backend == Backend::kNonRendering; }
 
     virtual void performTest() = 0;
 

@@ -34,10 +34,7 @@ def _subprocess(command, working_directory):
   try:
     # shell=True for Windows to be able to find git in the PATH.
     subprocess.check_output(
-        ' '.join(command),
-        shell=True,
-        cwd=working_directory,
-        stderr=subprocess.STDOUT)
+        command, cwd=working_directory, stderr=subprocess.STDOUT)
     return True
   except subprocess.CalledProcessError as e:
     logging.warning('%s: \"%s\" failed. Return Code: %d', working_directory,

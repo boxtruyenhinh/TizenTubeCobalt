@@ -16,13 +16,10 @@
 
 #include <cmath>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 VideoFrameRateEstimator::VideoFrameRateEstimator() {
   Reset();
@@ -55,7 +52,7 @@ void VideoFrameRateEstimator::Reset() {
 void VideoFrameRateEstimator::CalculateInitialFrameRate(
     const Frames& frames,
     int64_t previous_frame_duration) {
-  SB_DCHECK(frame_rate_ == kInvalidFrameRate);
+  SB_DCHECK_EQ(frame_rate_, kInvalidFrameRate);
   SB_DCHECK(!frames.empty());
   SB_DCHECK(frames.size() >= 2 || previous_frame_duration > 0);
 
@@ -76,7 +73,7 @@ void VideoFrameRateEstimator::CalculateInitialFrameRate(
 
     auto current_frame_duration =
         (*next)->timestamp() - (*current)->timestamp();
-    SB_DCHECK(current_frame_duration > 0);
+    SB_DCHECK_GT(current_frame_duration, 0);
 
     if (number_of_frame_durations_accumulated_ == 0) {
       accumulated_frame_durations_ = current_frame_duration;
@@ -113,7 +110,7 @@ void VideoFrameRateEstimator::CalculateInitialFrameRate(
 }
 
 void VideoFrameRateEstimator::RefineFrameRate(const Frames& frames) {
-  SB_DCHECK(frame_rate_ != kInvalidFrameRate);
+  SB_DCHECK_NE(frame_rate_, kInvalidFrameRate);
   SB_DCHECK(!frames.empty());
 
   if (frames.front()->is_end_of_stream()) {
@@ -144,8 +141,4 @@ void VideoFrameRateEstimator::RefineFrameRate(const Frames& frames) {
   CalculateInitialFrameRate(frames, last_frame_duration);
 }
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

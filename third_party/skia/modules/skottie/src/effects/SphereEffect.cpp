@@ -5,23 +5,48 @@
  * found in the LICENSE file.
  */
 
-#include "modules/skottie/src/effects/Effects.h"
-
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkM44.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkShader.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTileMode.h"
 #include "include/effects/SkRuntimeEffect.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkTPin.h"
 #include "modules/skottie/src/Adapter.h"
-#include "modules/skottie/src/SkottieJson.h"
+#include "modules/skottie/src/SkottiePriv.h"
 #include "modules/skottie/src/SkottieValue.h"
+#include "modules/skottie/src/effects/Effects.h"
+#include "modules/sksg/include/SkSGNode.h"
 #include "modules/sksg/include/SkSGRenderNode.h"
 
 #include <array>
+#include <cmath>
+#include <cstdio>
+#include <utility>
+#include <vector>
+
+namespace skjson {
+class ArrayValue;
+}
+namespace sksg {
+class InvalidationController;
+}
 
 namespace skottie::internal {
-
-#ifdef SK_ENABLE_SKSL
-
-namespace  {
+namespace {
 
 // This shader maps its child shader onto a sphere.  To simplify things, we set it up such that:
 //
@@ -44,42 +69,42 @@ namespace  {
 //       if this proves to be problematic, we could expand the implementation to blend both sides
 //       in one pass.
 //
-static constexpr char gSphereSkSL[] = R"(
-    uniform shader  child;
+static constexpr char gSphereSkSL[] =
+    "uniform shader child;"
 
-    uniform half3x3 rot_matrix;
-    uniform half2   child_scale;
-    uniform half    side_select;
+    "uniform half3x3 rot_matrix;"
+    "uniform half2 child_scale;"
+    "uniform half side_select;"
 
     // apply_light()
-    %s
+    "%s"
 
-    half3 to_sphere(half3 EYE) {
-        half eye_z2 = EYE.z*EYE.z;
+    "half3 to_sphere(half3 EYE) {"
+        "half eye_z2 = EYE.z*EYE.z;"
 
-        half a = dot(EYE, EYE),
-             b = -2*eye_z2,
-             c = eye_z2 - 1,
-             t = (-b + side_select*sqrt(b*b - 4*a*c))/(2*a);
+        "half a = dot(EYE, EYE),"
+             "b = -2*eye_z2,"
+             "c = eye_z2 - 1,"
+             "t = (-b + side_select*sqrt(b*b - 4*a*c))/(2*a);"
 
-        return half3(0, 0, -EYE.z) + EYE*t;
-    }
+        "return half3(0, 0, -EYE.z) + EYE*t;"
+    "}"
 
-    half4 main(float2 xy) {
-        half3 EYE = half3(xy, -5.5),
-                N = to_sphere(EYE),
-               RN = rot_matrix*N;
+    "half4 main(float2 xy) {"
+        "half3 EYE = half3(xy, -5.5),"
+                "N = to_sphere(EYE),"
+               "RN = rot_matrix*N;"
 
-        half kRPI = 1/3.1415927;
+        "half kRPI = 1/3.1415927;"
 
-        half2 UV = half2(
-            0.5 + kRPI * 0.5 * atan(RN.x, RN.z),
-            0.5 + kRPI * asin(RN.y)
-        );
+        "half2 UV = half2("
+            "0.5 + kRPI * 0.5 * atan(RN.x, RN.z),"
+            "0.5 + kRPI * asin(RN.y)"
+        ");"
 
-        return apply_light(EYE, N, child.eval(UV*child_scale));
-    }
-)";
+        "return apply_light(EYE, N, child.eval(UV*child_scale));"
+    "}"
+;
 
 // CC Sphere uses a Phong-like lighting model:
 //
@@ -95,36 +120,36 @@ static constexpr char gSphereSkSL[] = R"(
 // components are not used.
 //
 // TODO: "metal" and "reflective" parameters are ignored.
-static constexpr char gBasicLightSkSL[] = R"(
-    uniform half  l_coeff_ambient;
+static constexpr char gBasicLightSkSL[] =
+    "uniform half l_coeff_ambient;"
 
-    half4 apply_light(half3 EYE, half3 N, half4 c) {
-        c.rgb *= l_coeff_ambient;
-        return c;
-    }
-)";
+    "half4 apply_light(half3 EYE, half3 N, half4 c) {"
+        "c.rgb *= l_coeff_ambient;"
+        "return c;"
+    "}"
+;
 
-static constexpr char gFancyLightSkSL[] = R"(
-    uniform half3 l_vec;
-    uniform half3 l_color;
-    uniform half  l_coeff_ambient;
-    uniform half  l_coeff_diffuse;
-    uniform half  l_coeff_specular;
-    uniform half  l_specular_exp;
+static constexpr char gFancyLightSkSL[] =
+    "uniform half3 l_vec;"
+    "uniform half3 l_color;"
+    "uniform half l_coeff_ambient;"
+    "uniform half l_coeff_diffuse;"
+    "uniform half l_coeff_specular;"
+    "uniform half l_specular_exp;"
 
-    half4 apply_light(half3 EYE, half3 N, half4 c) {
-        half3 LR = reflect(-l_vec*side_select, N);
-        half s_base = max(dot(normalize(EYE), LR), 0),
+    "half4 apply_light(half3 EYE, half3 N, half4 c) {"
+        "half3 LR = reflect(-l_vec*side_select, N);"
+        "half s_base = max(dot(normalize(EYE), LR), 0),"
 
-        a = l_coeff_ambient,
-        d = l_coeff_diffuse  * max(dot(l_vec, N), 0),
-        s = l_coeff_specular * saturate(pow(s_base, l_specular_exp));
+        "a = l_coeff_ambient,"
+        "d = l_coeff_diffuse * max(dot(l_vec, N), 0),"
+        "s = l_coeff_specular * saturate(pow(s_base, l_specular_exp));"
 
-        c.rgb = (a + d*l_color)*c.rgb + s*l_color;
+        "c.rgb = (a + d*l_color)*c.rgb + s*l_color*c.a;"
 
-        return c;
-    }
-)";
+        "return c;"
+    "}"
+;
 
 static sk_sp<SkRuntimeEffect> sphere_fancylight_effect() {
     static const SkRuntimeEffect* effect =
@@ -401,7 +426,7 @@ private:
                 fRotOrder = 1,
                 fRender   = 1;
 
-    VectorValue fLightColor;
+    ColorValue  fLightColor;
     ScalarValue fLightIntensity =   0,
                 fLightHeight    =   0,
                 fLightDirection =   0,
@@ -415,18 +440,11 @@ private:
 
 } // namespace
 
-#endif  // SK_ENABLE_SKSL
-
 sk_sp<sksg::RenderNode> EffectBuilder::attachSphereEffect(
         const skjson::ArrayValue& jprops, sk_sp<sksg::RenderNode> layer) const {
-#ifdef SK_ENABLE_SKSL
     auto sphere = sk_make_sp<SphereNode>(std::move(layer), fLayerSize);
 
     return fBuilder->attachDiscardableAdapter<SphereAdapter>(jprops, fBuilder, std::move(sphere));
-#else
-    // TODO(skia:12197)
-    return layer;
-#endif
 }
 
 } // namespace skottie::internal

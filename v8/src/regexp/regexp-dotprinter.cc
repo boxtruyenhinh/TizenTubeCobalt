@@ -4,6 +4,7 @@
 
 #include "src/regexp/regexp-dotprinter.h"
 
+#include "src/base/strings.h"
 #include "src/regexp/regexp-compiler.h"
 #include "src/utils/ostreams.h"
 
@@ -12,8 +13,6 @@ namespace internal {
 
 // -------------------------------------------------------------------
 // Dot/dotty output
-
-#ifdef DEBUG
 
 class DotPrinterImpl : public NodeVisitor {
  public:
@@ -62,8 +61,7 @@ void DotPrinterImpl::PrintOnFailure(RegExpNode* from, RegExpNode* on_failure) {
 
 class AttributePrinter {
  public:
-  explicit AttributePrinter(std::ostream& os)  // NOLINT
-      : os_(os), first_(true) {}
+  explicit AttributePrinter(std::ostream& os) : os_(os), first_(true) {}
   void PrintSeparator() {
     if (first_) {
       first_ = false;
@@ -112,6 +110,7 @@ void DotPrinterImpl::VisitChoice(ChoiceNode* that) {
     GuardedAlternative alt = that->alternatives()->at(i);
     alt.node()->Accept(this);
   }
+  PrintAttributes(that);
 }
 
 void DotPrinterImpl::VisitLoopChoice(LoopChoiceNode* that) {
@@ -131,14 +130,14 @@ void DotPrinterImpl::VisitText(TextNode* that) {
     TextElement elm = that->elements()->at(i);
     switch (elm.text_type()) {
       case TextElement::ATOM: {
-        Vector<const uc16> data = elm.atom()->data();
-        for (int i = 0; i < data.length(); i++) {
-          os_ << static_cast<char>(data[i]);
+        base::Vector<const base::uc16> data = elm.atom()->data();
+        for (int j = 0; j < data.length(); j++) {
+          os_ << static_cast<char>(data[j]);
         }
         break;
       }
-      case TextElement::CHAR_CLASS: {
-        RegExpCharacterClass* node = elm.char_class();
+      case TextElement::CLASS_RANGES: {
+        RegExpClassRanges* node = elm.class_ranges();
         os_ << "[";
         if (node->is_negated()) os_ << "^";
         for (int j = 0; j < node->ranges(zone)->length(); j++) {
@@ -201,20 +200,27 @@ void DotPrinterImpl::VisitAction(ActionNode* that) {
   os_ << "  n" << that << " [";
   switch (that->action_type_) {
     case ActionNode::SET_REGISTER_FOR_LOOP:
-      os_ << "label=\"$" << that->data_.u_store_register.reg
-          << ":=" << that->data_.u_store_register.value << "\", shape=octagon";
+      os_ << "label=\"$" << that->register_from() << ":=" << that->value()
+          << "\", shape=octagon";
       break;
     case ActionNode::INCREMENT_REGISTER:
-      os_ << "label=\"$" << that->data_.u_increment_register.reg
-          << "++\", shape=octagon";
+      os_ << "label=\"$" << that->register_from() << "++\", shape=octagon";
       break;
-    case ActionNode::STORE_POSITION:
-      os_ << "label=\"$" << that->data_.u_position_register.reg
-          << ":=$pos\", shape=octagon";
+    case ActionNode::CLEAR_POSITION:
+      os_ << "label=\"$" << that->register_from()
+          << ":=$pos c\", shape=octagon";
       break;
-    case ActionNode::BEGIN_SUBMATCH:
+    case ActionNode::RESTORE_POSITION:
+      os_ << "label=\"$" << that->register_from()
+          << ":=$pos r\", shape=octagon";
+      break;
+    case ActionNode::BEGIN_POSITIVE_SUBMATCH:
       os_ << "label=\"$" << that->data_.u_submatch.current_position_register
-          << ":=$pos,begin\", shape=septagon";
+          << ":=$pos,begin-positive\", shape=septagon";
+      break;
+    case ActionNode::BEGIN_NEGATIVE_SUBMATCH:
+      os_ << "label=\"$" << that->data_.u_submatch.current_position_register
+          << ":=$pos,begin-negative\", shape=septagon";
       break;
     case ActionNode::POSITIVE_SUBMATCH_SUCCESS:
       os_ << "label=\"escape\", shape=septagon";
@@ -226,9 +232,12 @@ void DotPrinterImpl::VisitAction(ActionNode* that) {
           << "?\", shape=septagon";
       break;
     case ActionNode::CLEAR_CAPTURES: {
-      os_ << "label=\"clear $" << that->data_.u_clear_captures.range_from
-          << " to $" << that->data_.u_clear_captures.range_to
-          << "\", shape=septagon";
+      os_ << "label=\"clear $" << that->register_from() << " to $"
+          << that->register_to() << "\", shape=septagon";
+      break;
+    }
+    case ActionNode::MODIFY_FLAGS: {
+      os_ << "label=\"flags $" << that->flags() << "\", shape=septagon";
       break;
     }
   }
@@ -239,14 +248,10 @@ void DotPrinterImpl::VisitAction(ActionNode* that) {
   Visit(successor);
 }
 
-#endif  // DEBUG
-
 void DotPrinter::DotPrint(const char* label, RegExpNode* node) {
-#ifdef DEBUG
   StdoutStream os;
   DotPrinterImpl printer(os);
   printer.PrintNode(label, node);
-#endif  // DEBUG
 }
 
 }  // namespace internal

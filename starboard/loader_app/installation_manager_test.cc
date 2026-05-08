@@ -25,6 +25,7 @@
 #include "starboard/common/file.h"
 #include "starboard/configuration_constants.h"
 #include "starboard/extension/loader_app_metrics.h"
+#include "starboard/file.h"
 #include "starboard/loader_app/installation_store.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -32,9 +33,7 @@
 
 #define NUMBER_INSTALLS_PARAMS ::testing::Values(2, 3, 4, 5, 6)
 
-namespace starboard {
 namespace loader_app {
-namespace installation_manager {
 
 namespace {
 
@@ -197,7 +196,7 @@ class InstallationManagerTest : public ::testing::TestWithParam<int> {
       if (result || !dirent) {
         break;
       }
-      starboard::strlcpy(dir_entry.data(), dirent->d_name, dir_entry.size());
+      strncpy(dir_entry.data(), dirent->d_name, dir_entry.size());
       std::string full_path = storage_path_;
       full_path += kSbFileSepString;
       full_path += dir_entry.data();
@@ -646,8 +645,6 @@ INSTANTIATE_TEST_CASE_P(NumberOfMaxInstallations,
                         InstallationManagerTest,
                         NUMBER_INSTALLS_PARAMS);
 
-}  // namespace installation_manager
 }  // namespace loader_app
-}  // namespace starboard
 
 #endif  // SB_IS(EVERGREEN_COMPATIBLE)

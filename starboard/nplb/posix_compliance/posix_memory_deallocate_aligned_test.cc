@@ -16,7 +16,6 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -26,7 +25,7 @@ TEST(PosixMemoryDeallocateAlignedTest, DeallocatesAligned) {
   const size_t kMaxAlign = 4096 + 1;
   for (size_t align = sizeof(void*); align < kMaxAlign; align <<= 1) {
     void* memory = NULL;
-    posix_memalign(&memory, align, kSize);
+    std::ignore = posix_memalign(&memory, align, kSize);
     EXPECT_NE(static_cast<void*>(NULL), memory);
     free(memory);
   }
@@ -38,4 +37,3 @@ TEST(PosixMemoryDeallocateAlignedTest, FreesNull) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

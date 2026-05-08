@@ -20,12 +20,8 @@
 namespace starboard {
 namespace stub {
 
-#if SB_API_VERSION >= 15
 ApplicationStub::ApplicationStub(SbEventHandleCallback sb_event_handle_callback)
     : QueueApplication(sb_event_handle_callback) {}
-#else
-ApplicationStub::ApplicationStub() {}
-#endif  // SB_API_VERSION >= 15
 
 ApplicationStub::~ApplicationStub() {}
 
@@ -37,12 +33,12 @@ bool ApplicationStub::MayHaveSystemEvents() {
   return false;
 }
 
-shared::starboard::Application::Event* ApplicationStub::PollNextSystemEvent() {
+Application::Event* ApplicationStub::PollNextSystemEvent() {
   return NULL;
 }
 
-shared::starboard::Application::Event*
-ApplicationStub::WaitForSystemEventWithTimeout(int64_t time) {
+Application::Event* ApplicationStub::WaitForSystemEventWithTimeout(
+    int64_t time) {
   return NULL;
 }
 

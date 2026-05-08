@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "starboard/android/shared/jni_env_ext.h"
-#include "starboard/android/shared/jni_utils.h"
+#include "starboard/android/shared/display_util.h"
 #include "starboard/android/shared/window_internal.h"
+#include "starboard/common/log.h"
 
-using starboard::android::shared::JniEnvExt;
-using starboard::android::shared::ScopedLocalJavaRef;
+using starboard::DisplayUtil;
 
 float SbWindowGetDiagonalSizeInInches(SbWindow window) {
   if (!SbWindowIsValid(window)) {
@@ -27,13 +26,11 @@ float SbWindowGetDiagonalSizeInInches(SbWindow window) {
 
   int32_t width_pixels = ANativeWindow_getWidth(window->native_window);
   int32_t height_pixels = ANativeWindow_getHeight(window->native_window);
-  JniEnvExt* env = JniEnvExt::Get();
-  ScopedLocalJavaRef<jobject> display_dpi(env->CallStarboardObjectMethodOrAbort(
-      "getDisplayDpi", "()Landroid/util/SizeF;"));
-  float xdpi =
-      env->CallFloatMethodOrAbort(display_dpi.Get(), "getWidth", "()F");
-  float ydpi =
-      env->CallFloatMethodOrAbort(display_dpi.Get(), "getHeight", "()F");
+
+  DisplayUtil::Dpi display_dpi = DisplayUtil::GetDisplayDpi();
+
+  const float xdpi = display_dpi.x;
+  const float ydpi = display_dpi.y;
 
   if (xdpi < 0.1f || ydpi < 0.1f) {
     SB_DLOG(ERROR) << __FUNCTION__ << ": Invalid display values.";

@@ -5,14 +5,22 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/effects/SkTrimPathEffect.h"
+#include "modules/jsonreader/SkJSONReader.h"
 #include "modules/skottie/src/Adapter.h"
 #include "modules/skottie/src/SkottieJson.h"
 #include "modules/skottie/src/SkottiePriv.h"
 #include "modules/skottie/src/SkottieValue.h"
 #include "modules/skottie/src/layers/shapelayer/ShapeLayer.h"
 #include "modules/sksg/include/SkSGGeometryEffect.h"
+#include "modules/sksg/include/SkSGGeometryNode.h"
 #include "modules/sksg/include/SkSGMerge.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <utility>
 #include <vector>
 
 namespace skottie {
@@ -81,7 +89,7 @@ std::vector<sk_sp<sksg::GeometryNode>> ShapeBuilder::AttachTrimGeometryEffect(
     } gModes[] = { Mode::kParallel, Mode::kSerial};
 
     const auto mode = gModes[std::min<size_t>(ParseDefault<size_t>(jtrim["m"], 1) - 1,
-                                            SK_ARRAY_COUNT(gModes) - 1)];
+                                            std::size(gModes) - 1)];
 
     std::vector<sk_sp<sksg::GeometryNode>> inputs;
     if (mode == Mode::kSerial) {

@@ -23,24 +23,22 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "starboard/common/time.h"
-#include "starboard/nplb/socket_helpers.h"
-#include "starboard/socket.h"
+#include <string>
+#include <tuple>
+#include <utility>
 
-namespace starboard {
+#include "build/build_config.h"
+#include "testing/gtest/include/gtest/gtest.h"
+
 namespace nplb {
 
 #if defined(SOMAXCONN)
 const int kMaxConn = SOMAXCONN;
 #else
-// Some posix platforms such as FreeBSD do not define SOMAXCONN.
-// In this case, set the value to an arbitrary number large enough to
-// satisfy most use-cases and tests, empirically we have found that 128
-// is sufficient.  All implementations of listen() specify that a backlog
-// parameter larger than the system max will be silently truncated to the
-// system's max.
 const int kMaxConn = 128;
 #endif
+
+const int64_t kSocketTimeout = 200'000;  // 200ms
 
 int PosixSocketCreateAndConnect(int server_domain,
                                 int client_domain,
@@ -50,12 +48,17 @@ int PosixSocketCreateAndConnect(int server_domain,
                                 int* server_socket_fd,
                                 int* client_socket_fd);
 int PosixGetLocalAddressIPv4(sockaddr* address_ptr);
-#if SB_HAS(IPV6)
 int PosixGetLocalAddressIPv6(sockaddr* address_ptr);
-#endif  // SB_HAS(IPV6)
 
 int PosixSocketSetReceiveBufferSize(int socket_fd, int32_t size);
 int PosixSocketSetSendBufferSize(int socket_fd, int32_t size);
+
+// Returns a valid port number that can be bound to for use in nplb tests.
+// This will always return the same port number.
+int PosixGetPortNumberForTests();
+
+// Creates a TCP/IP socket listening on all interfaces on the given port.
+// int PosixCreateBoundListeningTcpSocket();
 
 #if defined(MSG_NOSIGNAL)
 const int kSendFlags = MSG_NOSIGNAL;
@@ -63,7 +66,18 @@ const int kSendFlags = MSG_NOSIGNAL;
 const int kSendFlags = 0;
 #endif
 
+// Thread entry point to continuously write to a socket that is expected to
+// be closed on another thread.
+struct trio_socket_fd {
+  int* listen_socket_fd_ptr;
+  int* client_socket_fd_ptr;
+  int* server_socket_fd_ptr;
+};
+
+#if !BUILDFLAG(COBALT_IS_RELEASE_BUILD)
+std::string GetPosixSocketHintsName(
+    ::testing::TestParamInfo<std::tuple<int, std::pair<int, int>>> info);
+#endif  // #if !BUILDFLAG(COBALT_IS_RELEASE_BUILD)
 }  // namespace nplb
-}  // namespace starboard
 
 #endif  // STARBOARD_NPLB_POSIX_COMPLIANCE_POSIX_SOCKET_HELPERS_H_

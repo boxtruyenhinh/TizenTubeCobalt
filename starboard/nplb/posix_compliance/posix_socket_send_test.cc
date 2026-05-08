@@ -19,20 +19,15 @@
 #include <pthread.h>
 #include <string.h>
 #include <unistd.h>
+
+#include "starboard/common/log.h"
+#include "starboard/common/time.h"
 #include "starboard/nplb/posix_compliance/posix_socket_helpers.h"
 #include "starboard/thread.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
-
-// Thread entry point to continuously write to a socket that is expected to
-// be closed on another thread.
-struct trio_socket_fd {
-  int* listen_socket_fd_ptr;
-  int* client_socket_fd_ptr;
-  int* server_socket_fd_ptr;
-};
 
 void* PosixSocketSendToServerSocketEntryPoint(void* trio_as_void_ptr) {
   // The contents of this buffer are inconsequential.
@@ -47,14 +42,14 @@ void* PosixSocketSendToServerSocketEntryPoint(void* trio_as_void_ptr) {
   // Continue sending to the socket until it fails to send. It's expected that
   // SbSocketSendTo will fail when the server socket closes, but the application
   // should not terminate.
-  int64_t start = CurrentMonotonicTime();
+  int64_t start = starboard::CurrentMonotonicTime();
   int64_t now = start;
   int64_t kTimeout = 1'000'000;  // 1 second
   int result = 0;
   while (result >= 0 && (now - start < kTimeout)) {
     result =
         send(*(trio_ptr->server_socket_fd_ptr), send_buf, kBufSize, kSendFlags);
-    now = CurrentMonotonicTime();
+    now = starboard::CurrentMonotonicTime();
   }
 
   delete[] send_buf;
@@ -87,7 +82,7 @@ TEST(PosixSocketSendTest, RainyDayUnconnectedSocket) {
 TEST(PosixSocketSendTest, RainyDaySendToClosedSocket) {
   int listen_socket_fd = -1, client_socket_fd = -1, server_socket_fd = -1;
   int result = PosixSocketCreateAndConnect(
-      AF_INET, AF_INET, htons(GetPortNumberForTests()), kSocketTimeout,
+      AF_INET, AF_INET, htons(PosixGetPortNumberForTests()), kSocketTimeout,
       &listen_socket_fd, &client_socket_fd, &server_socket_fd);
   EXPECT_TRUE(result == 0);
 
@@ -99,7 +94,6 @@ TEST(PosixSocketSendTest, RainyDaySendToClosedSocket) {
       &listen_socket_fd, &client_socket_fd, &server_socket_fd};
 
   // Start a thread to write to the client socket.
-  const bool kJoinable = true;
   pthread_t send_thread = 0;
   pthread_create(&send_thread, NULL, PosixSocketSendToServerSocketEntryPoint,
                  static_cast<void*>(&trio_as_void_ptr));
@@ -133,7 +127,7 @@ TEST(PosixSocketSendTest, RainyDaySendToSocketUntilBlocking) {
   int result = -1;
   int listen_socket_fd = -1, client_socket_fd = -1, server_socket_fd = -1;
   result = PosixSocketCreateAndConnect(
-      AF_INET, AF_INET, GetPortNumberForTests(), kSocketTimeout,
+      AF_INET, AF_INET, PosixGetPortNumberForTests(), kSocketTimeout,
       &listen_socket_fd, &client_socket_fd, &server_socket_fd);
   ASSERT_TRUE(result == 0);
 
@@ -180,7 +174,7 @@ TEST(PosixSocketSendTest, RainyDaySendToSocketConnectionReset) {
   // create listen socket, bind and listen on <port>
   int listen_socket_fd = -1, client_socket_fd = -1, server_socket_fd = -1;
   result = PosixSocketCreateAndConnect(
-      AF_INET, AF_INET, htons(GetPortNumberForTests()), kSocketTimeout,
+      AF_INET, AF_INET, htons(PosixGetPortNumberForTests()), kSocketTimeout,
       &listen_socket_fd, &client_socket_fd, &server_socket_fd);
   EXPECT_TRUE(result == 0);
   if (result != 0) {
@@ -219,4 +213,3 @@ TEST(PosixSocketSendTest, RainyDaySendToSocketConnectionReset) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

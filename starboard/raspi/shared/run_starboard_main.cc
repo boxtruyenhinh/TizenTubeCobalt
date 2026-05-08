@@ -12,13 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <malloc.h>
+#include <time.h>
+
+#include "starboard/configuration.h"
 #include "starboard/event.h"
 #include "starboard/raspi/shared/application_dispmanx.h"
+#include "starboard/shared/signal/crash_signals.h"
+#include "starboard/shared/signal/debug_signals.h"
+#include "starboard/shared/signal/suspend_signals.h"
 
-#if SB_API_VERSION >= 15
 int SbRunStarboardMain(int argc, char** argv, SbEventHandleCallback callback) {
-  starboard::raspi::shared::ApplicationDispmanx application(callback);
+  // Set M_ARENA_MAX to a low value to slow memory growth due to fragmentation.
+  SB_CHECK(mallopt(M_ARENA_MAX, 2));
+  tzset();
+
+  starboard::InstallCrashSignalHandlers();
+  starboard::InstallDebugSignalHandlers();
+  starboard::InstallSuspendSignalHandlers();
+
+  starboard::ApplicationDispmanx application(callback);
   int result = application.Run(argc, argv);
+
+  starboard::UninstallSuspendSignalHandlers();
+  starboard::UninstallDebugSignalHandlers();
+  starboard::UninstallCrashSignalHandlers();
+
   return result;
 }
-#endif  // SB_API_VERSION >= 15

@@ -36,14 +36,9 @@
 #include <string.h>
 #ifdef HAVE_STDINT_H
 #include <stdint.h>
-#elif defined(_WIN32) && !defined(STARBOARD)
+#elif defined(_WIN32)
 typedef unsigned __int64 uint64_t;
 #endif
-
-#if defined(STARBOARD)
-#include "starboard/system.h"
-#define exit(x) SbSystemBreakIntoDebugger()
-#endif  // #if defined(STARBOARD)
 
 #ifndef SORT_NAME
 #error "Must declare SORT_NAME"
@@ -174,7 +169,9 @@ typedef struct {
 } TIM_SORT_RUN_T;
 
 
+XML_HIDDEN
 void BINARY_INSERTION_SORT(SORT_TYPE *dst, const size_t size);
+XML_HIDDEN
 void TIM_SORT(SORT_TYPE *dst, const size_t size);
 
 
@@ -360,7 +357,7 @@ typedef struct {
 
 static void TIM_SORT_RESIZE(TEMP_STORAGE_T *store, const size_t new_size) {
   if (store->alloc < new_size) {
-    SORT_TYPE *tempstore = (SORT_TYPE *)XML_REALLOC(store->storage, new_size * sizeof(SORT_TYPE));
+    SORT_TYPE *tempstore = (SORT_TYPE *)realloc(store->storage, new_size * sizeof(SORT_TYPE));
 
     if (tempstore == NULL) {
       fprintf(stderr, "Error allocating temporary storage for tim sort: need %lu bytes",
@@ -523,7 +520,7 @@ static __inline int PUSH_NEXT(SORT_TYPE *dst,
     }
 
     if (store->storage != NULL) {
-      XML_FREE(store->storage);
+      free(store->storage);
       store->storage = NULL;
     }
 

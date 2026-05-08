@@ -5,18 +5,23 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkCanvas.h"
+#include "modules/svg/include/SkSVGDOM.h"
+
+#include "include/core/SkData.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkString.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkTo.h"
+#include "modules/skshaper/include/SkShaper_factory.h"
+#include "modules/svg/include/SkSVGAttribute.h"
 #include "modules/svg/include/SkSVGAttributeParser.h"
 #include "modules/svg/include/SkSVGCircle.h"
 #include "modules/svg/include/SkSVGClipPath.h"
-#include "modules/svg/include/SkSVGDOM.h"
 #include "modules/svg/include/SkSVGDefs.h"
 #include "modules/svg/include/SkSVGEllipse.h"
 #include "modules/svg/include/SkSVGFeBlend.h"
 #include "modules/svg/include/SkSVGFeColorMatrix.h"
+#include "modules/svg/include/SkSVGFeComponentTransfer.h"
 #include "modules/svg/include/SkSVGFeComposite.h"
 #include "modules/svg/include/SkSVGFeDisplacementMap.h"
 #include "modules/svg/include/SkSVGFeFlood.h"
@@ -24,6 +29,7 @@
 #include "modules/svg/include/SkSVGFeImage.h"
 #include "modules/svg/include/SkSVGFeLightSource.h"
 #include "modules/svg/include/SkSVGFeLighting.h"
+#include "modules/svg/include/SkSVGFeMerge.h"
 #include "modules/svg/include/SkSVGFeMorphology.h"
 #include "modules/svg/include/SkSVGFeOffset.h"
 #include "modules/svg/include/SkSVGFeTurbulence.h"
@@ -46,9 +52,15 @@
 #include "modules/svg/include/SkSVGTypes.h"
 #include "modules/svg/include/SkSVGUse.h"
 #include "modules/svg/include/SkSVGValue.h"
-#include "src/core/SkTSearch.h"
+#include "src/base/SkTSearch.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/xml/SkDOM.h"
+
+#include <stdint.h>
+#include <array>
+#include <cstring>
+#include <tuple>
+#include <utility>
 
 namespace {
 
@@ -235,44 +247,51 @@ SortedDictionaryEntry<AttrParseInfo> gAttributeParseInfo[] = {
 };
 
 SortedDictionaryEntry<sk_sp<SkSVGNode>(*)()> gTagFactories[] = {
-    { "a"                 , []() -> sk_sp<SkSVGNode> { return SkSVGG::Make();                  }},
-    { "circle"            , []() -> sk_sp<SkSVGNode> { return SkSVGCircle::Make();             }},
-    { "clipPath"          , []() -> sk_sp<SkSVGNode> { return SkSVGClipPath::Make();           }},
-    { "defs"              , []() -> sk_sp<SkSVGNode> { return SkSVGDefs::Make();               }},
-    { "ellipse"           , []() -> sk_sp<SkSVGNode> { return SkSVGEllipse::Make();            }},
-    { "feBlend"           , []() -> sk_sp<SkSVGNode> { return SkSVGFeBlend::Make();            }},
-    { "feColorMatrix"     , []() -> sk_sp<SkSVGNode> { return SkSVGFeColorMatrix::Make();      }},
-    { "feComposite"       , []() -> sk_sp<SkSVGNode> { return SkSVGFeComposite::Make();        }},
-    { "feDiffuseLighting" , []() -> sk_sp<SkSVGNode> { return SkSVGFeDiffuseLighting::Make();  }},
-    { "feDisplacementMap" , []() -> sk_sp<SkSVGNode> { return SkSVGFeDisplacementMap::Make();  }},
-    { "feDistantLight"    , []() -> sk_sp<SkSVGNode> { return SkSVGFeDistantLight::Make();     }},
-    { "feFlood"           , []() -> sk_sp<SkSVGNode> { return SkSVGFeFlood::Make();            }},
-    { "feGaussianBlur"    , []() -> sk_sp<SkSVGNode> { return SkSVGFeGaussianBlur::Make();     }},
-    { "feImage"           , []() -> sk_sp<SkSVGNode> { return SkSVGFeImage::Make();            }},
-    { "feMorphology"      , []() -> sk_sp<SkSVGNode> { return SkSVGFeMorphology::Make();       }},
-    { "feOffset"          , []() -> sk_sp<SkSVGNode> { return SkSVGFeOffset::Make();           }},
-    { "fePointLight"      , []() -> sk_sp<SkSVGNode> { return SkSVGFePointLight::Make();       }},
-    { "feSpecularLighting", []() -> sk_sp<SkSVGNode> { return SkSVGFeSpecularLighting::Make(); }},
-    { "feSpotLight"       , []() -> sk_sp<SkSVGNode> { return SkSVGFeSpotLight::Make();        }},
-    { "feTurbulence"      , []() -> sk_sp<SkSVGNode> { return SkSVGFeTurbulence::Make();       }},
-    { "filter"            , []() -> sk_sp<SkSVGNode> { return SkSVGFilter::Make();             }},
-    { "g"                 , []() -> sk_sp<SkSVGNode> { return SkSVGG::Make();                  }},
-    { "image"             , []() -> sk_sp<SkSVGNode> { return SkSVGImage::Make();              }},
-    { "line"              , []() -> sk_sp<SkSVGNode> { return SkSVGLine::Make();               }},
-    { "linearGradient"    , []() -> sk_sp<SkSVGNode> { return SkSVGLinearGradient::Make();     }},
-    { "mask"              , []() -> sk_sp<SkSVGNode> { return SkSVGMask::Make();               }},
-    { "path"              , []() -> sk_sp<SkSVGNode> { return SkSVGPath::Make();               }},
-    { "pattern"           , []() -> sk_sp<SkSVGNode> { return SkSVGPattern::Make();            }},
-    { "polygon"           , []() -> sk_sp<SkSVGNode> { return SkSVGPoly::MakePolygon();        }},
-    { "polyline"          , []() -> sk_sp<SkSVGNode> { return SkSVGPoly::MakePolyline();       }},
-    { "radialGradient"    , []() -> sk_sp<SkSVGNode> { return SkSVGRadialGradient::Make();     }},
-    { "rect"              , []() -> sk_sp<SkSVGNode> { return SkSVGRect::Make();               }},
-    { "stop"              , []() -> sk_sp<SkSVGNode> { return SkSVGStop::Make();               }},
+    { "a"                  , []() -> sk_sp<SkSVGNode> { return SkSVGG::Make();                   }},
+    { "circle"             , []() -> sk_sp<SkSVGNode> { return SkSVGCircle::Make();              }},
+    { "clipPath"           , []() -> sk_sp<SkSVGNode> { return SkSVGClipPath::Make();            }},
+    { "defs"               , []() -> sk_sp<SkSVGNode> { return SkSVGDefs::Make();                }},
+    { "ellipse"            , []() -> sk_sp<SkSVGNode> { return SkSVGEllipse::Make();             }},
+    { "feBlend"            , []() -> sk_sp<SkSVGNode> { return SkSVGFeBlend::Make();             }},
+    { "feColorMatrix"      , []() -> sk_sp<SkSVGNode> { return SkSVGFeColorMatrix::Make();       }},
+    { "feComponentTransfer", []() -> sk_sp<SkSVGNode> { return SkSVGFeComponentTransfer::Make(); }},
+    { "feComposite"        , []() -> sk_sp<SkSVGNode> { return SkSVGFeComposite::Make();         }},
+    { "feDiffuseLighting"  , []() -> sk_sp<SkSVGNode> { return SkSVGFeDiffuseLighting::Make();   }},
+    { "feDisplacementMap"  , []() -> sk_sp<SkSVGNode> { return SkSVGFeDisplacementMap::Make();   }},
+    { "feDistantLight"     , []() -> sk_sp<SkSVGNode> { return SkSVGFeDistantLight::Make();      }},
+    { "feFlood"            , []() -> sk_sp<SkSVGNode> { return SkSVGFeFlood::Make();             }},
+    { "feFuncA"            , []() -> sk_sp<SkSVGNode> { return SkSVGFeFunc::MakeFuncA();         }},
+    { "feFuncB"            , []() -> sk_sp<SkSVGNode> { return SkSVGFeFunc::MakeFuncB();         }},
+    { "feFuncG"            , []() -> sk_sp<SkSVGNode> { return SkSVGFeFunc::MakeFuncG();         }},
+    { "feFuncR"            , []() -> sk_sp<SkSVGNode> { return SkSVGFeFunc::MakeFuncR();         }},
+    { "feGaussianBlur"     , []() -> sk_sp<SkSVGNode> { return SkSVGFeGaussianBlur::Make();      }},
+    { "feImage"            , []() -> sk_sp<SkSVGNode> { return SkSVGFeImage::Make();             }},
+    { "feMerge"            , []() -> sk_sp<SkSVGNode> { return SkSVGFeMerge::Make();             }},
+    { "feMergeNode"        , []() -> sk_sp<SkSVGNode> { return SkSVGFeMergeNode::Make();         }},
+    { "feMorphology"       , []() -> sk_sp<SkSVGNode> { return SkSVGFeMorphology::Make();        }},
+    { "feOffset"           , []() -> sk_sp<SkSVGNode> { return SkSVGFeOffset::Make();            }},
+    { "fePointLight"       , []() -> sk_sp<SkSVGNode> { return SkSVGFePointLight::Make();        }},
+    { "feSpecularLighting" , []() -> sk_sp<SkSVGNode> { return SkSVGFeSpecularLighting::Make();  }},
+    { "feSpotLight"        , []() -> sk_sp<SkSVGNode> { return SkSVGFeSpotLight::Make();         }},
+    { "feTurbulence"       , []() -> sk_sp<SkSVGNode> { return SkSVGFeTurbulence::Make();        }},
+    { "filter"             , []() -> sk_sp<SkSVGNode> { return SkSVGFilter::Make();              }},
+    { "g"                  , []() -> sk_sp<SkSVGNode> { return SkSVGG::Make();                   }},
+    { "image"              , []() -> sk_sp<SkSVGNode> { return SkSVGImage::Make();               }},
+    { "line"               , []() -> sk_sp<SkSVGNode> { return SkSVGLine::Make();                }},
+    { "linearGradient"     , []() -> sk_sp<SkSVGNode> { return SkSVGLinearGradient::Make();      }},
+    { "mask"               , []() -> sk_sp<SkSVGNode> { return SkSVGMask::Make();                }},
+    { "path"               , []() -> sk_sp<SkSVGNode> { return SkSVGPath::Make();                }},
+    { "pattern"            , []() -> sk_sp<SkSVGNode> { return SkSVGPattern::Make();             }},
+    { "polygon"            , []() -> sk_sp<SkSVGNode> { return SkSVGPoly::MakePolygon();         }},
+    { "polyline"           , []() -> sk_sp<SkSVGNode> { return SkSVGPoly::MakePolyline();        }},
+    { "radialGradient"     , []() -> sk_sp<SkSVGNode> { return SkSVGRadialGradient::Make();      }},
+    { "rect"               , []() -> sk_sp<SkSVGNode> { return SkSVGRect::Make();                }},
+    { "stop"               , []() -> sk_sp<SkSVGNode> { return SkSVGStop::Make();                }},
 //    "svg" handled explicitly
-    { "text"              , []() -> sk_sp<SkSVGNode> { return SkSVGText::Make();               }},
-    { "textPath"          , []() -> sk_sp<SkSVGNode> { return SkSVGTextPath::Make();           }},
-    { "tspan"             , []() -> sk_sp<SkSVGNode> { return SkSVGTSpan::Make();              }},
-    { "use"               , []() -> sk_sp<SkSVGNode> { return SkSVGUse::Make();                }},
+    { "text"               , []() -> sk_sp<SkSVGNode> { return SkSVGText::Make();                }},
+    { "textPath"           , []() -> sk_sp<SkSVGNode> { return SkSVGTextPath::Make();            }},
+    { "tspan"              , []() -> sk_sp<SkSVGNode> { return SkSVGTSpan::Make();               }},
+    { "use"                , []() -> sk_sp<SkSVGNode> { return SkSVGUse::Make();                 }},
 };
 
 struct ConstructionContext {
@@ -291,7 +310,7 @@ bool set_string_attribute(const sk_sp<SkSVGNode>& node, const char* name, const 
     }
 
     const int attrIndex = SkStrSearch(&gAttributeParseInfo[0].fKey,
-                                      SkTo<int>(SK_ARRAY_COUNT(gAttributeParseInfo)),
+                                      SkTo<int>(std::size(gAttributeParseInfo)),
                                       name, sizeof(gAttributeParseInfo[0]));
     if (attrIndex < 0) {
 #if defined(SK_VERBOSE_SVG_PARSING)
@@ -300,7 +319,7 @@ bool set_string_attribute(const sk_sp<SkSVGNode>& node, const char* name, const 
         return false;
     }
 
-    SkASSERT(SkTo<size_t>(attrIndex) < SK_ARRAY_COUNT(gAttributeParseInfo));
+    SkASSERT(SkTo<size_t>(attrIndex) < std::size(gAttributeParseInfo));
     const auto& attrInfo = gAttributeParseInfo[attrIndex].fValue;
     if (!attrInfo.fSetter(node, attrInfo.fAttr, value)) {
 #if defined(SK_VERBOSE_SVG_PARSING)
@@ -351,7 +370,7 @@ sk_sp<SkSVGNode> construct_svg_node(const SkDOM& dom, const ConstructionContext&
         }
 
         const int tagIndex = SkStrSearch(&gTagFactories[0].fKey,
-                                         SkTo<int>(SK_ARRAY_COUNT(gTagFactories)),
+                                         SkTo<int>(std::size(gTagFactories)),
                                          elem, sizeof(gTagFactories[0]));
         if (tagIndex < 0) {
 #if defined(SK_VERBOSE_SVG_PARSING)
@@ -359,7 +378,7 @@ sk_sp<SkSVGNode> construct_svg_node(const SkDOM& dom, const ConstructionContext&
 #endif
             return nullptr;
         }
-        SkASSERT(SkTo<size_t>(tagIndex) < SK_ARRAY_COUNT(gTagFactories));
+        SkASSERT(SkTo<size_t>(tagIndex) < std::size(gTagFactories));
 
         return gTagFactories[tagIndex].fValue();
     };
@@ -395,6 +414,11 @@ SkSVGDOM::Builder& SkSVGDOM::Builder::setResourceProvider(sk_sp<skresources::Res
     return *this;
 }
 
+SkSVGDOM::Builder& SkSVGDOM::Builder::setTextShapingFactory(sk_sp<SkShapers::Factory> f) {
+    fTextShapingFactory = f;
+    return *this;
+}
+
 sk_sp<SkSVGDOM> SkSVGDOM::Builder::make(SkStream& str) const {
     TRACE_EVENT0("skia", TRACE_FUNC);
     SkDOM xmlDom;
@@ -417,29 +441,62 @@ sk_sp<SkSVGDOM> SkSVGDOM::Builder::make(SkStream& str) const {
     auto resource_provider = fResourceProvider ? fResourceProvider
                                                : sk_make_sp<NullResourceProvider>();
 
+    auto factory = fTextShapingFactory ? fTextShapingFactory : SkShapers::Primitive::Factory();
+
     return sk_sp<SkSVGDOM>(new SkSVGDOM(sk_sp<SkSVGSVG>(static_cast<SkSVGSVG*>(root.release())),
-                                        std::move(fFontMgr), std::move(resource_provider),
-                                        std::move(mapper)));
+                                        std::move(fFontMgr),
+                                        std::move(resource_provider),
+                                        std::move(mapper),
+                                        std::move(factory)));
 }
 
-SkSVGDOM::SkSVGDOM(sk_sp<SkSVGSVG> root, sk_sp<SkFontMgr> fmgr,
-                   sk_sp<skresources::ResourceProvider> rp, SkSVGIDMapper&& mapper)
-    : fRoot(std::move(root))
-    , fFontMgr(std::move(fmgr))
-    , fResourceProvider(std::move(rp))
-    , fIDMapper(std::move(mapper))
-    , fContainerSize(fRoot->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0))))
-{
+SkSVGDOM::SkSVGDOM(sk_sp<SkSVGSVG> root,
+                   sk_sp<SkFontMgr> fmgr,
+                   sk_sp<skresources::ResourceProvider> rp,
+                   SkSVGIDMapper&& mapper,
+                   sk_sp<SkShapers::Factory> fact)
+        : fRoot(std::move(root))
+        , fFontMgr(std::move(fmgr))
+        , fTextShapingFactory(std::move(fact))
+        , fResourceProvider(std::move(rp))
+        , fIDMapper(std::move(mapper))
+        , fContainerSize(fRoot->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)))) {
     SkASSERT(fResourceProvider);
+    SkASSERT(fTextShapingFactory);
 }
+
+sk_sp<SkSVGDOM> SkSVGDOM::MakeFromStream(SkStream& str) { return Builder().make(str); }
 
 void SkSVGDOM::render(SkCanvas* canvas) const {
     TRACE_EVENT0("skia", TRACE_FUNC);
     if (fRoot) {
         SkSVGLengthContext       lctx(fContainerSize);
         SkSVGPresentationContext pctx;
-        fRoot->render(SkSVGRenderContext(canvas, fFontMgr, fResourceProvider, fIDMapper, lctx, pctx,
-                                         {nullptr, nullptr}));
+        fRoot->render(SkSVGRenderContext(canvas,
+                                         fFontMgr,
+                                         fResourceProvider,
+                                         fIDMapper,
+                                         lctx,
+                                         pctx,
+                                         {nullptr, nullptr},
+                                         fTextShapingFactory));
+    }
+}
+
+void SkSVGDOM::renderNode(SkCanvas* canvas, SkSVGPresentationContext& pctx, const char* id) const {
+    TRACE_EVENT0("skia", TRACE_FUNC);
+
+    if (fRoot) {
+        SkSVGLengthContext lctx(fContainerSize);
+        fRoot->renderNode(SkSVGRenderContext(canvas,
+                                             fFontMgr,
+                                             fResourceProvider,
+                                             fIDMapper,
+                                             lctx,
+                                             pctx,
+                                             {nullptr, nullptr},
+                                             fTextShapingFactory),
+                          SkSVGIRI(SkSVGIRI::Type::kLocal, SkSVGStringType(id)));
     }
 }
 

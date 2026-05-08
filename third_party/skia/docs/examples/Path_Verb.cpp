@@ -1,7 +1,6 @@
 // Copyright 2019 Google LLC.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 #include "tools/fiddle/examples.h"
-// HASH=799096fdc1298aa815934a74e76570ca
 REG_FIDDLE(Path_Verb, 256, 256, true, 0) {
 void draw(SkCanvas* canvas) {
     SkPath path;
@@ -11,7 +10,7 @@ void draw(SkCanvas* canvas) {
     path.cubicTo(1, 2, 3, 4, 5, 6);
     path.conicTo(0, 0, 0, 0, 2);
     uint8_t verbs[7];
-    int count = path.getVerbs(verbs, (int) SK_ARRAY_COUNT(verbs));
+    int count = path.getVerbs(verbs, (int) std::size(verbs));
     const char* verbStr[] = { "Move", "Line", "Quad", "Conic", "Cubic", "Close" };
     SkDebugf("verb count: %d\nverbs: ", count);
     for (int i = 0; i < count; ++i) {

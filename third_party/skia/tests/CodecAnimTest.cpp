@@ -8,22 +8,25 @@
 #include "include/codec/SkAndroidCodec.h"
 #include "include/codec/SkCodec.h"
 #include "include/codec/SkCodecAnimation.h"
+#include "include/codec/SkEncodedOrigin.h"
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/utils/SkAnimCodecPlayer.h"
 #include "tests/CodecPriv.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
 
-#include <stdio.h>
+#include <cstdint>
 #include <cstring>
 #include <initializer_list>
 #include <memory>
@@ -50,6 +53,7 @@ DEF_TEST(Codec_565, r) {
         return;
     }
     std::unique_ptr<SkCodec> codec(SkCodec::MakeFromData(std::move(data)));
+    REPORTER_ASSERT(r, codec);
     auto info = codec->getInfo().makeColorType(kRGB_565_SkColorType);
     SkBitmap bm;
     bm.allocPixels(info);
@@ -187,8 +191,8 @@ DEF_TEST(Codec_frames, r) {
               {8, 8, 16, 16}, {8, 8, 16, 16}, {2, 2, 10, 10}, {7, 7, 15, 15}, {7, 7, 15, 15},
               {7, 7, 15, 15}, {0, 0, 8, 8}, {14, 14, 16, 16} },
         },
-        { "images/box.gif", 1, {}, {}, {}, 0, { kKeep }, {}, {}, {} },
-        { "images/color_wheel.gif", 1, {}, {}, {}, 0, { kKeep }, {}, {}, {} },
+        { "images/box.gif", 1, {}, {}, {}, SkCodec::kRepetitionCountInfinite, { kKeep }, {}, {}, {} },
+        { "images/color_wheel.gif", 1, {}, {}, {}, SkCodec::kRepetitionCountInfinite, { kKeep }, {}, {}, {} },
         { "images/test640x479.gif", 4, { 0, 1, 2 },
                 { kOpaque, kOpaque, kOpaque },
                 { 200, 200, 200, 200 },
@@ -204,7 +208,9 @@ DEF_TEST(Codec_frames, r) {
         },
 
         { "images/arrow.png",  1, {}, {}, {}, 0, {}, {}, {}, {} },
+#if defined(SK_CODEC_DECODES_ICO)
         { "images/google_chrome.ico", 1, {}, {}, {}, 0, {}, {}, {}, {} },
+#endif
         { "images/brickwork-texture.jpg", 1, {}, {}, {}, 0, {}, {}, {}, {} },
 #if defined(SK_CODEC_DECODES_RAW) && (!defined(_WIN32))
         { "images/dng_with_preview.dng", 1, {}, {}, {}, 0, {}, {}, {}, {} },
@@ -244,6 +250,7 @@ DEF_TEST(Codec_frames, r) {
     };
 
     for (const auto& rec : gRecs) {
+        skiatest::ReporterContext context(r, rec.fName);
         sk_sp<SkData> data(GetResourceAsData(rec.fName));
         if (!data) {
             // Useful error statement, but sometimes people run tests without
@@ -261,12 +268,6 @@ DEF_TEST(Codec_frames, r) {
         {
             SkCodec::FrameInfo frameInfo;
             REPORTER_ASSERT(r, !codec->getFrameInfo(0, &frameInfo));
-        }
-
-        const int repetitionCount = codec->getRepetitionCount();
-        if (repetitionCount != rec.fRepetitionCount) {
-            ERRORF(r, "%s repetition count does not match! expected: %i\tactual: %i",
-                      rec.fName, rec.fRepetitionCount, repetitionCount);
         }
 
         const int expected = rec.fFrameCount;
@@ -323,6 +324,35 @@ DEF_TEST(Codec_frames, r) {
                 ERRORF(r, "'%s' expected frame count: %i\tactual: %i",
                        rec.fName, expected, frameCount);
                 continue;
+            }
+
+            // Get the repetition count after the codec->getFrameInfo() or
+            // codec->getFrameCount() call above has walked to the end of the
+            // encoded image.
+            //
+            // At the file format level, GIF images can declare their
+            // repetition count multiple times and our codec goes with "last
+            // one wins". Furthermore, for single-frame (still) GIF images, a
+            // zero, positive or infinite repetition count are all equivalent
+            // in practice (in all cases, the pixels do not change over time),
+            // so the codec has some leeway in what to return for single-frame
+            // GIF images, but it cannot distinguish single-frame from
+            // multiple-frame GIFs until we count the number of frames (e.g.
+            // call getFrameInfo or getFrameCount).
+            const int repetitionCount = codec->getRepetitionCount();
+            if (repetitionCount != rec.fRepetitionCount) {
+                ERRORF(r, "%s repetition count does not match! expected: %i\tactual: %i",
+                          rec.fName, rec.fRepetitionCount, repetitionCount);
+            }
+
+            // When decoding the full, non-partial input, `isAnimated()` will
+            // just be a proxy for "is there just a single frame?".
+            const SkCodec::IsAnimated expectedIsAnimated =
+                    rec.fFrameCount == 1 ? SkCodec::IsAnimated::kNo : SkCodec::IsAnimated::kYes;
+            const SkCodec::IsAnimated actualIsAnimated = codec->isAnimated();
+            if (expectedIsAnimated != actualIsAnimated) {
+                ERRORF(r, "%s isAnimated does not match! expected: %i\tactual: %i", rec.fName,
+                       static_cast<int>(expectedIsAnimated), static_cast<int>(actualIsAnimated));
             }
 
             // From here on, we are only concerned with animated images.
@@ -567,6 +597,10 @@ DEF_TEST(EncodedOriginToMatrixTest, r) {
     }
 }
 
+#if defined(SK_ENABLE_SKOTTIE)
+
+#include "modules/skresources/src/SkAnimCodecPlayer.h"
+
 DEF_TEST(AnimCodecPlayer, r) {
     static constexpr struct {
         const char* fFile;
@@ -609,3 +643,5 @@ DEF_TEST(AnimCodecPlayer, r) {
                         "Mismatched size for frame at 500 ms of %s", test.fFile);
     }
 }
+
+#endif

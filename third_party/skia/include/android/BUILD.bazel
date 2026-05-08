@@ -1,24 +1,29 @@
-load("//bazel:macros.bzl", "generated_cc_atom")
+load("//bazel:skia_rules.bzl", "skia_filegroup")
 
-generated_cc_atom(
-    name = "SkAndroidFrameworkUtils_hdr",
-    hdrs = ["SkAndroidFrameworkUtils.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//include/core:SkRefCnt_hdr",
-        "//include/core:SkTypes_hdr",
+package(
+    default_applicable_licenses = ["//:license"],
+)
+
+licenses(["notice"])
+
+skia_filegroup(
+    name = "private_hdrs",
+    srcs = [
+        "AHardwareBufferUtils.h",
+        "GrAHardwareBufferUtils.h",
+        "SkCanvasAndroid.h",
+        "SkImageAndroid.h",
+        "SkSurfaceAndroid.h",
+    ],
+    visibility = [
+        "//src/gpu/ganesh:__pkg__",
     ],
 )
 
-generated_cc_atom(
-    name = "SkAnimatedImage_hdr",
-    hdrs = ["SkAnimatedImage.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//include/codec:SkCodecAnimation_hdr",
-        "//include/core:SkBitmap_hdr",
-        "//include/core:SkDrawable_hdr",
-        "//include/core:SkMatrix_hdr",
-        "//include/core:SkRect_hdr",
+skia_filegroup(
+    name = "animated_image_hdrs",
+    srcs = [
+        "SkAnimatedImage.h",
     ],
+    visibility = ["//src/android:__pkg__"],
 )

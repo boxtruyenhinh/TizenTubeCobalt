@@ -15,10 +15,10 @@
 #ifndef STARBOARD_LOADER_APP_MEMORY_TRACKER_THREAD_H_
 #define STARBOARD_LOADER_APP_MEMORY_TRACKER_THREAD_H_
 
-#include "starboard/common/thread.h"
-#include "starboard/types.h"
+#include <cstdint>
 
-namespace starboard {
+#include "starboard/common/thread.h"
+
 namespace loader_app {
 
 // Periodically queries for and logs process memory usage when enabled.
@@ -35,6 +35,5 @@ class MemoryTrackerThread : public starboard::Thread {
 };
 
 }  // namespace loader_app
-}  // namespace starboard
 
 #endif  // STARBOARD_LOADER_APP_MEMORY_TRACKER_THREAD_H_

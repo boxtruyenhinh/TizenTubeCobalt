@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <stdlib.h>
-
 #include "starboard/shared/environment.h"
+
+#include <stdlib.h>
 
 namespace starboard {
 
 std::string GetEnvironment(std::string name) {
   const char* environment_string = getenv(name.c_str());
-  if (environment_string != nullptr)
+  if (environment_string != nullptr) {
     return std::string(environment_string);
+  }
   return "";
 }
 

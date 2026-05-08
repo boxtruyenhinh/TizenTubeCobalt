@@ -5,12 +5,17 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkMacros.h"
 #include "src/core/SkEdgeClipper.h"
+
+#include "include/core/SkRect.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkMacros.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkLineClipper.h"
+#include "src/core/SkPathPriv.h"
 
-#include <utility>
+#include <algorithm>
+#include <cstring>
 
 static bool quick_reject(const SkRect& bounds, const SkRect& clip) {
     return bounds.fTop >= clip.fBottom || bounds.fBottom <= clip.fTop;
@@ -558,14 +563,12 @@ void sk_assert_monotonic_x(const SkPoint pts[], int count) {
 }
 #endif
 
-#include "src/core/SkPathPriv.h"
-
 void SkEdgeClipper::ClipPath(const SkPath& path, const SkRect& clip, bool canCullToTheRight,
                              void (*consume)(SkEdgeClipper*, bool newCtr, void* ctx), void* ctx) {
     SkASSERT(path.isFinite());
 
     SkAutoConicToQuads quadder;
-    const SkScalar conicTol = SK_Scalar1 / 4;
+    constexpr float kConicTol = 0.25f;
 
     SkPathEdgeIter iter(path);
     SkEdgeClipper clipper(canCullToTheRight);
@@ -583,7 +586,8 @@ void SkEdgeClipper::ClipPath(const SkPath& path, const SkRect& clip, bool canCul
                 }
                 break;
             case SkPathEdgeIter::Edge::kConic: {
-                const SkPoint* quadPts = quadder.computeQuads(e.fPts, iter.conicWeight(), conicTol);
+                const SkPoint* quadPts =
+                        quadder.computeQuads(e.fPts, iter.conicWeight(), kConicTol);
                 for (int i = 0; i < quadder.countQuads(); ++i) {
                     if (clipper.clipQuad(quadPts, clip)) {
                         consume(&clipper, e.fIsNewContour, ctx);
@@ -595,6 +599,9 @@ void SkEdgeClipper::ClipPath(const SkPath& path, const SkRect& clip, bool canCul
                 if (clipper.clipCubic(e.fPts, clip)) {
                     consume(&clipper, e.fIsNewContour, ctx);
                 }
+                break;
+            default:
+                SkDEBUGFAIL("Unknown edge type");
                 break;
         }
     }

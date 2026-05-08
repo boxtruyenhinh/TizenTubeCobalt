@@ -12,29 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#if SB_API_VERSION < 16
-#include "starboard/accessibility.h"
-#else  // SB_API_VERSION < 16
+// clang-format off
 #include "starboard/android/shared/accessibility_extension.h"
-#endif  // SB_API_VERSION < 16
+// clang-format on
+
 #include "starboard/configuration.h"
 
 namespace starboard {
-namespace android {
-namespace shared {
-namespace accessibility {
 
 bool SetCaptionsEnabled(bool enabled) {
   return false;
 }
 
-}  // namespace accessibility
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard
-
-#if SB_API_VERSION < 16
-bool SbAccessibilitySetCaptionsEnabled(bool enabled) {
-  return starboard::android::shared::accessibility::SetCaptionsEnabled(enabled);
-}
-#endif  // SB_API_VERSION < 16

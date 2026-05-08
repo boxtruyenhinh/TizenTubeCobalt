@@ -15,24 +15,37 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSize.h"
+#include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
+
+#if defined(SK_TYPEFACE_FACTORY_FONTATIONS)
+#include "include/ports/SkTypeface_fontations.h"
+#endif
 
 #include <string.h>
 
 namespace skiagm {
 
+// Copied from https://github.com/googlefonts/color-fonts#colrv1-test-font glyph descriptions
+// markdown file.
+namespace ColrV1TestDefinitions {
+const uint32_t color_circles_palette[] = {0xf0e00, 0xf0e01};
+};
+
 namespace {
-const char kColrCpalTestFontPath[] = "fonts/more_samples-glyf_colr_1.ttf";
+const char kColrCpalTestFontPath[] = "fonts/test_glyphs-glyf_colr_1.ttf";
 
 constexpr SkFontArguments::Palette::Override kColorOverridesAll[] = {
         // A gradient of dark to light purple for the circle palette test glyph.
         // Randomly ordered with `shuf`.
         // Add a repeat (later overrides override earlier overrides).
         // Add three out of bounds entries (font has 12 palette entries).
+        // clang-format off
         { 6, 0xffffff00},
         { 2, 0xff76078f},
         { 4, 0xffb404c4},
@@ -48,7 +61,8 @@ constexpr SkFontArguments::Palette::Override kColorOverridesAll[] = {
         { 5, 0xffd802e2},
         {13, 0xff00ffff},
         {12, 0xff00ffff},
-        {-1, 0xff00ff00},
+        {static_cast<uint16_t>(-1), 0xff00ff00},
+        // clang-format on
 };
 
 constexpr SkFontArguments::Palette::Override kColorOverridesOne[] = {
@@ -58,18 +72,19 @@ constexpr SkFontArguments::Palette::Override kColorOverridesOne[] = {
 constexpr SkFontArguments::Palette kLightPaletteOverride{2, nullptr, 0};
 constexpr SkFontArguments::Palette kDarkPaletteOverride{1, nullptr, 0};
 constexpr SkFontArguments::Palette kOnePaletteOverride{
-        0, kColorOverridesOne, SK_ARRAY_COUNT(kColorOverridesOne)};
+        0, kColorOverridesOne, std::size(kColorOverridesOne)};
 constexpr SkFontArguments::Palette kAllPaletteOverride{
-        0, kColorOverridesAll, SK_ARRAY_COUNT(kColorOverridesAll)};
+        0, kColorOverridesAll, std::size(kColorOverridesAll)};
 
-constexpr uint16_t kTestGlyphs[] = {56, 57};
+sk_sp<SkTypeface> MakeTypefaceFromResource(const char* resource, const SkFontArguments& args) {
+    return ToolUtils::TestFontMgr()->makeFromStream(GetResourceAsStream(resource), args);
+}
 
 }  // namespace
 
 class FontPaletteGM : public GM {
 public:
-    FontPaletteGM(const char* test_name,
-                  const SkFontArguments::Palette& paletteOverride)
+    FontPaletteGM(const char* test_name, const SkFontArguments::Palette& paletteOverride)
             : fName(test_name), fPalette(paletteOverride) {}
 
 protected:
@@ -81,20 +96,19 @@ protected:
         SkFontArguments paletteArguments;
         paletteArguments.setPalette(fPalette);
 
-        fTypefaceDefault = MakeResourceAsTypeface(kColrCpalTestFontPath);
+        fTypefaceDefault = MakeTypefaceFromResource(kColrCpalTestFontPath, SkFontArguments());
         fTypefaceCloned =
                 fTypefaceDefault ? fTypefaceDefault->makeClone(paletteArguments) : nullptr;
 
-        fTypefaceFromStream = SkFontMgr::RefDefault()->makeFromStream(
-                GetResourceAsStream(kColrCpalTestFontPath), paletteArguments);
+        fTypefaceFromStream = MakeTypefaceFromResource(kColrCpalTestFontPath, paletteArguments);
     }
 
-    SkString onShortName() override {
+    SkString getName() const override {
         SkString gm_name = SkStringPrintf("font_palette_%s", fName.c_str());
         return gm_name;
     }
 
-    SkISize onISize() override { return SkISize::Make(1000, 400); }
+    SkISize getISize() override { return SkISize::Make(1000, 400); }
 
     DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
         canvas->drawColor(SK_ColorWHITE);
@@ -110,7 +124,7 @@ protected:
         SkFontMetrics metrics;
         SkScalar y = 0;
         SkScalar textSize = 200;
-        for (auto& typeface : { fTypefaceFromStream, fTypefaceCloned} ) {
+        for (auto& typeface : {fTypefaceFromStream, fTypefaceCloned}) {
             SkFont defaultFont(fTypefaceDefault);
             SkFont paletteFont(typeface);
             defaultFont.setSize(textSize);
@@ -121,21 +135,23 @@ protected:
             // Set a recognizable foreground color which is not to be overriden.
             paint.setColor(SK_ColorGRAY);
             // Draw the default palette on the left, for COLRv0 and COLRv1.
-            canvas->drawSimpleText(kTestGlyphs,
-                                   SK_ARRAY_COUNT(kTestGlyphs) * sizeof(uint16_t),
-                                   SkTextEncoding::kGlyphID,
-                                   0,
-                                   y,
-                                   defaultFont,
-                                   paint);
+            canvas->drawSimpleText(
+                    ColrV1TestDefinitions::color_circles_palette,
+                    std::size(ColrV1TestDefinitions::color_circles_palette) * sizeof(uint32_t),
+                    SkTextEncoding::kUTF32,
+                    0,
+                    y,
+                    defaultFont,
+                    paint);
             // Draw the overriden palette on the right.
-            canvas->drawSimpleText(kTestGlyphs,
-                                   SK_ARRAY_COUNT(kTestGlyphs) * sizeof(uint16_t),
-                                   SkTextEncoding::kGlyphID,
-                                   440,
-                                   y,
-                                   paletteFont,
-                                   paint);
+            canvas->drawSimpleText(
+                    ColrV1TestDefinitions::color_circles_palette,
+                    std::size(ColrV1TestDefinitions::color_circles_palette) * sizeof(uint32_t),
+                    SkTextEncoding::kUTF32,
+                    440,
+                    y,
+                    paletteFont,
+                    paint);
             y += metrics.fDescent + metrics.fLeading;
         }
         return DrawResult::kOk;

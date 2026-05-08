@@ -20,17 +20,17 @@
 #include <unordered_map>
 #include <utility>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 #include "starboard/nplb/drm_helpers.h"
 #include "starboard/nplb/player_test_util.h"
 #include "starboard/player.h"
 
-namespace starboard {
 namespace nplb {
 
 namespace {
 
-using shared::starboard::player::video_dmp::VideoDmpReader;
+using ::starboard::VideoDmpReader;
 
 class HashFunction {
  public:
@@ -50,9 +50,9 @@ class HashFunction {
 // only if a[i] >= b[i] for all indices i.
 bool PosetGreaterThanOrEqualTo(const std::vector<int>& a,
                                const std::vector<int>& b) {
-  SB_DCHECK(a.size() == b.size());
+  SB_DCHECK_EQ(a.size(), b.size());
 
-  for (int i = 0; i < a.size(); ++i) {
+  for (size_t i = 0; i < a.size(); ++i) {
     if (a[i] < b[i]) {
       return false;
     }
@@ -91,8 +91,8 @@ std::set<std::vector<int>> SearchPosetMaximalElementsDFS(
     int resource_types,
     int max_instances_per_resource,
     const PosetSearchFunctor& test_functor) {
-  SB_DCHECK(resource_types > 0);
-  SB_DCHECK(max_instances_per_resource > 0);
+  SB_DCHECK_GT(resource_types, 0);
+  SB_DCHECK_GT(max_instances_per_resource, 0);
   SB_DCHECK(test_functor);
 
   std::stack<std::pair<std::vector<int>, int>> stack;
@@ -127,7 +127,7 @@ std::set<std::vector<int>> SearchPosetMaximalElementsDFS(
       ++index;
     } else {
       bool can_advance = false;
-      for (int i = 0; i < config.size(); ++i) {
+      for (size_t i = 0; i < config.size(); ++i) {
         if (config[i] >= max_instances_per_resource) {
           continue;
         } else {
@@ -152,19 +152,21 @@ MaximumPlayerConfigurationExplorer::MaximumPlayerConfigurationExplorer(
     const std::vector<SbPlayerTestConfig>& player_configs,
     int max_instances_per_config,
     int max_total_instances,
-    testing::FakeGraphicsContextProvider* fake_graphics_context_provider)
+    starboard::FakeGraphicsContextProvider* fake_graphics_context_provider)
     : player_configs_(player_configs),
       max_instances_per_config_(max_instances_per_config),
       max_total_instances_(max_total_instances),
       fake_graphics_context_provider_(fake_graphics_context_provider),
       player_instances_(player_configs.size()) {
   SB_DCHECK(!player_configs_.empty());
-  SB_DCHECK(max_instances_per_config_ > 0);
-  SB_DCHECK(max_total_instances_ > 0);
+  SB_DCHECK_GT(max_instances_per_config_, 0);
+  SB_DCHECK_GT(max_total_instances_, 0);
   SB_DCHECK(fake_graphics_context_provider_);
-  SB_DCHECK(player_instances_.size() == player_configs_.size());
-  SB_DCHECK(player_configs_.size() <= 7 && max_instances_per_config_ <= 7)
-      << "Exploring configs with that size may be a time-consuming process.";
+  SB_DCHECK_EQ(player_instances_.size(), player_configs_.size());
+  SB_DCHECK_LE(player_configs_.size(), 7U)
+      << "High number of player configs may be time-consuming to explore.";
+  SB_DCHECK_LE(max_instances_per_config_, 7)
+      << "High max instances per config may be time-consuming to explore.";
 }
 
 MaximumPlayerConfigurationExplorer::~MaximumPlayerConfigurationExplorer() {
@@ -184,10 +186,10 @@ MaximumPlayerConfigurationExplorer::CalculateMaxTestConfigs() {
       player_configs_.size(), max_instances_per_config_, test_functor);
   std::vector<SbPlayerMultiplePlayerTestConfig> configs_to_return;
   for (auto& configs_vector : result) {
-    SB_DCHECK(configs_vector.size() == player_configs_.size());
+    SB_DCHECK_EQ(configs_vector.size(), player_configs_.size());
 
     SbPlayerMultiplePlayerTestConfig multi_player_test_config;
-    for (int i = 0; i < configs_vector.size(); i++) {
+    for (size_t i = 0; i < configs_vector.size(); i++) {
       multi_player_test_config.insert(multi_player_test_config.end(),
                                       configs_vector[i], player_configs_[i]);
     }
@@ -200,7 +202,7 @@ MaximumPlayerConfigurationExplorer::CalculateMaxTestConfigs() {
 
 bool MaximumPlayerConfigurationExplorer::IsConfigCreatable(
     const std::vector<int>& configs_to_create) {
-  SB_DCHECK(configs_to_create.size() == player_configs_.size());
+  SB_DCHECK_EQ(configs_to_create.size(), player_configs_.size());
 
   if (std::accumulate(configs_to_create.begin(), configs_to_create.end(), 0) >
       max_total_instances_) {
@@ -208,16 +210,18 @@ bool MaximumPlayerConfigurationExplorer::IsConfigCreatable(
     return false;
   }
 
-  for (int i = 0; i < configs_to_create.size(); i++) {
-    SB_DCHECK(configs_to_create[i] >= 0);
-    SB_DCHECK(configs_to_create[i] <= max_instances_per_config_);
+  for (size_t i = 0; i < configs_to_create.size(); i++) {
+    SB_DCHECK_GE(configs_to_create[i], 0);
+    SB_DCHECK_LE(configs_to_create[i], max_instances_per_config_);
 
     std::vector<PlayerInstance>& instances = player_instances_[i];
-    while (instances.size() > configs_to_create[i]) {
+    while (instances.size() >
+           static_cast<unsigned long>(configs_to_create[i])) {
       DestroyPlayerInstance(instances.back());
       instances.pop_back();
     }
-    while (instances.size() < configs_to_create[i]) {
+    while (instances.size() <
+           static_cast<unsigned long>(configs_to_create[i])) {
       PlayerInstance instance = CreatePlayerInstance(player_configs_[i]);
       if (instance.player == kSbPlayerInvalid) {
         return false;
@@ -225,7 +229,8 @@ bool MaximumPlayerConfigurationExplorer::IsConfigCreatable(
       instances.push_back(instance);
     }
 
-    SB_DCHECK(instances.size() == configs_to_create[i]);
+    SB_DCHECK_EQ(instances.size(),
+                 static_cast<unsigned long>(configs_to_create[i]));
   }
   return true;
 }
@@ -237,7 +242,8 @@ MaximumPlayerConfigurationExplorer::CreatePlayerInstance(
   const char* video_filename = config.video_filename;
   SbPlayerOutputMode output_mode = config.output_mode;
   const char* key_system = config.key_system;
-  SB_DCHECK(video_filename && strlen(video_filename) > 0);
+  SB_DCHECK(video_filename);
+  SB_DCHECK_GT(strlen(video_filename), 0U);
   SB_DCHECK(output_mode == kSbPlayerOutputModeDecodeToTexture ||
             output_mode == kSbPlayerOutputModePunchOut);
   SB_DCHECK(key_system);
@@ -285,4 +291,3 @@ void MaximumPlayerConfigurationExplorer::DestroyPlayerInstance(
 }
 
 }  // namespace nplb
-}  // namespace starboard

@@ -258,6 +258,9 @@ or{
         "America:Chihuahua"{
             ec{"ଚିହୁଆହୁଆ"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"ସିଉଡାଡ୍ ଜୁଆରେଜ୍"}
+        }
         "America:Coral_Harbour"{
             ec{"ଆଟିକୋକାନ୍"}
         }
@@ -1220,6 +1223,9 @@ or{
         "Pacific:Johnston"{
             ec{"ଜନଷ୍ଟନ୍"}
         }
+        "Pacific:Kanton"{
+            ec{"କ୍ୟାଣ୍ଟନ"}
+        }
         "Pacific:Kiritimati"{
             ec{"କିରିତିମାଟି"}
         }
@@ -1933,10 +1939,9 @@ or{
             lg{"ୟେକାଟେରିନବର୍ଗ୍ ସମୟ"}
             ls{"ୟେକାଟେରିନବର୍ଗ୍ ମାନାଙ୍କ ସମୟ"}
         }
-        fallbackFormat{"{1} ({0})"}
-        gmtFormat{"GMT{0}"}
-        gmtZeroFormat{"GMT"}
-        hourFormat{"+HH:mm;-HH:mm"}
+        "meta:Yukon"{
+            ls{"ୟୁକୋନ୍ ସମୟ"}
+        }
         regionFormat{"{0} ସମୟ"}
         regionFormatDaylight{"{0} ଦିବାଲୋକ ସମୟ"}
         regionFormatStandard{"{0} ମାନାଙ୍କ ସମୟ"}

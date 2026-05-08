@@ -9,8 +9,8 @@
 #define MemoryCache_DEFINED
 
 #include "include/core/SkData.h"
-#include "include/gpu/GrContextOptions.h"
-#include "include/private/SkChecksum.h"
+#include "include/gpu/ganesh/GrContextOptions.h"
+#include "src/core/SkChecksum.h"
 
 #include <unordered_map>
 
@@ -81,7 +81,7 @@ private:
         using argument_type = Key;
         using result_type = uint32_t;
         uint32_t operator()(const Key& key) const {
-            return key.fKey ? SkOpts::hash_fn(key.fKey->data(), key.fKey->size(), 0) : 0;
+            return key.fKey ? SkChecksum::Hash32(key.fKey->data(), key.fKey->size()) : 0;
         }
     };
 

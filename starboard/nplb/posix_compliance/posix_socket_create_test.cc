@@ -18,9 +18,9 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -29,7 +29,7 @@ TEST(PosixSocketCreateTest, ATonOfTcp) {
   for (int i = 0; i < kATon; ++i) {
     int socket_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
-    EXPECT_TRUE(socket_fd > 0);
+    EXPECT_TRUE(socket_fd >= 0);
     EXPECT_TRUE(close(socket_fd) == 0);
   }
 }
@@ -39,7 +39,7 @@ TEST(PosixSocketCreateTest, ManyTcpAtOnce) {
   int sockets_fd[kMany] = {0};
   for (int i = 0; i < kMany; ++i) {
     sockets_fd[i] = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    ASSERT_TRUE(sockets_fd[i] > 0);
+    ASSERT_TRUE(sockets_fd[i] >= 0);
   }
 
   for (int i = 0; i < kMany; ++i) {
@@ -49,4 +49,3 @@ TEST(PosixSocketCreateTest, ManyTcpAtOnce) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

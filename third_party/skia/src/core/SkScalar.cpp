@@ -5,9 +5,8 @@
  * found in the LICENSE file.
  */
 
-
-#include "include/core/SkMath.h"
 #include "include/core/SkScalar.h"
+#include "include/private/base/SkDebug.h"
 
 SkScalar SkScalarInterpFunc(SkScalar searchKey, const SkScalar keys[],
                             const SkScalar values[], int length) {

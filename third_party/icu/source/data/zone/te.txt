@@ -258,6 +258,9 @@ te{
         "America:Chihuahua"{
             ec{"చువావా"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"సియుదాద్ హ్వారెజ్"}
+        }
         "America:Coral_Harbour"{
             ec{"అటికోకన్"}
         }
@@ -1223,6 +1226,9 @@ te{
         "Pacific:Johnston"{
             ec{"జాన్సటన్"}
         }
+        "Pacific:Kanton"{
+            ec{"కాంతోన్"}
+        }
         "Pacific:Kiritimati"{
             ec{"కిరీటిమాటి"}
         }
@@ -1595,7 +1601,7 @@ te{
             ls{"హోవ్డ్ ప్రామాణిక సమయం"}
         }
         "meta:India"{
-            ls{"భారతదేశ సమయం"}
+            ls{"భారతదేశ ప్రామాణిక సమయం"}
             ss{"IST"}
         }
         "meta:Indian_Ocean"{
@@ -1938,10 +1944,9 @@ te{
             lg{"యెకటెరిన్‌బర్గ్ సమయం"}
             ls{"యెకటెరిన్‌బర్గ్ ప్రామాణిక సమయం"}
         }
-        fallbackFormat{"{1} ({0})"}
-        gmtFormat{"GMT{0}"}
-        gmtZeroFormat{"GMT"}
-        hourFormat{"+HH:mm;-HH:mm"}
+        "meta:Yukon"{
+            ls{"యుకోన్ సమయం"}
+        }
         regionFormat{"{0} సమయం"}
         regionFormatDaylight{"{0} పగటి వెలుతురు సమయం"}
         regionFormatStandard{"{0} ప్రామాణిక సమయం"}

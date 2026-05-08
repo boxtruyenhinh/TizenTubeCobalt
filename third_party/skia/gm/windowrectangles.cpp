@@ -20,9 +20,9 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkColorData.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkClipStack.h"
+#include "src/core/SkColorData.h"
 #include "tools/ToolUtils.h"
 
 #include <utility>
@@ -41,8 +41,8 @@ class WindowRectanglesGM : public GM {
 private:
     DrawResult coverClipStack(const SkClipStack&, SkCanvas*, SkString* errorMsg);
 
-    SkISize onISize() override { return SkISize::Make(kDeviceRect.width(), kDeviceRect.height()); }
-    SkString onShortName() override { return SkString("windowrectangles"); }
+    SkISize getISize() override { return SkISize::Make(kDeviceRect.width(), kDeviceRect.height()); }
+    SkString getName() const override { return SkString("windowrectangles"); }
     DrawResult onDraw(SkCanvas*, SkString* errorMsg) override;
 };
 

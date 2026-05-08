@@ -12,21 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "starboard/shared/libfdkaac/libfdkaac_library_loader.h"
+
 #include <dlfcn.h>
 
 #include "starboard/common/log.h"
 #include "starboard/common/once.h"
-#include "starboard/shared/libfdkaac/libfdkaac_library_loader.h"
 
 namespace starboard {
-namespace shared {
-namespace libfdkaac {
 
 namespace {
 const char kLibfdkaacLibraryName[] = "libfdk-aac.so";
 }
 
-SB_ONCE_INITIALIZE_FUNCTION(LibfdkaacHandle, LibfdkaacHandle::GetHandle);
+SB_ONCE_INITIALIZE_FUNCTION(LibfdkaacHandle, LibfdkaacHandle::GetHandle)
 
 LibfdkaacHandle::LibfdkaacHandle() {
   LoadLibrary();
@@ -100,6 +99,4 @@ AAC_DECODER_ERROR(*aacDecoder_DecodeFrame)
  const INT timeDataSize,
  const UINT flags);
 
-}  // namespace libfdkaac
-}  // namespace shared
 }  // namespace starboard

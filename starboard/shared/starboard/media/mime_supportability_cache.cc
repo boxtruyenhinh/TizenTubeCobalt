@@ -15,23 +15,22 @@
 #include "starboard/shared/starboard/media/mime_supportability_cache.h"
 
 #include <cstring>
+#include <mutex>
 #include <queue>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 #include "starboard/common/media.h"
-#include "starboard/common/mutex.h"
 #include "starboard/common/once.h"
+#include "starboard/common/string.h"
 #include "starboard/log.h"
 #include "starboard/media.h"
 #include "starboard/shared/starboard/media/mime_type.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace media {
 
 namespace {
 
@@ -142,7 +141,7 @@ void StripAndParseBitrate(const char* mime,
     *bitrate = -1;
     return;
   }
-  SB_DCHECK(param.name == "bitrate");
+  SB_DCHECK_EQ(param.name, "bitrate");
   *bitrate = param.int_value;
 }
 
@@ -150,13 +149,11 @@ void StripAndParseBitrate(const char* mime,
 
 // static
 SB_ONCE_INITIALIZE_FUNCTION(MimeSupportabilityCache,
-                            MimeSupportabilityCache::GetInstance);
+                            MimeSupportabilityCache::GetInstance)
 
-Supportability MimeSupportabilityCache::GetMimeSupportability(
-    const char* mime,
-    ParsedMimeInfo* mime_info) {
+MimeSupportabilityCache::MimeSupportabilityResult
+MimeSupportabilityCache::GetMimeSupportability(const char* mime) {
   SB_DCHECK(mime);
-  SB_DCHECK(mime_info);
 
   // Strip the bitrate from mime string and check it separately.
   std::string mime_without_bitrate;
@@ -165,33 +162,33 @@ Supportability MimeSupportabilityCache::GetMimeSupportability(
 
   if (bitrate < 0) {
     // The mime string contains an invalid bitrate attribute. In that case, we
-    // return an invalid ParsedMimeInfo with kSbMediaSupportTypeNotSupported.
-    *mime_info = ParsedMimeInfo(mime);
-    return kSupportabilityNotSupported;
+    // return an empty mime_info with kSupportabilityNotSupported.
+    return {kSupportabilityNotSupported, std::nullopt};
   }
 
-  ScopedLock scoped_lock(mutex_);
-  Entry& entry = GetEntry_Locked(mime_without_bitrate);
+  std::lock_guard scoped_lock(mutex_);
+  Entry* entry = GetEntry_Locked(mime_without_bitrate);
+
+  if (!entry) {
+    // Failed to parse mime string.
+    return {kSupportabilityNotSupported, std::nullopt};
+  }
 
   // Return cached ParsedMimeInfo with real bitrate.
-  *mime_info = entry.mime_info;
-  mime_info->SetBitrate(bitrate);
+  ParsedMimeInfo mime_info = entry->mime_info.WithBitrate(bitrate);
 
-  if (!mime_info->is_valid()) {
-    // Return kSupportabilityNotSupported if we can't get a valid
-    // ParsedMimeInfo.
-    return kSupportabilityNotSupported;
-  }
+  Supportability supportability =
+      is_enabled_ ? IsBitrateSupported_Locked(*entry, bitrate)
+                  : kSupportabilityUnknown;
 
-  return is_enabled_ ? IsBitrateSupported_Locked(entry, bitrate)
-                     : kSupportabilityUnknown;
+  return {supportability, std::move(mime_info)};
 }
 
 void MimeSupportabilityCache::CacheMimeSupportability(
     const char* mime,
     Supportability supportability) {
   SB_DCHECK(mime);
-  SB_DCHECK(supportability != kSupportabilityUnknown);
+  SB_DCHECK_NE(supportability, kSupportabilityUnknown);
 
   if (!is_enabled_) {
     return;
@@ -207,16 +204,16 @@ void MimeSupportabilityCache::CacheMimeSupportability(
     return;
   }
 
-  ScopedLock scoped_lock(mutex_);
-  Entry& entry = GetEntry_Locked(mime_without_bitrate);
+  std::lock_guard scoped_lock(mutex_);
+  Entry* entry = GetEntry_Locked(mime_without_bitrate);
 
-  if (entry.mime_info.is_valid()) {
-    UpdateBitrateSupportability_Locked(&entry, bitrate, supportability);
+  if (entry) {
+    UpdateBitrateSupportability_Locked(entry, bitrate, supportability);
   }
 }
 
 void MimeSupportabilityCache::ClearCachedMimeSupportabilities() {
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   for (auto& iter : entries_) {
     iter.second.max_supported_bitrate = -1;
     iter.second.min_unsupported_bitrate = INT_MAX;
@@ -224,45 +221,12 @@ void MimeSupportabilityCache::ClearCachedMimeSupportabilities() {
 }
 
 void MimeSupportabilityCache::DumpCache() {
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   std::stringstream ss;
   ss << "\n========Dumping MimeSupportabilityCache========";
   for (const auto& entry_iter : entries_) {
-    const ParsedMimeInfo& mime_info = entry_iter.second.mime_info;
     ss << "\nMime: " << entry_iter.first;
-    ss << "\n  ParsedMimeInfo:";
-    ss << "\n    MimeType : " << mime_info.mime_type().ToString();
-    if (mime_info.is_valid()) {
-      if (mime_info.has_audio_info()) {
-        const ParsedMimeInfo::AudioCodecInfo& audio_info =
-            mime_info.audio_info();
-        ss << "\n    Audio Codec : "
-           << GetMediaAudioCodecName(audio_info.codec);
-        ss << "\n    Channels : " << audio_info.channels;
-      }
-      if (mime_info.has_video_info()) {
-        const ParsedMimeInfo::VideoCodecInfo& video_info =
-            mime_info.video_info();
-        ss << "\n    Video Codec : "
-           << GetMediaVideoCodecName(video_info.codec);
-        ss << "\n    Profile : " << video_info.profile;
-        ss << "\n    Level : " << video_info.level;
-        ss << "\n    BitDepth : " << video_info.bit_depth;
-        ss << "\n    PrimaryId : "
-           << GetMediaPrimaryIdName(video_info.primary_id);
-        ss << "\n    TransferId : "
-           << GetMediaTransferIdName(video_info.transfer_id);
-        ss << "\n    MatrixId : " << GetMediaMatrixIdName(video_info.matrix_id);
-        ss << "\n    Width : " << video_info.frame_width;
-        ss << "\n    Height : " << video_info.frame_height;
-        ss << "\n    Fps : " << video_info.fps;
-        ss << "\n    DecodeToTexture : "
-           << (video_info.decode_to_texture_required ? "true" : "false");
-      }
-    } else {
-      ss << "\n    Mime info is not valid";
-    }
-
+    ss << "\n  ParsedMimeInfo: " << entry_iter.second.mime_info;
     ss << "\n  MaxSupportedBitrate: "
        << entry_iter.second.max_supported_bitrate;
     ss << "\n  MinUnsupportedBitrate: "
@@ -273,32 +237,38 @@ void MimeSupportabilityCache::DumpCache() {
   SB_DLOG(INFO) << ss.str();
 }
 
-MimeSupportabilityCache::Entry& MimeSupportabilityCache::GetEntry_Locked(
+MimeSupportabilityCache::Entry* MimeSupportabilityCache::GetEntry_Locked(
     const std::string& mime_string) {
   auto entry_iter = entries_.find(mime_string);
   if (entry_iter != entries_.end()) {
-    return entry_iter->second;
+    return &entry_iter->second;
   }
 
   // We can't find anything from the cache. Parse mime string and cache
   // parsed ParsedMimeInfo.
-  auto insert_result = entries_.insert({mime_string, Entry(mime_string)});
+  auto mime_info = ParsedMimeInfo::Create(mime_string);
+  if (!mime_info) {
+    return nullptr;
+  }
+
+  auto insert_result =
+      entries_.emplace(mime_string, Entry(std::move(*mime_info)));
 
   // Keep cached items not exceeding max size.
   fifo_queue_.push(insert_result.first);
-  while (fifo_queue_.size() > max_size_) {
+  while (fifo_queue_.size() > static_cast<size_t>(max_size_)) {
     entries_.erase(fifo_queue_.front());
     fifo_queue_.pop();
   }
-  SB_DCHECK(entries_.size() == fifo_queue_.size());
+  SB_DCHECK_EQ(entries_.size(), fifo_queue_.size());
 
-  return insert_result.first->second;
+  return &insert_result.first->second;
 }
 
 Supportability MimeSupportabilityCache::IsBitrateSupported_Locked(
     const Entry& entry,
     int bitrate) const {
-  SB_DCHECK(bitrate >= 0);
+  SB_DCHECK_GE(bitrate, 0);
 
   if (bitrate <= entry.max_supported_bitrate) {
     return kSupportabilitySupported;
@@ -314,23 +284,20 @@ void MimeSupportabilityCache::UpdateBitrateSupportability_Locked(
     int bitrate,
     Supportability supportability) {
   SB_DCHECK(entry);
-  SB_DCHECK(bitrate >= 0);
-  SB_DCHECK(supportability != kSupportabilityUnknown);
+  SB_DCHECK_GE(bitrate, 0);
+  SB_DCHECK_NE(supportability, kSupportabilityUnknown);
 
   if (supportability == kSupportabilitySupported) {
-    SB_DCHECK(bitrate < entry->min_unsupported_bitrate);
+    SB_DCHECK_LT(bitrate, entry->min_unsupported_bitrate);
     if (bitrate > entry->max_supported_bitrate) {
       entry->max_supported_bitrate = bitrate;
     }
   } else if (supportability == kSupportabilityNotSupported) {
-    SB_DCHECK(bitrate > entry->max_supported_bitrate);
+    SB_DCHECK_GT(bitrate, entry->max_supported_bitrate);
     if (bitrate < entry->min_unsupported_bitrate) {
       entry->min_unsupported_bitrate = bitrate;
     }
   }
 }
 
-}  // namespace media
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

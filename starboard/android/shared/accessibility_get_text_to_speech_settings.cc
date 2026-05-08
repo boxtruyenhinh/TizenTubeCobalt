@@ -12,52 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#if SB_API_VERSION < 16
-#include "starboard/accessibility.h"
-#else  // SB_API_VERSION < 16
-#include "starboard/android/shared/accessibility_extension.h"
-#endif  // SB_API_VERSION < 16
-#include "starboard/android/shared/jni_env_ext.h"
-#include "starboard/android/shared/jni_utils.h"
-#include "starboard/common/memory.h"
-
 namespace starboard {
-namespace android {
-namespace shared {
-namespace accessibility {
-
-using starboard::android::shared::JniEnvExt;
-using starboard::android::shared::ScopedLocalJavaRef;
-
+// ATV no longer supports GetTextToSpeechSettings in Chrobalt,
+// Please reference starboard/android/shared/text_to_speech_helper.h for
+// supported text-to-speech APIs instead.
 bool GetTextToSpeechSettings(SbAccessibilityTextToSpeechSettings* out_setting) {
-  if (!out_setting ||
-      !starboard::common::MemoryIsZero(
-          out_setting, sizeof(SbAccessibilityTextToSpeechSettings))) {
-    return false;
-  }
-
-  JniEnvExt* env = JniEnvExt::Get();
-
-  out_setting->has_text_to_speech_setting = true;
-  ScopedLocalJavaRef<jobject> j_tts_helper(
-      env->CallStarboardObjectMethodOrAbort(
-          "getTextToSpeechHelper",
-          "()Ldev/cobalt/coat/CobaltTextToSpeechHelper;"));
-  out_setting->is_text_to_speech_enabled = env->CallBooleanMethodOrAbort(
-      j_tts_helper.Get(), "isScreenReaderEnabled", "()Z");
-
-  return true;
+  return false;
 }
 
-}  // namespace accessibility
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard
-
-#if SB_API_VERSION < 16
-bool SbAccessibilityGetTextToSpeechSettings(
-    SbAccessibilityTextToSpeechSettings* out_setting) {
-  return starboard::android::shared::accessibility::GetTextToSpeechSettings(
-      out_setting);
-}
-#endif  // SB_API_VERSION < 16

@@ -16,8 +16,8 @@
 // this is hooked up to something.
 
 #include "starboard/nplb/posix_compliance/posix_socket_helpers.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -32,7 +32,7 @@ TEST(PosixSocketListenTest, SunnyDayUnbound) {
   int socket_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   ASSERT_TRUE(socket_fd >= 0);
 
-  // set socket reuseable
+  // set socket reusable
   const int on = 1;
   result = setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
   EXPECT_TRUE(result == 0);
@@ -42,18 +42,11 @@ TEST(PosixSocketListenTest, SunnyDayUnbound) {
   }
 
   // bind socket with local address
-#if SB_HAS(IPV6)
   sockaddr_in6 address = {};
   EXPECT_TRUE(
       PosixGetLocalAddressIPv4(reinterpret_cast<sockaddr*>(&address)) == 0 ||
       PosixGetLocalAddressIPv6(reinterpret_cast<sockaddr*>(&address)) == 0);
-  address.sin6_port = htons(GetPortNumberForTests());
-#else
-  sockaddr address = {0};
-  EXPECT_TRUE(PosixGetLocalAddressIPv4(&address) == 0);
-  sockaddr_in* address_ptr = reinterpret_cast<sockaddr_in*>(&address);
-  address_ptr->sin_port = htons(GetPortNumberForTests());
-#endif
+  address.sin6_port = htons(PosixGetPortNumberForTests());
 
   result =
       bind(socket_fd, reinterpret_cast<sockaddr*>(&address), sizeof(sockaddr));
@@ -87,4 +80,3 @@ TEST(PosixSocketListenTest, SunnyDayUnbound) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

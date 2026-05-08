@@ -24,8 +24,7 @@
 #define ALIGNMENT_8_BYTE_INT 8
 #endif  // SB_IS(ARCH_X86)
 
-namespace starboard {
-namespace sabi {
+namespace nplb {
 namespace {
 
 static const int8_t kInt8 = 0x74;
@@ -151,7 +150,7 @@ TEST(SbSabiStructAlignmentTest, NestedStruct) {
 }
 
 TEST(SbSabiStructAlignmentTest, NestedUnion) {
-  const Struct4 struct4 = {kInt8, kInt32, kInt8};
+  const Struct4 struct4 = {kInt8, {kInt32}, kInt8};
   const int8_t* base = reinterpret_cast<const int8_t*>(&struct4);
 
   EXPECT_EQ(kInt8, *base);
@@ -159,7 +158,6 @@ TEST(SbSabiStructAlignmentTest, NestedUnion) {
   EXPECT_EQ(kInt8, *(base + 8));
 }
 
-}  // namespace sabi
-}  // namespace starboard
+}  // namespace nplb
 
 #undef ALIGNMENT_8_BYTE_INT

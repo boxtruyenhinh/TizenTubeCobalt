@@ -175,9 +175,13 @@ kde{
             "SHP",
             "Pauni ya Santahelena",
         }
+        SLE{
+            "SLE",
+            "Leoni",
+        }
         SLL{
             "SLL",
-            "Leoni",
+            "Leoni (1964—2022)",
         }
         SOS{
             "SOS",
@@ -216,7 +220,7 @@ kde{
             "Faranga CFA BEAC",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "Faranga CFA BCEAO",
         }
         ZAR{

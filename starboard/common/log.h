@@ -20,6 +20,7 @@
 #ifndef STARBOARD_COMMON_LOG_H_
 #define STARBOARD_COMMON_LOG_H_
 
+#include "build/build_config.h"
 #include "starboard/configuration.h"
 #include "starboard/log.h"
 #include "starboard/system.h"
@@ -28,24 +29,36 @@
 
 extern "C++" {
 
+#include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 
-#if defined(COBALT_BUILD_TYPE_GOLD)
-#define SB_LOGGING_IS_OFFICIAL_BUILD 1
-#else
+// Force SB_LOGGING_IS_OFFICIAL_BUILD to 0 for all build configurations.
+//
+// In an "official" build (when this is 1), SB_CHECK(condition) expands to a
+// direct call to ::starboard::Break(), providing no diagnostic information in
+// the resulting crash stack reported to the prime. http://b/445154341#comment5
+//
+// By forcing the non-official path, a failing SB_CHECK will instead go through
+// the SB_LOG(FATAL) macro. This generates a rich log message containing the
+// failed condition and a stack trace, which is invaluable for debugging.
+//
+// While this introduces overhead, it is incurred only upon failure and,
+// critically, occurs *after* the condition is checked. This ensures that the
+// timing of the check is not altered, preventing this change from masking or
+// creating race conditions.
 #define SB_LOGGING_IS_OFFICIAL_BUILD 0
-#endif
 
 // This file provides a selected subset of the //base/logging/ macros and
 // assertions. See those files for more comments and details.
 
 namespace starboard {
-namespace logging {
 
 void SetMinLogLevel(SbLogPriority level);
 SbLogPriority GetMinLogLevel();
 SbLogPriority StringToLogLevel(const std::string& log_level);
+SbLogPriority ChromiumIntToStarboardLogLevel(const std::string& log_level);
 void Break();
 
 // An object which will dumps the stack to the given ostream, without adding any
@@ -59,9 +72,14 @@ std::ostream& operator<<(std::ostream& out, const Stack& stack);
 std::ostream& operator<<(std::ostream& out, const wchar_t* wstr);
 std::ostream& operator<<(std::ostream& out, const std::wstring& wstr);
 
-#if defined(__cplusplus_winrt)
-inline std::ostream& operator<<(std::ostream& out, ::Platform::String ^ str);
-#endif
+// Helper function to print a std::optional of data.
+template <typename T>
+std::ostream& operator<<(std::ostream& out, const std::optional<T>& v) {
+  if (v) {
+    return out << *v;
+  }
+  return out << "(nullopt)";
+}
 
 const SbLogPriority SB_LOG_INFO = kSbLogPriorityInfo;
 const SbLogPriority SB_LOG_WARNING = kSbLogPriorityWarning;
@@ -86,9 +104,6 @@ class LogMessage {
   std::ostringstream stream_;
   size_t message_start_;  // Offset of the start of the message (past prefix
                           // info).
-  // The file and line information passed in to the constructor.
-  const char* file_;
-  const int line_;
 };
 
 class LogMessageVoidify {
@@ -99,21 +114,16 @@ class LogMessageVoidify {
   void operator&(std::ostream&);
 };
 
-}  // namespace logging
 }  // namespace starboard
 
-#define SB_LOG_MESSAGE_INFO                            \
-  ::starboard::logging::LogMessage(__FILE__, __LINE__, \
-                                   ::starboard::logging::SB_LOG_INFO)
-#define SB_LOG_MESSAGE_WARNING                         \
-  ::starboard::logging::LogMessage(__FILE__, __LINE__, \
-                                   ::starboard::logging::SB_LOG_WARNING)
-#define SB_LOG_MESSAGE_ERROR                           \
-  ::starboard::logging::LogMessage(__FILE__, __LINE__, \
-                                   ::starboard::logging::SB_LOG_ERROR)
-#define SB_LOG_MESSAGE_FATAL                           \
-  ::starboard::logging::LogMessage(__FILE__, __LINE__, \
-                                   ::starboard::logging::SB_LOG_FATAL)
+#define SB_LOG_MESSAGE_INFO \
+  ::starboard::LogMessage(__FILE__, __LINE__, ::starboard::SB_LOG_INFO)
+#define SB_LOG_MESSAGE_WARNING \
+  ::starboard::LogMessage(__FILE__, __LINE__, ::starboard::SB_LOG_WARNING)
+#define SB_LOG_MESSAGE_ERROR \
+  ::starboard::LogMessage(__FILE__, __LINE__, ::starboard::SB_LOG_ERROR)
+#define SB_LOG_MESSAGE_FATAL \
+  ::starboard::LogMessage(__FILE__, __LINE__, ::starboard::SB_LOG_FATAL)
 
 // Compatibility with base/logging.h which defines ERROR to be 0 to workaround
 // some system header defines that do the same thing.
@@ -121,20 +131,17 @@ class LogMessageVoidify {
 
 #define SB_LOG_STREAM(severity) SB_LOG_MESSAGE_##severity.stream()
 #define SB_LAZY_STREAM(stream, condition) \
-  !(condition) ? (void)0 : ::starboard::logging::LogMessageVoidify() & (stream)
+  !(condition) ? (void)0 : ::starboard::LogMessageVoidify() & (stream)
 
 #if SB_LOGGING_IS_OFFICIAL_BUILD && !SB_IS(MODULAR) && \
     !SB_IS(EVERGREEN_COMPATIBLE)
-#define SB_LOG_IS_ON(severity)                         \
-  ((::starboard::logging::SB_LOG_##severity >=         \
-    ::starboard::logging::SB_LOG_FATAL)                \
-       ? ((::starboard::logging::SB_LOG_##severity) >= \
-          ::starboard::logging::GetMinLogLevel())      \
+#define SB_LOG_IS_ON(severity)                                               \
+  ((::starboard::SB_LOG_##severity >= ::starboard::SB_LOG_FATAL)             \
+       ? ((::starboard::SB_LOG_##severity) >= ::starboard::GetMinLogLevel()) \
        : false)
 #else  // SB_LOGGING_IS_OFFICIAL_BUILD
-#define SB_LOG_IS_ON(severity)                  \
-  ((::starboard::logging::SB_LOG_##severity) >= \
-   ::starboard::logging::GetMinLogLevel())
+#define SB_LOG_IS_ON(severity) \
+  ((::starboard::SB_LOG_##severity) >= ::starboard::GetMinLogLevel())
 #endif  // SB_LOGGING_IS_OFFICIAL_BUILD
 
 #define SB_LOG_IF(severity, condition) \
@@ -142,12 +149,12 @@ class LogMessageVoidify {
 #define SB_LOG(severity) SB_LOG_IF(severity, true)
 #define SB_EAT_STREAM_PARAMETERS SB_LOG_IF(INFO, false)
 #define SB_STACK_IF(severity, condition) \
-  SB_LOG_IF(severity, condition) << "\n" << ::starboard::logging::Stack(0)
+  SB_LOG_IF(severity, condition) << "\n" << ::starboard::Stack(0)
 #define SB_STACK(severity) SB_STACK_IF(severity, true)
 
 #if SB_LOGGING_IS_OFFICIAL_BUILD
 #define SB_CHECK(condition) \
-  !(condition) ? ::starboard::logging::Break() : SB_EAT_STREAM_PARAMETERS
+  !(condition) ? ::starboard::Break() : SB_EAT_STREAM_PARAMETERS
 #elif defined(_PREFAST_)
 #define SB_CHECK(condition) \
   __analysis_assume(condition), SB_EAT_STREAM_PARAMETERS
@@ -167,7 +174,14 @@ class LogMessageVoidify {
 
 #if SB_LOGGING_IS_OFFICIAL_BUILD || \
     (defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON))
-#define SB_DCHECK(condition) SB_EAT_STREAM_PARAMETERS
+class SbDcheckNoOpStream {
+ public:
+  template <typename T>
+  const SbDcheckNoOpStream& operator<<(const T&) const {
+    return *this;
+  }
+};
+#define SB_DCHECK(condition) (void)sizeof(bool(condition)), SbDcheckNoOpStream()
 #define SB_DCHECK_ENABLED 0
 #else
 #define SB_DCHECK(condition) SB_CHECK(condition)

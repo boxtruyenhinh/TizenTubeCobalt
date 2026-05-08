@@ -14,14 +14,16 @@
 
 #include <sys/mman.h>
 
+#include "starboard/common/log.h"
+#include "starboard/configuration_constants.h"
 #include "starboard/nplb/nplb_evergreen_compat_tests/checks.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if SB_IS(EVERGREEN_COMPATIBLE)
+#if !SB_IS(EVERGREEN_COMPATIBLE)
+#error These tests apply only to EVERGREEN_COMPATIBLE platforms.
+#endif
 
-namespace starboard {
 namespace nplb {
-namespace nplb_evergreen_compat_tests {
 
 namespace {
 
@@ -31,10 +33,8 @@ const size_t kSmallerSize = 15 * 1024 * 1024;
 class ExecutableMemoryTest : public ::testing::Test {
  protected:
   ExecutableMemoryTest() {
-#if SB_API_VERSION >= 16
     SB_DCHECK(kSbCanMapExecutableMemory)
         << "Evergreen requires executable memory support!";
-#endif
   }
   ~ExecutableMemoryTest() {}
 };
@@ -50,8 +50,4 @@ TEST_F(ExecutableMemoryTest, VerifyMemoryProtection) {
 }
 
 }  // namespace
-}  // namespace nplb_evergreen_compat_tests
 }  // namespace nplb
-}  // namespace starboard
-
-#endif  // SB_IS(EVERGREEN_COMPATIBLE)

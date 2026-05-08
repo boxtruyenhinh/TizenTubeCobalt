@@ -13,7 +13,7 @@
 namespace angle
 {
 
-class MemoryObjectTest : public ANGLETest
+class MemoryObjectTest : public ANGLETest<>
 {
   protected:
     MemoryObjectTest()
@@ -31,6 +31,9 @@ class MemoryObjectTest : public ANGLETest
 TEST_P(MemoryObjectTest, MemoryObjectShouldBeMemoryObject)
 {
     ANGLE_SKIP_TEST_IF(!EnsureGLExtensionEnabled("GL_EXT_memory_object"));
+
+    // http://anglebug.com/42263921
+    ANGLE_SKIP_TEST_IF(IsLinux() && IsAMD() && IsDesktopOpenGL());
 
     constexpr GLsizei kMemoryObjectCount = 2;
     GLuint memoryObjects[kMemoryObjectCount];
@@ -53,12 +56,65 @@ TEST_P(MemoryObjectTest, ShouldFailValidationOnImportFdUnsupportedHandleType)
 {
     ANGLE_SKIP_TEST_IF(!EnsureGLExtensionEnabled("GL_EXT_memory_object_fd"));
 
+    // http://anglebug.com/42263921
+    ANGLE_SKIP_TEST_IF(IsLinux() && IsAMD() && IsDesktopOpenGL());
+
     {
         GLMemoryObject memoryObject;
         GLsizei deviceMemorySize = 1;
         int fd                   = -1;
         glImportMemoryFdEXT(memoryObject, deviceMemorySize, GL_HANDLE_TYPE_OPAQUE_WIN32_EXT, fd);
         EXPECT_GL_ERROR(GL_INVALID_ENUM);
+    }
+
+    EXPECT_GL_NO_ERROR();
+}
+
+// Test memory object queries
+TEST_P(MemoryObjectTest, MemoryObjectQueries)
+{
+    ANGLE_SKIP_TEST_IF(!EnsureGLExtensionEnabled("GL_EXT_memory_object"));
+
+    // http://anglebug.com/42263921
+    ANGLE_SKIP_TEST_IF(IsLinux() && IsAMD() && IsDesktopOpenGL());
+
+    // Validate that configuring or querying memory object zero fails
+    {
+        GLint dedicatedMemory = GL_TRUE;
+        glMemoryObjectParameterivEXT(0, GL_DEDICATED_MEMORY_OBJECT_EXT, &dedicatedMemory);
+        EXPECT_GL_ERROR(GL_INVALID_VALUE);
+
+        glGetMemoryObjectParameterivEXT(0, GL_DEDICATED_MEMORY_OBJECT_EXT, &dedicatedMemory);
+        EXPECT_GL_ERROR(GL_INVALID_VALUE);
+        EXPECT_EQ(dedicatedMemory, GL_TRUE);
+    }
+
+    GLMemoryObject memoryObject;
+
+    // Validate that the initial state of GL_DEDICATED_MEMORY_OBJECT_EXT is GL_FALSE
+    {
+        GLint dedicatedMemory = 0;
+        glGetMemoryObjectParameterivEXT(memoryObject, GL_DEDICATED_MEMORY_OBJECT_EXT,
+                                        &dedicatedMemory);
+        EXPECT_GL_NO_ERROR();
+        EXPECT_GL_FALSE(dedicatedMemory);
+    }
+
+    // Change GL_DEDICATED_MEMORY_OBJECT_EXT to GL_TRUE
+    {
+        GLint dedicatedMemory = GL_TRUE;
+        glMemoryObjectParameterivEXT(memoryObject, GL_DEDICATED_MEMORY_OBJECT_EXT,
+                                     &dedicatedMemory);
+        EXPECT_GL_NO_ERROR();
+    }
+
+    // Confirm that GL_DEDICATED_MEMORY_OBJECT_EXT is now TRUE
+    {
+        GLint dedicatedMemory = 0;
+        glGetMemoryObjectParameterivEXT(memoryObject, GL_DEDICATED_MEMORY_OBJECT_EXT,
+                                        &dedicatedMemory);
+        EXPECT_GL_NO_ERROR();
+        EXPECT_GL_TRUE(dedicatedMemory);
     }
 
     EXPECT_GL_NO_ERROR();

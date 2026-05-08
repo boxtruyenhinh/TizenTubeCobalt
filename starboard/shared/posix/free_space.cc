@@ -15,6 +15,7 @@
 #include "starboard/shared/posix/free_space.h"
 
 #include <sys/statvfs.h>
+
 #include <vector>
 
 #include "starboard/common/log.h"
@@ -22,8 +23,6 @@
 #include "starboard/extension/free_space.h"
 
 namespace starboard {
-namespace shared {
-namespace posix {
 
 namespace {
 
@@ -52,6 +51,4 @@ const void* GetFreeSpaceApi() {
   return &kFreeSpaceApi;
 }
 
-}  // namespace posix
-}  // namespace shared
 }  // namespace starboard

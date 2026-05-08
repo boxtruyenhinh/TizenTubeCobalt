@@ -9,7 +9,7 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_STARBOARD) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
 #include <sync/sync.h>
 #endif
 
@@ -42,10 +42,10 @@ void GpuFence::Wait() {
     return;
   }
 
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_STARBOARD) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
   static const int kInfiniteSyncWaitTimeout = -1;
-  DCHECK_GE(fence_handle_.owned_fd.get(), 0);
-  if (sync_wait(fence_handle_.owned_fd.get(), kInfiniteSyncWaitTimeout) < 0) {
+  DCHECK_GE(fence_handle_.Peek(), 0);
+  if (sync_wait(fence_handle_.Peek(), kInfiniteSyncWaitTimeout) < 0) {
     LOG(FATAL) << "Failed while waiting for gpu fence fd";
   }
 #else
@@ -57,7 +57,7 @@ void GpuFence::Wait() {
 GpuFence::FenceStatus GpuFence::GetStatusChangeTime(int fd,
                                                     base::TimeTicks* time) {
   DCHECK_NE(fd, -1);
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_STARBOARD) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
   auto info =
       std::unique_ptr<sync_fence_info_data, void (*)(sync_fence_info_data*)>{
           sync_fence_info(fd), sync_fence_info_free};
@@ -82,21 +82,20 @@ GpuFence::FenceStatus GpuFence::GetStatusChangeTime(int fd,
   }
   *time = base::TimeTicks() + base::Nanoseconds(timestamp_ns);
   return FenceStatus::kSignaled;
-#endif
+#else
   NOTREACHED();
-  return FenceStatus::kInvalid;
+#endif
 }
 
 base::TimeTicks GpuFence::GetMaxTimestamp() const {
+#if BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_STARBOARD) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
   base::TimeTicks timestamp;
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
-  FenceStatus status =
-      GetStatusChangeTime(fence_handle_.owned_fd.get(), &timestamp);
+  FenceStatus status = GetStatusChangeTime(fence_handle_.Peek(), &timestamp);
   DCHECK_EQ(status, FenceStatus::kSignaled);
   return timestamp;
-#endif
+#else
   NOTREACHED();
-  return timestamp;
+#endif
 }
 
 }  // namespace gfx

@@ -16,9 +16,9 @@
 // it compiles and runs without crashing.
 
 #include "starboard/common/log.h"
+
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -54,10 +54,10 @@ TEST(SbLogTest, SunnyDayFatal) {
 }
 
 TEST(SbLogTest, SunnyDayStreams) {
-  SbLogPriority previous = logging::GetMinLogLevel();
+  SbLogPriority previous = starboard::GetMinLogLevel();
   for (int i = kSbLogPriorityInfo; i <= kSbLogPriorityFatal; ++i) {
-    logging::SetMinLogLevel(static_cast<SbLogPriority>(i));
-    EXPECT_EQ(i, logging::GetMinLogLevel());
+    starboard::SetMinLogLevel(static_cast<SbLogPriority>(i));
+    EXPECT_EQ(i, starboard::GetMinLogLevel());
     SB_LOG(INFO) << "testing info";
     SB_DLOG(INFO) << "testing debug info";
     SB_LOG(WARNING) << "testing warning";
@@ -66,9 +66,8 @@ TEST(SbLogTest, SunnyDayStreams) {
     SB_DLOG(ERROR) << "testing debug error";
   }
 
-  logging::SetMinLogLevel(previous);
+  starboard::SetMinLogLevel(previous);
 }
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

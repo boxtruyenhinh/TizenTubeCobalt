@@ -20,6 +20,13 @@ void ContentDecryptionModule::GetStatusForPolicy(
                   "GetStatusForPolicy() is not supported.");
 }
 
+#if BUILDFLAG(USE_STARBOARD_MEDIA)
+void ContentDecryptionModule::GetMetrics(std::unique_ptr<GetMetricsCdmPromise> promise) {
+  promise->reject(CdmPromise::Exception::NOT_SUPPORTED_ERROR, 0,
+                  "GeMetrics() is not supported.");
+}
+#endif // BUILDFLAG(USE_STARBOARD_MEDIA)
+
 void ContentDecryptionModule::DeleteOnCorrectThread() const {
   delete this;
 }
@@ -28,6 +35,35 @@ void ContentDecryptionModule::DeleteOnCorrectThread() const {
 void ContentDecryptionModuleTraits::Destruct(
     const ContentDecryptionModule* cdm) {
   cdm->DeleteOnCorrectThread();
+}
+
+std::optional<media::HdcpVersion> MaybeHdcpVersionFromString(
+    const std::string& hdcp_version_string) {
+  // The strings are specified in the explainer doc:
+  // https://github.com/WICG/hdcp-detection/blob/master/explainer.md
+  if (hdcp_version_string.empty()) {
+    return media::HdcpVersion::kHdcpVersionNone;
+  } else if (hdcp_version_string == "1.0") {
+    return media::HdcpVersion::kHdcpVersion1_0;
+  } else if (hdcp_version_string == "1.1") {
+    return media::HdcpVersion::kHdcpVersion1_1;
+  } else if (hdcp_version_string == "1.2") {
+    return media::HdcpVersion::kHdcpVersion1_2;
+  } else if (hdcp_version_string == "1.3") {
+    return media::HdcpVersion::kHdcpVersion1_3;
+  } else if (hdcp_version_string == "1.4") {
+    return media::HdcpVersion::kHdcpVersion1_4;
+  } else if (hdcp_version_string == "2.0") {
+    return media::HdcpVersion::kHdcpVersion2_0;
+  } else if (hdcp_version_string == "2.1") {
+    return media::HdcpVersion::kHdcpVersion2_1;
+  } else if (hdcp_version_string == "2.2") {
+    return media::HdcpVersion::kHdcpVersion2_2;
+  } else if (hdcp_version_string == "2.3") {
+    return media::HdcpVersion::kHdcpVersion2_3;
+  }
+
+  return std::nullopt;
 }
 
 }  // namespace media

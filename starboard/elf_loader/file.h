@@ -15,11 +15,9 @@
 #ifndef STARBOARD_ELF_LOADER_FILE_H_
 #define STARBOARD_ELF_LOADER_FILE_H_
 
+#include <cstdint>
 #include <string>
 
-#include "starboard/types.h"
-
-namespace starboard {
 namespace elf_loader {
 
 // File abstraction to be used by the ELF loader.
@@ -44,6 +42,5 @@ class File {
 };
 
 }  // namespace elf_loader
-}  // namespace starboard
 
 #endif  // STARBOARD_ELF_LOADER_FILE_H_

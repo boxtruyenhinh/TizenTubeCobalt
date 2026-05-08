@@ -12,18 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "starboard/common/log.h"
 #include "starboard/speech_synthesis.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
 TEST(SbSpeechSynthesisBasicTest, Basic) {
   if (!SbSpeechSynthesisIsSupported()) {
-    SB_LOG(INFO) << "Speech synthesis not supported. Test skipped.";
-    return;
+    GTEST_SKIP() << "Speech synthesis not supported.";
   }
   SbSpeechSynthesisSpeak("Hello");
   SbSpeechSynthesisCancel();
@@ -39,4 +36,3 @@ TEST(SbSpeechSynthesisBasicTest, RainyDayEmpty) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

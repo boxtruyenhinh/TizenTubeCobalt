@@ -20,7 +20,6 @@
 #include "starboard/thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -65,7 +64,7 @@ struct RunPosixOnceContext {
     pthread_mutex_destroy(&mutex);
   }
 
-  posix::TestSemaphore semaphore;
+  TestSemaphore semaphore;
   pthread_mutex_t mutex;
   pthread_cond_t condition;
 
@@ -73,7 +72,7 @@ struct RunPosixOnceContext {
 };
 
 void* RunPosixOnceEntryPoint(void* context) {
-  pthread_setname_np(pthread_self(), posix::kThreadName);
+  pthread_setname_np(pthread_self(), kThreadName);
 
   RunPosixOnceContext* run_sbonce_context =
       reinterpret_cast<RunPosixOnceContext*>(context);
@@ -104,7 +103,6 @@ TEST(PosixOnceTest, SunnyDayMultipleThreadsInit) {
 
   const int kIterationCount = 10;
   for (int i = 0; i < kIterationCount; ++i) {
-    pthread_once_t once_control = PTHREAD_ONCE_INIT;
     RunPosixOnceContext context;
 
     s_global_value = 0;
@@ -125,9 +123,9 @@ TEST(PosixOnceTest, SunnyDayMultipleThreadsInit) {
     }
 
     // Signal threads to beginWait for all threads to complete.
-    for (int i = 0; i < kMany; ++i) {
+    for (int j = 0; j < kMany; ++j) {
       void* result;
-      pthread_join(threads[i], &result);
+      pthread_join(threads[j], &result);
     }
 
     EXPECT_EQ(s_global_value, 1);
@@ -153,4 +151,3 @@ TEST(PosixOnceTest, InitializeOnceMacroFunction) {
 
 }  // namespace.
 }  // namespace nplb.
-}  // namespace starboard.

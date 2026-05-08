@@ -7,30 +7,53 @@
 
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkFont.h"
+#include "include/core/SkFontArguments.h"
 #include "include/core/SkFontMgr.h"
+#include "include/core/SkFontStyle.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkStream.h"
+#include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
-#include "include/ports/SkFontMgr_FontConfigInterface.h"
+#include "include/core/SkTypes.h"
+#include "include/encode/SkPngEncoder.h"
 #include "include/ports/SkFontMgr_fontconfig.h"
-#include "src/ports/SkFontConfigInterface_direct.h"
+
+#ifdef SK_TYPEFACE_FACTORY_FONTATIONS
+#include "include/ports/SkFontScanner_Fontations.h"
+#endif
+#ifdef SK_TYPEFACE_FACTORY_FREETYPE
+#include "include/ports/SkFontScanner_FreeType.h"
+#endif
 #include "tests/Test.h"
 #include "tools/Resources.h"
 
 #include <fontconfig/fontconfig.h>
 
+#include <array>
+#include <memory>
+
 namespace {
 
 bool bitmap_compare(const SkBitmap& ref, const SkBitmap& test) {
+    auto count = 0;
     for (int y = 0; y < test.height(); ++y) {
         for (int x = 0; x < test.width(); ++x) {
             SkColor testColor = test.getColor(x, y);
             SkColor refColor = ref.getColor(x, y);
             if (refColor != testColor) {
-                return false;
+                ++count;
+                if ((false)) {
+                    SkDebugf("%d: (%d,%d) ", count, x, y);
+                }
             }
         }
     }
-    return true;
+    return (count == 0);
 }
 
 FcConfig* build_fontconfig_with_fontfile(const char* fontFilename) {
@@ -47,18 +70,38 @@ FcConfig* build_fontconfig_with_fontfile(const char* fontFilename) {
     return config;
 }
 
-bool fontmgr_understands_ft_named_instance_bits() {
-    std::unique_ptr<SkStreamAsset> distortable(GetResourceAsStream("fonts/Distortable.ttf"));
-    if (!distortable) {
-        return false;
-    }
+FcConfig* build_fontconfig_from_resources() {
 
-    sk_sp<SkFontMgr> fm = SkFontMgr::RefDefault();
-    SkFontArguments params;
-    // The first named variation position in Distortable is 'Thin'.
-    params.setCollectionIndex(0x00010000);
-    sk_sp<SkTypeface> typeface = fm->makeFromStream(std::move(distortable), params);
-    return !!typeface;
+    SkString path = GetResourcePath("");
+    SkString content;
+    content.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+                   "<!DOCTYPE fontconfig SYSTEM \"fonts.dtd\">"
+                   "<fontconfig>\n"
+                   "<dir>/fonts</dir>\n");
+    content.append("<match target=\"font\">\n"
+                   "   <edit name=\"embolden\" mode=\"assign\">\n"
+                   "       <bool>true</bool>\n"
+                   "   </edit>\n"
+                   "</match>");
+    content.append("</fontconfig>\n");
+    FcConfig* fc_config = FcConfigCreate();
+    FcConfigSetSysRoot(fc_config, reinterpret_cast<const FcChar8*>(path.c_str()));
+    if (FcConfigParseAndLoadFromMemory(
+                fc_config, reinterpret_cast<const FcChar8*>(content.c_str()),
+                FcTrue) != FcTrue) {
+        SkDebugf("FcConfigParseAndLoadFromMemory\n");
+    }
+    if (FcConfigBuildFonts(fc_config) != FcTrue) {
+        SkDebugf("!FcConfigBuildFonts\n");
+    }
+    return fc_config;
+}
+
+[[maybe_unused]]
+static void write_bitmap(const SkBitmap* bm, const char fileName[]) {
+    SkFILEWStream file(fileName);
+    SkAssertResult(file.isValid());
+    SkAssertResult(SkPngEncoder::Encode(&file, bm->pixmap(), {}));
 }
 
 }  // namespace
@@ -66,7 +109,7 @@ bool fontmgr_understands_ft_named_instance_bits() {
 DEF_TEST(FontMgrFontConfig, reporter) {
     FcConfig* config = build_fontconfig_with_fontfile("/fonts/Distortable.ttf");
 
-    sk_sp<SkFontMgr> fontMgr(SkFontMgr_New_FontConfig(config));
+    sk_sp<SkFontMgr> fontMgr(SkFontMgr_New_FontConfig(config, SkFontScanner_Make_FreeType()));
     sk_sp<SkTypeface> typeface(fontMgr->legacyMakeTypeface("Distortable", SkFontStyle()));
     if (!typeface) {
         ERRORF(reporter, "Could not find typeface. FcVersion: %d", FcGetVersion());
@@ -89,7 +132,7 @@ DEF_TEST(FontMgrFontConfig, reporter) {
     constexpr float kTextSize = 20;
 
     std::unique_ptr<SkStreamAsset> distortableStream(
-        GetResourceAsStream("fonts/Distortable.ttf"));
+            GetResourceAsStream("fonts/Distortable.ttf"));
     if (!distortableStream) {
         return;
     }
@@ -103,7 +146,7 @@ DEF_TEST(FontMgrFontConfig, reporter) {
         SkFontArguments::VariationPosition::Coordinate
             coordinates[] = {{tag, styleValue}};
         SkFontArguments::VariationPosition
-            position = {coordinates, SK_ARRAY_COUNT(coordinates)};
+            position = {coordinates, std::size(coordinates)};
 
         SkFont fontStream(
             fontMgr->makeFromStream(distortableStream->duplicate(),
@@ -128,94 +171,130 @@ DEF_TEST(FontMgrFontConfig, reporter) {
     }
 }
 
-DEF_TEST(FontConfigInterface_MatchStyleNamedInstance, reporter) {
-    if (!fontmgr_understands_ft_named_instance_bits()) {
+void testAllBold(sk_sp<SkFontMgr> fontMgr, skiatest::Reporter* reporter) {
+    constexpr float kTextSize = 20;
+    constexpr char text[] = "abc";
+
+    SkString filePath = GetResourcePath("fonts/Roboto-Regular.ttf");
+    sk_sp<SkTypeface> dataTypeface(fontMgr->makeFromFile(filePath.c_str(), 0));
+    if (!dataTypeface) {
+        ERRORF(reporter, "Could not find data typeface. FcVersion: %d", FcGetVersion());
         return;
     }
 
-    FcConfig* config = build_fontconfig_with_fontfile("/fonts/NotoSansCJK-VF-subset.otf.ttc");
-    sk_sp<SkFontConfigInterfaceDirect> fciDirect(new SkFontConfigInterfaceDirect(config));
+    SkFont dataFont(dataTypeface, kTextSize);
+    dataFont.setEmbolden(true);
 
-    static constexpr const char* family_names[]{"Noto Sans CJK JP",
-                                                "Noto Sans CJK HK",
-                                                "Noto Sans CJK SC",
-                                                "Noto Sans CJK TC",
-                                                "Noto Sans CJK KR"};
-    static constexpr const struct Test {
-        int weight;
-        bool highBitsExpectation;
-    } tests[] {
-        {100, false},
-        {300, true },
-        {350, true },
-        {400, true },
-        {500, true },
-        {700, true },
-        {900, true },
-    };
+    sk_sp<SkTypeface> matchTypeface(fontMgr->matchFamilyStyle("Roboto", SkFontStyle()));
+    if (!matchTypeface) {
+        ERRORF(reporter, "Could not find match typeface. FcVersion: %d", FcGetVersion());
+        return;
+    }
+    SkFont matchFont(matchTypeface, kTextSize);
 
-    for (auto&& font_name : family_names) {
-        for (auto&& [weight, highBitsExpectation] : tests) {
-            SkFontStyle fontStyle(weight, SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
+    SkBitmap bitmapData;
+    bitmapData.allocN32Pixels(64, 64);
+    SkCanvas canvasData(bitmapData);
 
-            SkFontConfigInterface::FontIdentity resultIdentity;
-            SkFontStyle resultStyle;
-            SkString resultFamily;
-            const bool r = fciDirect->matchFamilyName(
-                    font_name, fontStyle, &resultIdentity, &resultFamily, &resultStyle);
+    SkBitmap bitmapMatch;
+    bitmapMatch.allocN32Pixels(64, 64);
+    SkCanvas canvasMatch(bitmapMatch);
 
-            REPORTER_ASSERT(reporter, r, "Expecting to find a match result.");
-            REPORTER_ASSERT(
-                    reporter,
-                    (resultIdentity.fTTCIndex >> 16 > 0) == highBitsExpectation,
-                    "Expected to have the ttcIndex' upper 16 bits refer to a named instance.");
+    SkPaint paint;
+    paint.setColor(SK_ColorBLACK);
 
-            // Intentionally go through manually creating the typeface so that SkFontStyle is
-            // derived from data inside the font, not from the FcPattern that is the FontConfig
-            // match result, see https://crbug.com/skia/12881
-            sk_sp<SkTypeface> typeface(fciDirect->makeTypeface(resultIdentity).release());
+    canvasData.drawColor(SK_ColorGRAY);
+    canvasData.drawString(text, 20.0f, 20.0f, dataFont, paint);
+    if ((false)) {
+        // In case we wonder what's been painted
+        SkString dataPath = GetResourcePath("/fonts/data.png");
+        write_bitmap(&bitmapData, dataPath.c_str());
+    }
 
-            if (!typeface) {
-                ERRORF(reporter, "Could not instantiate typeface, FcVersion: %d", FcGetVersion());
-                return;
-            }
+    canvasMatch.drawColor(SK_ColorGRAY);
+    canvasMatch.drawString(text, 20.0f, 20.0f, matchFont, paint);
+    if ((false)) {
+        SkString matchPath = GetResourcePath("/fonts/match.png");
+        write_bitmap(&bitmapMatch, matchPath.c_str());
+    }
 
-            SkString family_from_typeface;
-            typeface->getFamilyName(&family_from_typeface);
-
-            REPORTER_ASSERT(reporter,
-                            family_from_typeface == SkString(font_name),
-                            "Matched font's family name should match the request.");
-
-            SkFontStyle intrinsic_style = typeface->fontStyle();
-            REPORTER_ASSERT(reporter,
-                            intrinsic_style.weight() == weight,
-                            "Matched font's weight should match request.");
-            if (intrinsic_style.weight() != weight) {
-                ERRORF(reporter,
-                       "Matched font had weight: %d, expected %d, family: %s",
-                       intrinsic_style.weight(),
-                       weight,
-                       family_from_typeface.c_str());
-            }
-
-            int numAxes = typeface->getVariationDesignPosition(nullptr, 0);
-            std::vector<SkFontArguments::VariationPosition::Coordinate> coords;
-            coords.resize(numAxes);
-            typeface->getVariationDesignPosition(coords.data(), numAxes);
-
-            REPORTER_ASSERT(reporter,
-                            coords.size() == 1,
-                            "The font must only have one axis, the weight axis.");
-
-            REPORTER_ASSERT(reporter,
-                            coords[0].axis == SkSetFourByteTag('w', 'g', 'h', 't'),
-                            "The weight axis must be present and configured.");
-
-            REPORTER_ASSERT(reporter,
-                            static_cast<int>(coords[0].value) == weight,
-                            "The weight axis must match the weight from the request.");
-        }
-  }
-
+    bool success = bitmap_compare(bitmapData, bitmapMatch);
+    REPORTER_ASSERT(reporter, success);
 }
+
+#if defined(SK_TYPEFACE_FACTORY_FREETYPE)
+DEF_TEST(FontMgrFontConfig_FreeType_AllBold, reporter) {
+
+    FcConfig* config = build_fontconfig_from_resources();
+    sk_sp<SkFontMgr> fontMgr(SkFontMgr_New_FontConfig(config, SkFontScanner_Make_FreeType()));
+
+    testAllBold(fontMgr, reporter);
+}
+#endif
+
+#if defined(SK_TYPEFACE_FACTORY_FONTATIONS)
+DEF_TEST(FontMgrFontConfig_Fontations_AllBold, reporter) {
+
+    FcConfig* config = build_fontconfig_from_resources();
+    sk_sp<SkFontMgr> fontMgr(SkFontMgr_New_FontConfig(config, SkFontScanner_Make_Fontations()));
+
+    testAllBold(fontMgr, reporter);
+}
+#endif
+
+#if defined(SK_TYPEFACE_FACTORY_FREETYPE) && defined(SK_TYPEFACE_FACTORY_FONTATIONS)
+// The results may not match but it's still interesting to run sometimes
+DEF_TEST_DISABLED(FontMgrFontConfig_MatchFonts, reporter) {
+    FcConfig* config = build_fontconfig_from_resources();
+    sk_sp<SkFontMgr> freeTypeFontMgr(
+            SkFontMgr_New_FontConfig(config, SkFontScanner_Make_FreeType()));
+    sk_sp<SkFontMgr> fontationsFontMgr(
+            SkFontMgr_New_FontConfig(config, SkFontScanner_Make_Fontations()));
+
+    constexpr float kTextSize = 20;
+    constexpr char text[] = "abc";
+
+    sk_sp<SkTypeface> dataTypeface(freeTypeFontMgr->matchFamilyStyle("Roboto", SkFontStyle()));
+    if (!dataTypeface) {
+        ERRORF(reporter, "Could not find data typeface. FcVersion: %d", FcGetVersion());
+        return;
+    }
+    SkFont dataFont(dataTypeface, kTextSize);
+
+    sk_sp<SkTypeface> matchTypeface(fontationsFontMgr->matchFamilyStyle("Roboto", SkFontStyle()));
+    if (!matchTypeface) {
+        ERRORF(reporter, "Could not find match typeface. FcVersion: %d", FcGetVersion());
+        return;
+    }
+    SkFont matchFont(matchTypeface, kTextSize);
+
+    SkBitmap bitmapData;
+    bitmapData.allocN32Pixels(64, 64);
+    SkCanvas canvasData(bitmapData);
+
+    SkBitmap bitmapMatch;
+    bitmapMatch.allocN32Pixels(64, 64);
+    SkCanvas canvasMatch(bitmapMatch);
+
+    SkPaint paint;
+    paint.setColor(SK_ColorBLACK);
+
+    canvasData.drawColor(SK_ColorGRAY);
+    canvasData.drawString(text, 20.0f, 20.0f, dataFont, paint);
+    if ((false)) {
+        // In case we wonder what's been painted
+        SkString dataPath = GetResourcePath("/fonts/data.png");
+        write_bitmap(&bitmapData, dataPath.c_str());
+    }
+
+    canvasMatch.drawColor(SK_ColorGRAY);
+    canvasMatch.drawString(text, 20.0f, 20.0f, matchFont, paint);
+    if ((false)) {
+        SkString matchPath = GetResourcePath("/fonts/match.png");
+        write_bitmap(&bitmapMatch, matchPath.c_str());
+    }
+
+    bool success = bitmap_compare(bitmapData, bitmapMatch);
+    REPORTER_ASSERT(reporter, success);
+}
+#endif

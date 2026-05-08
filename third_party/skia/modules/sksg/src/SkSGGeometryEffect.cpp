@@ -8,16 +8,27 @@
 #include "modules/sksg/include/SkSGGeometryEffect.h"
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkClipOp.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPathEffect.h"
+#include "include/core/SkPathUtils.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkStrokeRec.h"
 #include "include/effects/SkCornerPathEffect.h"
 #include "include/effects/SkDashPathEffect.h"
 #include "include/effects/SkTrimPathEffect.h"
 #include "include/pathops/SkPathOps.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTo.h"
 #include "modules/sksg/src/SkSGTransformPriv.h"
-#include "src/core/SkPathEffectBase.h"
 #include "src/core/SkPathPriv.h"
 
+#include <algorithm>
 #include <cmath>
+
+using namespace skia_private;
 
 namespace sksg {
 
@@ -53,13 +64,13 @@ SkRect GeometryEffect::onRevalidate(InvalidationController* ic, const SkMatrix& 
 
     fChild->revalidate(ic, ctm);
 
-    fPath = this->onRevalidateEffect(fChild);
+    fPath = this->onRevalidateEffect(fChild, ctm);
     SkPathPriv::ShrinkToFit(&fPath);
 
     return fPath.computeTightBounds();
 }
 
-SkPath TrimEffect::onRevalidateEffect(const sk_sp<GeometryNode>& child) {
+SkPath TrimEffect::onRevalidateEffect(const sk_sp<GeometryNode>& child, const SkMatrix&) {
     SkPath path = child->asPath();
 
     if (const auto trim = SkTrimPathEffect::Make(fStart, fStop, fMode)) {
@@ -82,7 +93,7 @@ GeometryTransform::~GeometryTransform() {
     this->unobserveInval(fTransform);
 }
 
-SkPath GeometryTransform::onRevalidateEffect(const sk_sp<GeometryNode>& child) {
+SkPath GeometryTransform::onRevalidateEffect(const sk_sp<GeometryNode>& child, const SkMatrix&) {
     fTransform->revalidate(nullptr, SkMatrix::I());
     const auto m = TransformPriv::As<SkMatrix>(fTransform);
 
@@ -94,7 +105,7 @@ SkPath GeometryTransform::onRevalidateEffect(const sk_sp<GeometryNode>& child) {
 
 namespace  {
 
-sk_sp<SkPathEffect> make_dash(const std::vector<float> intervals, float phase) {
+sk_sp<SkPathEffect> make_dash(const std::vector<float>& intervals, float phase) {
     if (intervals.empty()) {
         return nullptr;
     }
@@ -102,7 +113,7 @@ sk_sp<SkPathEffect> make_dash(const std::vector<float> intervals, float phase) {
     const auto* intervals_ptr   = intervals.data();
     auto        intervals_count = intervals.size();
 
-    SkSTArray<32, float, true> storage;
+    STArray<32, float, true> storage;
     if (intervals_count & 1) {
         intervals_count *= 2;
         storage.resize(intervals_count);
@@ -117,7 +128,7 @@ sk_sp<SkPathEffect> make_dash(const std::vector<float> intervals, float phase) {
 
 } // namespace
 
-SkPath DashEffect::onRevalidateEffect(const sk_sp<GeometryNode>& child) {
+SkPath DashEffect::onRevalidateEffect(const sk_sp<GeometryNode>& child, const SkMatrix&) {
     SkPath path = child->asPath();
 
     if (const auto dash_patheffect = make_dash(fIntervals, fPhase)) {
@@ -129,7 +140,7 @@ SkPath DashEffect::onRevalidateEffect(const sk_sp<GeometryNode>& child) {
     return path;
 }
 
-SkPath RoundEffect::onRevalidateEffect(const sk_sp<GeometryNode>& child) {
+SkPath RoundEffect::onRevalidateEffect(const sk_sp<GeometryNode>& child, const SkMatrix&) {
     SkPath path = child->asPath();
 
     if (const auto round = SkCornerPathEffect::Make(fRadius)) {
@@ -141,18 +152,24 @@ SkPath RoundEffect::onRevalidateEffect(const sk_sp<GeometryNode>& child) {
     return path;
 }
 
-SkPath OffsetEffect::onRevalidateEffect(const sk_sp<GeometryNode>& child) {
+SkPath OffsetEffect::onRevalidateEffect(const sk_sp<GeometryNode>& child, const SkMatrix& ctm) {
     SkPath path = child->asPath();
 
     if (!SkScalarNearlyZero(fOffset)) {
+        // Clamp the offset value in device space, to avoid overwhelming pathops.
+        static constexpr float kMaxDevOffset = 100000;
+        const float min_scale = ctm.getMinScale(),
+               max_abs_offset = min_scale < 0 ? kMaxDevOffset : kMaxDevOffset / min_scale,
+                   abs_offset = std::min(max_abs_offset, std::abs(fOffset));
+
         SkPaint paint;
         paint.setStyle(SkPaint::kStroke_Style);
-        paint.setStrokeWidth(std::abs(fOffset) * 2);
+        paint.setStrokeWidth(abs_offset * 2);
         paint.setStrokeMiter(fMiterLimit);
         paint.setStrokeJoin(fJoin);
 
         SkPath fill_path;
-        paint.getFillPath(path, &fill_path, nullptr);
+        skpathutils::FillPathWithPaint(path, paint, &fill_path, nullptr);
 
         if (fOffset > 0) {
             Op(path, fill_path, kUnion_SkPathOp, &path);

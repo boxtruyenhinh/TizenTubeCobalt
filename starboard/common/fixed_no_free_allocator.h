@@ -18,10 +18,11 @@
 #ifndef STARBOARD_COMMON_FIXED_NO_FREE_ALLOCATOR_H_
 #define STARBOARD_COMMON_FIXED_NO_FREE_ALLOCATOR_H_
 
+#include <cstddef>
+
 #include "starboard/common/allocator.h"
 
 namespace starboard {
-namespace common {
 
 // FixedNoFreeAllocator is an allocator that allocates memory but cannot reuse
 // previously allocated memory.  Specifying that the allocator will not reuse
@@ -38,24 +39,25 @@ namespace common {
 // memory and we would like to wrap it in an allocator.
 class FixedNoFreeAllocator : public Allocator {
  public:
-  // Requires aligned memory to at least |starboard::common::kMinAlignment|.
-  FixedNoFreeAllocator(void* memory_start, std::size_t memory_size);
-  void* Allocate(std::size_t size) { return Allocate(&size, 1, true); }
+  // Requires aligned memory to at least |starboard::kMinAlignment|.
+  FixedNoFreeAllocator(void* memory_start, size_t memory_size);
+  void* Allocate(size_t size) { return Allocate(&size, 1, true); }
 
-  void* Allocate(std::size_t size, std::size_t alignment) {
+  void* Allocate(size_t size, size_t alignment) {
     return Allocate(&size, alignment, true);
   }
 
-  void* AllocateForAlignment(std::size_t* size, std::size_t alignment) {
+  void* AllocateForAlignment(size_t* size, size_t alignment) {
     return Allocate(size, alignment, false);
   }
   void Free(void* memory);
-  std::size_t GetCapacity() const;
-  std::size_t GetAllocated() const;
-  void PrintAllocations() const;
+  size_t GetCapacity() const;
+  size_t GetAllocated() const;
+  void PrintAllocations(bool align_allocated_size,
+                        int max_allocations_to_print) const;
 
  private:
-  void* Allocate(std::size_t* size, std::size_t alignment, bool align_pointer);
+  void* Allocate(size_t* size, size_t alignment, bool align_pointer);
 
   // The start of our memory range, as passed in to the constructor.
   void* const memory_start_;
@@ -67,7 +69,6 @@ class FixedNoFreeAllocator : public Allocator {
   void* next_memory_;
 };
 
-}  // namespace common
 }  // namespace starboard
 
 #endif  // STARBOARD_COMMON_FIXED_NO_FREE_ALLOCATOR_H_

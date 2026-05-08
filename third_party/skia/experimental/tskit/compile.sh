@@ -23,7 +23,7 @@ pushd $BASE_DIR/../..
 if [[ $@ == *debug* ]]; then
   echo "Building a Debug build"
   DEBUG=true
-  EXTRA_CFLAGS="\"-DSK_DEBUG\", \"-DGR_TEST_UTILS\", "
+  EXTRA_CFLAGS="\"-DSK_DEBUG\", \"-DGPU_TEST_UTILS\", "
   RELEASE_CONF="-O1 --js-opts 0 -s DEMANGLE_SUPPORT=1 -frtti -s ASSERTIONS=1 -s GL_ASSERTIONS=1 -g \
                 -DSK_DEBUG"
   BUILD_DIR=${BUILD_DIR:="out/tskit_debug"}
@@ -32,7 +32,7 @@ else
   DEBUG=false
   BUILD_DIR=${BUILD_DIR:="out/tskit"}
   RELEASE_CONF="-O3 --closure 1 -DSK_RELEASE"
-  EXTRA_CFLAGS="\"-DSK_RELEASE\", \"-DGR_TEST_UTILS\", "
+  EXTRA_CFLAGS="\"-DSK_RELEASE\", \"-DGPU_TEST_UTILS\", "
 fi
 
 EXTENSION_OPT="--pre-js $BASE_DIR/build/extension.js \
@@ -66,7 +66,6 @@ EMCC_DEBUG=1 ${EMCXX} \
     --pre-js $BASE_DIR/build/core.js \
     $BASE_DIR/bindings/core.cpp \
     $EXTENSION_OPT \
-    -s LLD_REPORT_UNDEFINED \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s EXPORT_NAME="InitTSKit" \
     -s EXPORTED_FUNCTIONS=['_malloc','_free'] \

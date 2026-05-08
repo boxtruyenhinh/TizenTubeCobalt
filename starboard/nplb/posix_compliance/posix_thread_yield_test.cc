@@ -19,7 +19,6 @@
 #include "starboard/nplb/posix_compliance/posix_thread_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -38,17 +37,17 @@ void* YieldingEntryPoint(void* context) {
   }
 
   int64_t* end_time = static_cast<int64_t*>(context);
-  *end_time = CurrentMonotonicTime();
+  *end_time = starboard::CurrentMonotonicTime();
   return NULL;
 }
 
 void* UnyieldingEntryPoint(void* context) {
   for (int i = 0; i < kLoops; ++i) {
-    posix::DoNotYield();
+    DoNotYield();
   }
 
   int64_t* end_time = static_cast<int64_t*>(context);
-  *end_time = CurrentMonotonicTime();
+  *end_time = starboard::CurrentMonotonicTime();
   return NULL;
 }
 
@@ -67,7 +66,6 @@ TEST(PosixThreadYieldTest, SunnyDayRace) {
     pthread_t threads[kRacers];
     int64_t end_times[kRacers] = {0};
     for (int i = 0; i < kRacers; ++i) {
-      pthread_t thread;
       EXPECT_EQ(pthread_create(&threads[i], NULL,
                                (IsYielder(trial, i) ? YieldingEntryPoint
                                                     : UnyieldingEntryPoint),
@@ -108,4 +106,3 @@ TEST(PosixThreadYieldTest, SunnyDayRace) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

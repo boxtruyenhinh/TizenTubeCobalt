@@ -16,11 +16,9 @@
 
 #include <utility>
 
-#include "starboard/memory.h"
+#include "starboard/common/check_op.h"
 
 namespace starboard {
-namespace raspi {
-namespace shared {
 
 namespace {
 
@@ -30,7 +28,7 @@ class DispmanxAutoUpdate {
  public:
   DispmanxAutoUpdate() {
     handle_ = vc_dispmanx_update_start(0 /*screen*/);
-    SB_DCHECK(handle_ != DISPMANX_NO_HANDLE);
+    SB_DCHECK_NE(handle_, DISPMANX_NO_HANDLE);
   }
   ~DispmanxAutoUpdate() {
     if (handle_ != DISPMANX_NO_HANDLE) {
@@ -41,9 +39,9 @@ class DispmanxAutoUpdate {
   DISPMANX_UPDATE_HANDLE_T handle() const { return handle_; }
 
   void Update() {
-    SB_DCHECK(handle_ != DISPMANX_NO_HANDLE);
+    SB_DCHECK_NE(handle_, DISPMANX_NO_HANDLE);
     int32_t result = vc_dispmanx_update_submit_sync(handle_);
-    SB_DCHECK(result == 0) << " result=" << result;
+    SB_DCHECK_EQ(result, 0);
     handle_ = DISPMANX_NO_HANDLE;
   }
 
@@ -67,28 +65,32 @@ DispmanxResource::DispmanxResource(VC_IMAGE_TYPE_T image_type,
       visible_height_(visible_height) {
   static const uint32_t kMaxDimension = 1 << 16;
 
-  SB_DCHECK(width_ > 0 && width_ < kMaxDimension);
-  SB_DCHECK(height_ > 0 && height_ < kMaxDimension);
-  SB_DCHECK(visible_width_ > 0 && visible_width_ < kMaxDimension);
-  SB_DCHECK(visible_height > 0 && visible_height < kMaxDimension);
-  SB_DCHECK(width_ >= visible_width_);
-  SB_DCHECK(height_ >= visible_height);
+  SB_DCHECK_GT(width_, 0);
+  SB_DCHECK_LT(width_, kMaxDimension);
+  SB_DCHECK_GT(height_, 0);
+  SB_DCHECK_LT(height_, kMaxDimension);
+  SB_DCHECK_GT(visible_width_, 0);
+  SB_DCHECK_LT(visible_width_, kMaxDimension);
+  SB_DCHECK_GT(visible_height, 0);
+  SB_DCHECK_LT(visible_height, kMaxDimension);
+  SB_DCHECK_GE(width_, visible_width_);
+  SB_DCHECK_GE(height_, visible_height);
 
   uint32_t vc_image_ptr;
 
   handle_ = vc_dispmanx_resource_create(
       image_type, visible_width_ | (width_ << 16),
       visible_height | (height_ << 16), &vc_image_ptr);
-  SB_DCHECK(handle_ != DISPMANX_NO_HANDLE);
+  SB_DCHECK_NE(handle_, DISPMANX_NO_HANDLE);
 }
 
 void DispmanxYUV420Resource::WriteData(const void* data) {
-  SB_DCHECK(handle() != DISPMANX_NO_HANDLE);
+  SB_DCHECK_NE(handle(), DISPMANX_NO_HANDLE);
 
   DispmanxRect dst_rect(0, 0, width(), height() * 3 / 2);
   int32_t result = vc_dispmanx_resource_write_data(
       handle(), VC_IMAGE_YUV420, width(), const_cast<void*>(data), &dst_rect);
-  SB_DCHECK(result == 0);
+  SB_DCHECK_EQ(result, 0);
 }
 
 void DispmanxYUV420Resource::ClearWithBlack() {
@@ -99,13 +101,13 @@ void DispmanxYUV420Resource::ClearWithBlack() {
 }
 
 void DispmanxRGB565Resource::WriteData(const void* data) {
-  SB_DCHECK(handle() != DISPMANX_NO_HANDLE);
+  SB_DCHECK_NE(handle(), DISPMANX_NO_HANDLE);
 
   DispmanxRect dst_rect(0, 0, width(), height());
   int32_t result =
       vc_dispmanx_resource_write_data(handle(), VC_IMAGE_RGB565, width() * 2,
                                       const_cast<void*>(data), &dst_rect);
-  SB_DCHECK(result == 0);
+  SB_DCHECK_EQ(result, 0);
 }
 
 void DispmanxRGB565Resource::ClearWithBlack() {
@@ -124,13 +126,13 @@ DispmanxElement::DispmanxElement(const DispmanxDisplay& display,
                                     &dest_rect, src.handle(), &src_rect,
                                     DISPMANX_PROTECTION_NONE, NULL /*alpha*/,
                                     NULL /*clamp*/, DISPMANX_NO_ROTATE);
-  SB_DCHECK(handle_ != DISPMANX_NO_HANDLE);
+  SB_DCHECK_NE(handle_, DISPMANX_NO_HANDLE);
 }
 
 DispmanxElement::~DispmanxElement() {
   DispmanxAutoUpdate update;
   int32_t result = vc_dispmanx_element_remove(update.handle(), handle_);
-  SB_DCHECK(result == 0) << " result=" << result;
+  SB_DCHECK_EQ(result, 0);
 }
 
 void DispmanxElement::ChangeSource(const DispmanxResource& new_src) {
@@ -180,6 +182,4 @@ void DispmanxVideoRenderer::ShowElement() {
   Update(hidden_frame_);
 }
 
-}  // namespace shared
-}  // namespace raspi
 }  // namespace starboard

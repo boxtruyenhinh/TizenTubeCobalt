@@ -20,10 +20,6 @@
 #include <map>
 #include <string>
 
-#include "starboard/file.h"
-
-namespace starboard {
-namespace shared {
 namespace starboard {
 
 // Stores a map of internationalized strings for a particular language.
@@ -54,8 +50,6 @@ class LocalizedStrings {
   MatchType match_type_ = kNoMatch;
 };
 
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_LOCALIZED_STRINGS_H_

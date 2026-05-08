@@ -11,9 +11,11 @@
 #include "libANGLE/Context.h"
 #include "libANGLE/ErrorStrings.h"
 #include "libANGLE/Framebuffer.h"
+#include "libANGLE/ProgramExecutable.h"
 #include "libANGLE/VertexArray.h"
 #include "libANGLE/validationES.h"
 #include "libANGLE/validationES2_autogen.h"
+#include "libANGLE/validationES31.h"
 #include "libANGLE/validationES3_autogen.h"
 
 #include "common/utilities.h"
@@ -23,6 +25,11 @@ using namespace angle;
 namespace gl
 {
 using namespace err;
+
+void RecordVersionErrorES31(const Context *context, angle::EntryPoint entryPoint)
+{
+    ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kEntryPointRequiresES31);
+}
 
 namespace
 {
@@ -63,7 +70,9 @@ bool ValidateProgramInterface(GLenum programInterface)
             ValidateNamedProgramInterface(programInterface));
 }
 
-bool ValidateProgramResourceProperty(const Context *context, GLenum prop)
+bool ValidateProgramResourceProperty(const Context *context,
+                                     angle::EntryPoint entryPoint,
+                                     GLenum prop)
 {
     ASSERT(context);
     switch (prop)
@@ -100,10 +109,17 @@ bool ValidateProgramResourceProperty(const Context *context, GLenum prop)
             return true;
 
         case GL_REFERENCED_BY_GEOMETRY_SHADER_EXT:
-            return context->getExtensions().geometryShader;
+            return context->getExtensions().geometryShaderAny() ||
+                   context->getClientVersion() >= ES_3_2;
+
+        case GL_REFERENCED_BY_TESS_CONTROL_SHADER_EXT:
+        case GL_REFERENCED_BY_TESS_EVALUATION_SHADER_EXT:
+        case GL_IS_PER_PATCH_EXT:
+            return context->getExtensions().tessellationShaderAny() ||
+                   context->getClientVersion() >= ES_3_2;
 
         case GL_LOCATION_INDEX_EXT:
-            return context->getExtensions().blendFuncExtended;
+            return context->getExtensions().blendFuncExtendedEXT;
 
         default:
             return false;
@@ -214,6 +230,8 @@ bool ValidateProgramResourcePropertyByInterface(GLenum prop, GLenum programInter
         case GL_REFERENCED_BY_FRAGMENT_SHADER:
         case GL_REFERENCED_BY_COMPUTE_SHADER:
         case GL_REFERENCED_BY_GEOMETRY_SHADER_EXT:
+        case GL_REFERENCED_BY_TESS_CONTROL_SHADER_EXT:
+        case GL_REFERENCED_BY_TESS_EVALUATION_SHADER_EXT:
         {
             switch (programInterface)
             {
@@ -254,6 +272,14 @@ bool ValidateProgramResourcePropertyByInterface(GLenum prop, GLenum programInter
                     return false;
             }
         }
+        case GL_IS_PER_PATCH_EXT:
+            switch (programInterface)
+            {
+                case GL_PROGRAM_INPUT:
+                case GL_PROGRAM_OUTPUT:
+                    return true;
+            }
+            return false;
 
         default:
             return false;
@@ -264,32 +290,32 @@ bool ValidateProgramResourceIndex(const Program *programObject,
                                   GLenum programInterface,
                                   GLuint index)
 {
+    const ProgramExecutable &executable = programObject->getExecutable();
     switch (programInterface)
     {
         case GL_PROGRAM_INPUT:
-            return (index <
-                    static_cast<GLuint>(programObject->getState().getProgramInputs().size()));
+            return index < executable.getProgramInputs().size();
 
         case GL_PROGRAM_OUTPUT:
-            return (index < static_cast<GLuint>(programObject->getOutputResourceCount()));
+            return index < executable.getOutputVariables().size();
 
         case GL_UNIFORM:
-            return (index < static_cast<GLuint>(programObject->getActiveUniformCount()));
+            return index < executable.getUniforms().size();
 
         case GL_BUFFER_VARIABLE:
-            return (index < static_cast<GLuint>(programObject->getActiveBufferVariableCount()));
+            return index < executable.getBufferVariables().size();
 
         case GL_SHADER_STORAGE_BLOCK:
-            return (index < static_cast<GLuint>(programObject->getActiveShaderStorageBlockCount()));
+            return index < executable.getShaderStorageBlocks().size();
 
         case GL_UNIFORM_BLOCK:
-            return (index < programObject->getActiveUniformBlockCount());
+            return index < executable.getUniformBlocks().size();
 
         case GL_ATOMIC_COUNTER_BUFFER:
-            return (index < programObject->getActiveAtomicCounterBufferCount());
+            return index < executable.getAtomicCounterBuffers().size();
 
         case GL_TRANSFORM_FEEDBACK_VARYING:
-            return (index < static_cast<GLuint>(programObject->getTransformFeedbackVaryingCount()));
+            return index < executable.getLinkedTransformFeedbackVaryings().size();
 
         default:
             UNREACHABLE();
@@ -297,57 +323,69 @@ bool ValidateProgramResourceIndex(const Program *programObject,
     }
 }
 
-bool ValidateProgramUniform(Context *context,
-                            GLenum valueType,
-                            ShaderProgramID program,
-                            GLint location,
-                            GLsizei count)
+bool ValidateProgramUniformBase(const Context *context,
+                                angle::EntryPoint entryPoint,
+                                GLenum valueType,
+                                ShaderProgramID program,
+                                UniformLocation location,
+                                GLsizei count)
 {
-    // Check for ES31 program uniform entry points
-    if (context->getClientVersion() < Version(3, 1))
+    Program *programObject = GetValidProgram(context, entryPoint, program);
+    if (programObject == nullptr)
     {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
+        // Error already generated.
         return false;
     }
 
     const LinkedUniform *uniform = nullptr;
-    Program *programObject       = GetValidProgram(context, program);
-    return ValidateUniformCommonBase(context, programObject, location, count, &uniform) &&
-           ValidateUniformValue(context, valueType, uniform->type);
+    if (!ValidateUniformCommonBase(context, entryPoint, programObject, location, count, &uniform))
+    {
+        // Error already generated.
+        return false;
+    }
+    if (uniform == nullptr)
+    {
+        return true;  // no-op
+    }
+    return ValidateUniformValue(context, entryPoint, valueType, uniform->getType());
 }
 
-bool ValidateProgramUniformMatrix(Context *context,
-                                  GLenum valueType,
-                                  ShaderProgramID program,
-                                  GLint location,
-                                  GLsizei count,
-                                  GLboolean transpose)
+bool ValidateProgramUniformMatrixBase(const Context *context,
+                                      angle::EntryPoint entryPoint,
+                                      GLenum valueType,
+                                      ShaderProgramID program,
+                                      UniformLocation location,
+                                      GLsizei count,
+                                      GLboolean transpose)
 {
-    // Check for ES31 program uniform entry points
-    if (context->getClientVersion() < Version(3, 1))
+    Program *programObject = GetValidProgram(context, entryPoint, program);
+    if (programObject == nullptr)
     {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
+        // Error already generated.
         return false;
     }
 
     const LinkedUniform *uniform = nullptr;
-    Program *programObject       = GetValidProgram(context, program);
-    return ValidateUniformCommonBase(context, programObject, location, count, &uniform) &&
-           ValidateUniformMatrixValue(context, valueType, uniform->type);
-}
-
-bool ValidateVertexAttribFormatCommon(Context *context, GLuint relativeOffset)
-{
-    if (context->getClientVersion() < ES_3_1)
+    if (!ValidateUniformCommonBase(context, entryPoint, programObject, location, count, &uniform))
     {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
+        // Error already generated.
         return false;
     }
+    if (uniform == nullptr)
+    {
+        return true;  // no-op
+    }
+    return ValidateUniformMatrixValue(context, entryPoint, valueType, uniform->getType());
+}
 
+bool ValidateVertexAttribFormatCommon(const Context *context,
+                                      angle::EntryPoint entryPoint,
+                                      GLuint relativeOffset)
+{
     const Caps &caps = context->getCaps();
     if (relativeOffset > static_cast<GLuint>(caps.maxVertexAttribRelativeOffset))
     {
-        context->validationError(GL_INVALID_VALUE, kRelativeOffsetTooLarge);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kRelativeOffsetTooLarge);
         return false;
     }
 
@@ -355,7 +393,7 @@ bool ValidateVertexAttribFormatCommon(Context *context, GLuint relativeOffset)
     // An INVALID_OPERATION error is generated if the default vertex array object is bound.
     if (context->getState().getVertexArrayId().value == 0)
     {
-        context->validationError(GL_INVALID_OPERATION, kDefaultVertexArray);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kDefaultVertexArray);
         return false;
     }
 
@@ -364,15 +402,13 @@ bool ValidateVertexAttribFormatCommon(Context *context, GLuint relativeOffset)
 
 }  // anonymous namespace
 
-bool ValidateGetBooleani_v(Context *context, GLenum target, GLuint index, GLboolean *data)
+bool ValidateGetBooleani_v(const Context *context,
+                           angle::EntryPoint entryPoint,
+                           GLenum target,
+                           GLuint index,
+                           const GLboolean *data)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
-    if (!ValidateIndexedStateQuery(context, target, index, nullptr))
+    if (!ValidateIndexedStateQuery(context, entryPoint, target, index, nullptr))
     {
         return false;
     }
@@ -380,32 +416,33 @@ bool ValidateGetBooleani_v(Context *context, GLenum target, GLuint index, GLbool
     return true;
 }
 
-bool ValidateGetBooleani_vRobustANGLE(Context *context,
+bool ValidateGetBooleani_vRobustANGLE(const Context *context,
+                                      angle::EntryPoint entryPoint,
                                       GLenum target,
                                       GLuint index,
                                       GLsizei bufSize,
-                                      GLsizei *length,
-                                      GLboolean *data)
+                                      const GLsizei *length,
+                                      const GLboolean *data)
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kES31Required);
         return false;
     }
 
-    if (!ValidateRobustEntryPoint(context, bufSize))
+    if (!ValidateRobustEntryPoint(context, entryPoint, bufSize))
     {
         return false;
     }
 
     GLsizei numParams = 0;
 
-    if (!ValidateIndexedStateQuery(context, target, index, &numParams))
+    if (!ValidateIndexedStateQuery(context, entryPoint, target, index, &numParams))
     {
         return false;
     }
 
-    if (!ValidateRobustBufferSize(context, bufSize, numParams))
+    if (!ValidateRobustBufferSize(context, entryPoint, bufSize, numParams))
     {
         return false;
     }
@@ -414,16 +451,13 @@ bool ValidateGetBooleani_vRobustANGLE(Context *context,
     return true;
 }
 
-bool ValidateDrawIndirectBase(Context *context, PrimitiveMode mode, const void *indirect)
+bool ValidateDrawIndirectBase(const Context *context,
+                              angle::EntryPoint entryPoint,
+                              PrimitiveMode mode,
+                              const void *indirect)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
     // Here the third parameter 1 is only to pass the count validation.
-    if (!ValidateDrawBase(context, mode))
+    if (!ValidateDrawBase(context, entryPoint, mode))
     {
         return false;
     }
@@ -434,20 +468,20 @@ bool ValidateDrawIndirectBase(Context *context, PrimitiveMode mode, const void *
     // DRAW_INDIRECT_BUFFER or to any enabled vertex array.
     if (state.getVertexArrayId().value == 0)
     {
-        context->validationError(GL_INVALID_OPERATION, kDefaultVertexArray);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kDefaultVertexArray);
         return false;
     }
 
     if (context->getStateCache().hasAnyActiveClientAttrib())
     {
-        context->validationError(GL_INVALID_OPERATION, kClientDataInVertexArray);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kClientDataInVertexArray);
         return false;
     }
 
     Buffer *drawIndirectBuffer = state.getTargetBuffer(BufferBinding::DrawIndirect);
     if (!drawIndirectBuffer)
     {
-        context->validationError(GL_INVALID_OPERATION, kDrawIndirectBufferNotBound);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kDrawIndirectBufferNotBound);
         return false;
     }
 
@@ -456,14 +490,17 @@ bool ValidateDrawIndirectBase(Context *context, PrimitiveMode mode, const void *
     GLint64 offset = reinterpret_cast<GLint64>(indirect);
     if ((static_cast<GLuint>(offset) % sizeof(GLuint)) != 0)
     {
-        context->validationError(GL_INVALID_VALUE, kInvalidIndirectOffset);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kInvalidIndirectOffset);
         return false;
     }
 
     return true;
 }
 
-bool ValidateDrawArraysIndirect(Context *context, PrimitiveMode mode, const void *indirect)
+bool ValidateDrawArraysIndirect(const Context *context,
+                                angle::EntryPoint entryPoint,
+                                PrimitiveMode mode,
+                                const void *indirect)
 {
     const State &state                      = context->getState();
     TransformFeedback *curTransformFeedback = state.getCurrentTransformFeedback();
@@ -472,12 +509,12 @@ bool ValidateDrawArraysIndirect(Context *context, PrimitiveMode mode, const void
     {
         // EXT_geometry_shader allows transform feedback to work with all draw commands.
         // [EXT_geometry_shader] Section 12.1, "Transform Feedback"
-        if (context->getExtensions().geometryShader)
+        if (context->getExtensions().geometryShaderAny() || context->getClientVersion() >= ES_3_2)
         {
             if (!ValidateTransformFeedbackPrimitiveMode(
-                    context, curTransformFeedback->getPrimitiveMode(), mode))
+                    context, entryPoint, curTransformFeedback->getPrimitiveMode(), mode))
             {
-                context->validationError(GL_INVALID_OPERATION, kInvalidDrawModeTransformFeedback);
+                ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kInvalidDrawModeTransformFeedback);
                 return false;
             }
         }
@@ -485,13 +522,12 @@ bool ValidateDrawArraysIndirect(Context *context, PrimitiveMode mode, const void
         {
             // An INVALID_OPERATION error is generated if transform feedback is active and not
             // paused.
-            context->validationError(GL_INVALID_OPERATION,
-                                     kUnsupportedDrawModeForTransformFeedback);
+            ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kUnsupportedDrawModeForTransformFeedback);
             return false;
         }
     }
 
-    if (!ValidateDrawIndirectBase(context, mode, indirect))
+    if (!ValidateDrawIndirectBase(context, entryPoint, mode, indirect))
         return false;
 
     Buffer *drawIndirectBuffer = state.getTargetBuffer(BufferBinding::DrawIndirect);
@@ -502,19 +538,20 @@ bool ValidateDrawArraysIndirect(Context *context, PrimitiveMode mode, const void
     if (!checkedSum.IsValid() ||
         checkedSum.ValueOrDie() > static_cast<size_t>(drawIndirectBuffer->getSize()))
     {
-        context->validationError(GL_INVALID_OPERATION, kParamOverflow);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kParamOverflow);
         return false;
     }
 
     return true;
 }
 
-bool ValidateDrawElementsIndirect(Context *context,
+bool ValidateDrawElementsIndirect(const Context *context,
+                                  angle::EntryPoint entryPoint,
                                   PrimitiveMode mode,
                                   DrawElementsType type,
                                   const void *indirect)
 {
-    if (!ValidateDrawElementsBase(context, mode, type))
+    if (!ValidateDrawElementsBase(context, entryPoint, mode, type))
     {
         return false;
     }
@@ -524,11 +561,11 @@ bool ValidateDrawElementsIndirect(Context *context,
     Buffer *elementArrayBuffer = vao->getElementArrayBuffer();
     if (!elementArrayBuffer)
     {
-        context->validationError(GL_INVALID_OPERATION, kMustHaveElementArrayBinding);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kMustHaveElementArrayBinding);
         return false;
     }
 
-    if (!ValidateDrawIndirectBase(context, mode, indirect))
+    if (!ValidateDrawIndirectBase(context, entryPoint, mode, indirect))
         return false;
 
     Buffer *drawIndirectBuffer = state.getTargetBuffer(BufferBinding::DrawIndirect);
@@ -539,399 +576,467 @@ bool ValidateDrawElementsIndirect(Context *context,
     if (!checkedSum.IsValid() ||
         checkedSum.ValueOrDie() > static_cast<size_t>(drawIndirectBuffer->getSize()))
     {
-        context->validationError(GL_INVALID_OPERATION, kParamOverflow);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kParamOverflow);
         return false;
     }
 
     return true;
 }
 
-bool ValidateProgramUniform1i(Context *context, ShaderProgramID program, GLint location, GLint v0)
+bool ValidateMultiDrawIndirectBase(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   GLsizei drawcount,
+                                   GLsizei stride)
 {
-    return ValidateProgramUniform1iv(context, program, location, 1, &v0);
+    // An INVALID_VALUE error is generated if stride is neither 0 nor a multiple of 4.
+    if ((stride & 3) != 0)
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kInvalidDrawBufferValue);
+        return false;
+    }
+
+    // An INVALID_VALUE error is generated if drawcount is not positive.
+    if (drawcount <= 0)
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kInvalidValueNonPositive);
+        return false;
+    }
+
+    return true;
 }
 
-bool ValidateProgramUniform2i(Context *context,
-                              ShaderProgramID program,
-                              GLint location,
-                              GLint v0,
-                              GLint v1)
+bool ValidateProgramUniform1iBase(const Context *context,
+                                  angle::EntryPoint entryPoint,
+                                  ShaderProgramID program,
+                                  UniformLocation location,
+                                  GLint v0)
+{
+    return ValidateProgramUniform1ivBase(context, entryPoint, program, location, 1, &v0);
+}
+
+bool ValidateProgramUniform2iBase(const Context *context,
+                                  angle::EntryPoint entryPoint,
+                                  ShaderProgramID program,
+                                  UniformLocation location,
+                                  GLint v0,
+                                  GLint v1)
 {
     GLint xy[2] = {v0, v1};
-    return ValidateProgramUniform2iv(context, program, location, 1, xy);
+    return ValidateProgramUniform2ivBase(context, entryPoint, program, location, 1, xy);
 }
 
-bool ValidateProgramUniform3i(Context *context,
-                              ShaderProgramID program,
-                              GLint location,
-                              GLint v0,
-                              GLint v1,
-                              GLint v2)
+bool ValidateProgramUniform3iBase(const Context *context,
+                                  angle::EntryPoint entryPoint,
+                                  ShaderProgramID program,
+                                  UniformLocation location,
+                                  GLint v0,
+                                  GLint v1,
+                                  GLint v2)
 {
     GLint xyz[3] = {v0, v1, v2};
-    return ValidateProgramUniform3iv(context, program, location, 1, xyz);
+    return ValidateProgramUniform3ivBase(context, entryPoint, program, location, 1, xyz);
 }
 
-bool ValidateProgramUniform4i(Context *context,
-                              ShaderProgramID program,
-                              GLint location,
-                              GLint v0,
-                              GLint v1,
-                              GLint v2,
-                              GLint v3)
+bool ValidateProgramUniform4iBase(const Context *context,
+                                  angle::EntryPoint entryPoint,
+                                  ShaderProgramID program,
+                                  UniformLocation location,
+                                  GLint v0,
+                                  GLint v1,
+                                  GLint v2,
+                                  GLint v3)
 {
     GLint xyzw[4] = {v0, v1, v2, v3};
-    return ValidateProgramUniform4iv(context, program, location, 1, xyzw);
+    return ValidateProgramUniform4ivBase(context, entryPoint, program, location, 1, xyzw);
 }
 
-bool ValidateProgramUniform1ui(Context *context, ShaderProgramID program, GLint location, GLuint v0)
+bool ValidateProgramUniform1uiBase(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   ShaderProgramID program,
+                                   UniformLocation location,
+                                   GLuint v0)
 {
-    return ValidateProgramUniform1uiv(context, program, location, 1, &v0);
+    return ValidateProgramUniform1uivBase(context, entryPoint, program, location, 1, &v0);
 }
 
-bool ValidateProgramUniform2ui(Context *context,
-                               ShaderProgramID program,
-                               GLint location,
-                               GLuint v0,
-                               GLuint v1)
+bool ValidateProgramUniform2uiBase(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   ShaderProgramID program,
+                                   UniformLocation location,
+                                   GLuint v0,
+                                   GLuint v1)
 {
     GLuint xy[2] = {v0, v1};
-    return ValidateProgramUniform2uiv(context, program, location, 1, xy);
+    return ValidateProgramUniform2uivBase(context, entryPoint, program, location, 1, xy);
 }
 
-bool ValidateProgramUniform3ui(Context *context,
-                               ShaderProgramID program,
-                               GLint location,
-                               GLuint v0,
-                               GLuint v1,
-                               GLuint v2)
+bool ValidateProgramUniform3uiBase(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   ShaderProgramID program,
+                                   UniformLocation location,
+                                   GLuint v0,
+                                   GLuint v1,
+                                   GLuint v2)
 {
     GLuint xyz[3] = {v0, v1, v2};
-    return ValidateProgramUniform3uiv(context, program, location, 1, xyz);
+    return ValidateProgramUniform3uivBase(context, entryPoint, program, location, 1, xyz);
 }
 
-bool ValidateProgramUniform4ui(Context *context,
-                               ShaderProgramID program,
-                               GLint location,
-                               GLuint v0,
-                               GLuint v1,
-                               GLuint v2,
-                               GLuint v3)
+bool ValidateProgramUniform4uiBase(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   ShaderProgramID program,
+                                   UniformLocation location,
+                                   GLuint v0,
+                                   GLuint v1,
+                                   GLuint v2,
+                                   GLuint v3)
 {
     GLuint xyzw[4] = {v0, v1, v2, v3};
-    return ValidateProgramUniform4uiv(context, program, location, 1, xyzw);
+    return ValidateProgramUniform4uivBase(context, entryPoint, program, location, 1, xyzw);
 }
 
-bool ValidateProgramUniform1f(Context *context, ShaderProgramID program, GLint location, GLfloat v0)
+bool ValidateProgramUniform1fBase(const Context *context,
+                                  angle::EntryPoint entryPoint,
+                                  ShaderProgramID program,
+                                  UniformLocation location,
+                                  GLfloat v0)
 {
-    return ValidateProgramUniform1fv(context, program, location, 1, &v0);
+    return ValidateProgramUniform1fvBase(context, entryPoint, program, location, 1, &v0);
 }
 
-bool ValidateProgramUniform2f(Context *context,
-                              ShaderProgramID program,
-                              GLint location,
-                              GLfloat v0,
-                              GLfloat v1)
+bool ValidateProgramUniform2fBase(const Context *context,
+                                  angle::EntryPoint entryPoint,
+                                  ShaderProgramID program,
+                                  UniformLocation location,
+                                  GLfloat v0,
+                                  GLfloat v1)
 {
     GLfloat xy[2] = {v0, v1};
-    return ValidateProgramUniform2fv(context, program, location, 1, xy);
+    return ValidateProgramUniform2fvBase(context, entryPoint, program, location, 1, xy);
 }
 
-bool ValidateProgramUniform3f(Context *context,
-                              ShaderProgramID program,
-                              GLint location,
-                              GLfloat v0,
-                              GLfloat v1,
-                              GLfloat v2)
+bool ValidateProgramUniform3fBase(const Context *context,
+                                  angle::EntryPoint entryPoint,
+                                  ShaderProgramID program,
+                                  UniformLocation location,
+                                  GLfloat v0,
+                                  GLfloat v1,
+                                  GLfloat v2)
 {
     GLfloat xyz[3] = {v0, v1, v2};
-    return ValidateProgramUniform3fv(context, program, location, 1, xyz);
+    return ValidateProgramUniform3fvBase(context, entryPoint, program, location, 1, xyz);
 }
 
-bool ValidateProgramUniform4f(Context *context,
-                              ShaderProgramID program,
-                              GLint location,
-                              GLfloat v0,
-                              GLfloat v1,
-                              GLfloat v2,
-                              GLfloat v3)
+bool ValidateProgramUniform4fBase(const Context *context,
+                                  angle::EntryPoint entryPoint,
+                                  ShaderProgramID program,
+                                  UniformLocation location,
+                                  GLfloat v0,
+                                  GLfloat v1,
+                                  GLfloat v2,
+                                  GLfloat v3)
 {
     GLfloat xyzw[4] = {v0, v1, v2, v3};
-    return ValidateProgramUniform4fv(context, program, location, 1, xyzw);
+    return ValidateProgramUniform4fvBase(context, entryPoint, program, location, 1, xyzw);
 }
 
-bool ValidateProgramUniform1iv(Context *context,
-                               ShaderProgramID program,
-                               GLint location,
-                               GLsizei count,
-                               const GLint *value)
+bool ValidateProgramUniform1ivBase(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   ShaderProgramID program,
+                                   UniformLocation location,
+                                   GLsizei count,
+                                   const GLint *value)
 {
-    // Check for ES31 program uniform entry points
-    if (context->getClientVersion() < Version(3, 1))
+    Program *programObject = GetValidProgram(context, entryPoint, program);
+    if (programObject == nullptr)
     {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
+        // Error already generated.
         return false;
     }
 
     const LinkedUniform *uniform = nullptr;
-    Program *programObject       = GetValidProgram(context, program);
-    return ValidateUniformCommonBase(context, programObject, location, count, &uniform) &&
-           ValidateUniform1ivValue(context, uniform->type, count, value);
+    if (!ValidateUniformCommonBase(context, entryPoint, programObject, location, count, &uniform))
+    {
+        // Error already generated.
+        return false;
+    }
+    if (uniform == nullptr)
+    {
+        return true;  // no-op
+    }
+    return ValidateUniform1ivValue(context, entryPoint, uniform->getType(), count, value);
 }
 
-bool ValidateProgramUniform2iv(Context *context,
-                               ShaderProgramID program,
-                               GLint location,
-                               GLsizei count,
-                               const GLint *value)
+bool ValidateProgramUniform2ivBase(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   ShaderProgramID program,
+                                   UniformLocation location,
+                                   GLsizei count,
+                                   const GLint *value)
 {
-    return ValidateProgramUniform(context, GL_INT_VEC2, program, location, count);
+    return ValidateProgramUniformBase(context, entryPoint, GL_INT_VEC2, program, location, count);
 }
 
-bool ValidateProgramUniform3iv(Context *context,
-                               ShaderProgramID program,
-                               GLint location,
-                               GLsizei count,
-                               const GLint *value)
+bool ValidateProgramUniform3ivBase(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   ShaderProgramID program,
+                                   UniformLocation location,
+                                   GLsizei count,
+                                   const GLint *value)
 {
-    return ValidateProgramUniform(context, GL_INT_VEC3, program, location, count);
+    return ValidateProgramUniformBase(context, entryPoint, GL_INT_VEC3, program, location, count);
 }
 
-bool ValidateProgramUniform4iv(Context *context,
-                               ShaderProgramID program,
-                               GLint location,
-                               GLsizei count,
-                               const GLint *value)
+bool ValidateProgramUniform4ivBase(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   ShaderProgramID program,
+                                   UniformLocation location,
+                                   GLsizei count,
+                                   const GLint *value)
 {
-    return ValidateProgramUniform(context, GL_INT_VEC4, program, location, count);
+    return ValidateProgramUniformBase(context, entryPoint, GL_INT_VEC4, program, location, count);
 }
 
-bool ValidateProgramUniform1uiv(Context *context,
-                                ShaderProgramID program,
-                                GLint location,
-                                GLsizei count,
-                                const GLuint *value)
+bool ValidateProgramUniform1uivBase(const Context *context,
+                                    angle::EntryPoint entryPoint,
+                                    ShaderProgramID program,
+                                    UniformLocation location,
+                                    GLsizei count,
+                                    const GLuint *value)
 {
-    return ValidateProgramUniform(context, GL_UNSIGNED_INT, program, location, count);
+    return ValidateProgramUniformBase(context, entryPoint, GL_UNSIGNED_INT, program, location,
+                                      count);
 }
 
-bool ValidateProgramUniform2uiv(Context *context,
-                                ShaderProgramID program,
-                                GLint location,
-                                GLsizei count,
-                                const GLuint *value)
+bool ValidateProgramUniform2uivBase(const Context *context,
+                                    angle::EntryPoint entryPoint,
+                                    ShaderProgramID program,
+                                    UniformLocation location,
+                                    GLsizei count,
+                                    const GLuint *value)
 {
-    return ValidateProgramUniform(context, GL_UNSIGNED_INT_VEC2, program, location, count);
+    return ValidateProgramUniformBase(context, entryPoint, GL_UNSIGNED_INT_VEC2, program, location,
+                                      count);
 }
 
-bool ValidateProgramUniform3uiv(Context *context,
-                                ShaderProgramID program,
-                                GLint location,
-                                GLsizei count,
-                                const GLuint *value)
+bool ValidateProgramUniform3uivBase(const Context *context,
+                                    angle::EntryPoint entryPoint,
+                                    ShaderProgramID program,
+                                    UniformLocation location,
+                                    GLsizei count,
+                                    const GLuint *value)
 {
-    return ValidateProgramUniform(context, GL_UNSIGNED_INT_VEC3, program, location, count);
+    return ValidateProgramUniformBase(context, entryPoint, GL_UNSIGNED_INT_VEC3, program, location,
+                                      count);
 }
 
-bool ValidateProgramUniform4uiv(Context *context,
-                                ShaderProgramID program,
-                                GLint location,
-                                GLsizei count,
-                                const GLuint *value)
+bool ValidateProgramUniform4uivBase(const Context *context,
+                                    angle::EntryPoint entryPoint,
+                                    ShaderProgramID program,
+                                    UniformLocation location,
+                                    GLsizei count,
+                                    const GLuint *value)
 {
-    return ValidateProgramUniform(context, GL_UNSIGNED_INT_VEC4, program, location, count);
+    return ValidateProgramUniformBase(context, entryPoint, GL_UNSIGNED_INT_VEC4, program, location,
+                                      count);
 }
 
-bool ValidateProgramUniform1fv(Context *context,
-                               ShaderProgramID program,
-                               GLint location,
-                               GLsizei count,
-                               const GLfloat *value)
+bool ValidateProgramUniform1fvBase(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   ShaderProgramID program,
+                                   UniformLocation location,
+                                   GLsizei count,
+                                   const GLfloat *value)
 {
-    return ValidateProgramUniform(context, GL_FLOAT, program, location, count);
+    return ValidateProgramUniformBase(context, entryPoint, GL_FLOAT, program, location, count);
 }
 
-bool ValidateProgramUniform2fv(Context *context,
-                               ShaderProgramID program,
-                               GLint location,
-                               GLsizei count,
-                               const GLfloat *value)
+bool ValidateProgramUniform2fvBase(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   ShaderProgramID program,
+                                   UniformLocation location,
+                                   GLsizei count,
+                                   const GLfloat *value)
 {
-    return ValidateProgramUniform(context, GL_FLOAT_VEC2, program, location, count);
+    return ValidateProgramUniformBase(context, entryPoint, GL_FLOAT_VEC2, program, location, count);
 }
 
-bool ValidateProgramUniform3fv(Context *context,
-                               ShaderProgramID program,
-                               GLint location,
-                               GLsizei count,
-                               const GLfloat *value)
+bool ValidateProgramUniform3fvBase(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   ShaderProgramID program,
+                                   UniformLocation location,
+                                   GLsizei count,
+                                   const GLfloat *value)
 {
-    return ValidateProgramUniform(context, GL_FLOAT_VEC3, program, location, count);
+    return ValidateProgramUniformBase(context, entryPoint, GL_FLOAT_VEC3, program, location, count);
 }
 
-bool ValidateProgramUniform4fv(Context *context,
-                               ShaderProgramID program,
-                               GLint location,
-                               GLsizei count,
-                               const GLfloat *value)
+bool ValidateProgramUniform4fvBase(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   ShaderProgramID program,
+                                   UniformLocation location,
+                                   GLsizei count,
+                                   const GLfloat *value)
 {
-    return ValidateProgramUniform(context, GL_FLOAT_VEC4, program, location, count);
+    return ValidateProgramUniformBase(context, entryPoint, GL_FLOAT_VEC4, program, location, count);
 }
 
-bool ValidateProgramUniformMatrix2fv(Context *context,
-                                     ShaderProgramID program,
-                                     GLint location,
-                                     GLsizei count,
-                                     GLboolean transpose,
-                                     const GLfloat *value)
+bool ValidateProgramUniformMatrix2fvBase(const Context *context,
+                                         angle::EntryPoint entryPoint,
+                                         ShaderProgramID program,
+                                         UniformLocation location,
+                                         GLsizei count,
+                                         GLboolean transpose,
+                                         const GLfloat *value)
 {
-    return ValidateProgramUniformMatrix(context, GL_FLOAT_MAT2, program, location, count,
-                                        transpose);
+    return ValidateProgramUniformMatrixBase(context, entryPoint, GL_FLOAT_MAT2, program, location,
+                                            count, transpose);
 }
 
-bool ValidateProgramUniformMatrix3fv(Context *context,
-                                     ShaderProgramID program,
-                                     GLint location,
-                                     GLsizei count,
-                                     GLboolean transpose,
-                                     const GLfloat *value)
+bool ValidateProgramUniformMatrix3fvBase(const Context *context,
+                                         angle::EntryPoint entryPoint,
+                                         ShaderProgramID program,
+                                         UniformLocation location,
+                                         GLsizei count,
+                                         GLboolean transpose,
+                                         const GLfloat *value)
 {
-    return ValidateProgramUniformMatrix(context, GL_FLOAT_MAT3, program, location, count,
-                                        transpose);
+    return ValidateProgramUniformMatrixBase(context, entryPoint, GL_FLOAT_MAT3, program, location,
+                                            count, transpose);
 }
 
-bool ValidateProgramUniformMatrix4fv(Context *context,
-                                     ShaderProgramID program,
-                                     GLint location,
-                                     GLsizei count,
-                                     GLboolean transpose,
-                                     const GLfloat *value)
+bool ValidateProgramUniformMatrix4fvBase(const Context *context,
+                                         angle::EntryPoint entryPoint,
+                                         ShaderProgramID program,
+                                         UniformLocation location,
+                                         GLsizei count,
+                                         GLboolean transpose,
+                                         const GLfloat *value)
 {
-    return ValidateProgramUniformMatrix(context, GL_FLOAT_MAT4, program, location, count,
-                                        transpose);
+    return ValidateProgramUniformMatrixBase(context, entryPoint, GL_FLOAT_MAT4, program, location,
+                                            count, transpose);
 }
 
-bool ValidateProgramUniformMatrix2x3fv(Context *context,
-                                       ShaderProgramID program,
-                                       GLint location,
-                                       GLsizei count,
-                                       GLboolean transpose,
-                                       const GLfloat *value)
+bool ValidateProgramUniformMatrix2x3fvBase(const Context *context,
+                                           angle::EntryPoint entryPoint,
+                                           ShaderProgramID program,
+                                           UniformLocation location,
+                                           GLsizei count,
+                                           GLboolean transpose,
+                                           const GLfloat *value)
 {
-    return ValidateProgramUniformMatrix(context, GL_FLOAT_MAT2x3, program, location, count,
-                                        transpose);
+    return ValidateProgramUniformMatrixBase(context, entryPoint, GL_FLOAT_MAT2x3, program, location,
+                                            count, transpose);
 }
 
-bool ValidateProgramUniformMatrix3x2fv(Context *context,
-                                       ShaderProgramID program,
-                                       GLint location,
-                                       GLsizei count,
-                                       GLboolean transpose,
-                                       const GLfloat *value)
+bool ValidateProgramUniformMatrix3x2fvBase(const Context *context,
+                                           angle::EntryPoint entryPoint,
+                                           ShaderProgramID program,
+                                           UniformLocation location,
+                                           GLsizei count,
+                                           GLboolean transpose,
+                                           const GLfloat *value)
 {
-    return ValidateProgramUniformMatrix(context, GL_FLOAT_MAT3x2, program, location, count,
-                                        transpose);
+    return ValidateProgramUniformMatrixBase(context, entryPoint, GL_FLOAT_MAT3x2, program, location,
+                                            count, transpose);
 }
 
-bool ValidateProgramUniformMatrix2x4fv(Context *context,
-                                       ShaderProgramID program,
-                                       GLint location,
-                                       GLsizei count,
-                                       GLboolean transpose,
-                                       const GLfloat *value)
+bool ValidateProgramUniformMatrix2x4fvBase(const Context *context,
+                                           angle::EntryPoint entryPoint,
+                                           ShaderProgramID program,
+                                           UniformLocation location,
+                                           GLsizei count,
+                                           GLboolean transpose,
+                                           const GLfloat *value)
 {
-    return ValidateProgramUniformMatrix(context, GL_FLOAT_MAT2x4, program, location, count,
-                                        transpose);
+    return ValidateProgramUniformMatrixBase(context, entryPoint, GL_FLOAT_MAT2x4, program, location,
+                                            count, transpose);
 }
 
-bool ValidateProgramUniformMatrix4x2fv(Context *context,
-                                       ShaderProgramID program,
-                                       GLint location,
-                                       GLsizei count,
-                                       GLboolean transpose,
-                                       const GLfloat *value)
+bool ValidateProgramUniformMatrix4x2fvBase(const Context *context,
+                                           angle::EntryPoint entryPoint,
+                                           ShaderProgramID program,
+                                           UniformLocation location,
+                                           GLsizei count,
+                                           GLboolean transpose,
+                                           const GLfloat *value)
 {
-    return ValidateProgramUniformMatrix(context, GL_FLOAT_MAT4x2, program, location, count,
-                                        transpose);
+    return ValidateProgramUniformMatrixBase(context, entryPoint, GL_FLOAT_MAT4x2, program, location,
+                                            count, transpose);
 }
 
-bool ValidateProgramUniformMatrix3x4fv(Context *context,
-                                       ShaderProgramID program,
-                                       GLint location,
-                                       GLsizei count,
-                                       GLboolean transpose,
-                                       const GLfloat *value)
+bool ValidateProgramUniformMatrix3x4fvBase(const Context *context,
+                                           angle::EntryPoint entryPoint,
+                                           ShaderProgramID program,
+                                           UniformLocation location,
+                                           GLsizei count,
+                                           GLboolean transpose,
+                                           const GLfloat *value)
 {
-    return ValidateProgramUniformMatrix(context, GL_FLOAT_MAT3x4, program, location, count,
-                                        transpose);
+    return ValidateProgramUniformMatrixBase(context, entryPoint, GL_FLOAT_MAT3x4, program, location,
+                                            count, transpose);
 }
 
-bool ValidateProgramUniformMatrix4x3fv(Context *context,
-                                       ShaderProgramID program,
-                                       GLint location,
-                                       GLsizei count,
-                                       GLboolean transpose,
-                                       const GLfloat *value)
+bool ValidateProgramUniformMatrix4x3fvBase(const Context *context,
+                                           angle::EntryPoint entryPoint,
+                                           ShaderProgramID program,
+                                           UniformLocation location,
+                                           GLsizei count,
+                                           GLboolean transpose,
+                                           const GLfloat *value)
 {
-    return ValidateProgramUniformMatrix(context, GL_FLOAT_MAT4x3, program, location, count,
-                                        transpose);
+    return ValidateProgramUniformMatrixBase(context, entryPoint, GL_FLOAT_MAT4x3, program, location,
+                                            count, transpose);
 }
 
-bool ValidateGetTexLevelParameterfv(Context *context,
+bool ValidateGetTexLevelParameterfv(const Context *context,
+                                    angle::EntryPoint entryPoint,
                                     TextureTarget target,
                                     GLint level,
                                     GLenum pname,
-                                    GLfloat *params)
+                                    const GLfloat *params)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
-    return ValidateGetTexLevelParameterBase(context, target, level, pname, nullptr);
+    return ValidateGetTexLevelParameterBase(context, entryPoint, target, level, pname, nullptr);
 }
 
-bool ValidateGetTexLevelParameterfvRobustANGLE(Context *context,
+bool ValidateGetTexLevelParameterfvRobustANGLE(const Context *context,
+                                               angle::EntryPoint entryPoint,
                                                TextureTarget target,
                                                GLint level,
                                                GLenum pname,
                                                GLsizei bufSize,
-                                               GLsizei *length,
-                                               GLfloat *params)
+                                               const GLsizei *length,
+                                               const GLfloat *params)
 {
     UNIMPLEMENTED();
     return false;
 }
 
-bool ValidateGetTexLevelParameteriv(Context *context,
+bool ValidateGetTexLevelParameteriv(const Context *context,
+                                    angle::EntryPoint entryPoint,
                                     TextureTarget target,
                                     GLint level,
                                     GLenum pname,
-                                    GLint *params)
+                                    const GLint *params)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
-    return ValidateGetTexLevelParameterBase(context, target, level, pname, nullptr);
+    return ValidateGetTexLevelParameterBase(context, entryPoint, target, level, pname, nullptr);
 }
 
-bool ValidateGetTexLevelParameterivRobustANGLE(Context *context,
+bool ValidateGetTexLevelParameterivRobustANGLE(const Context *context,
+                                               angle::EntryPoint entryPoint,
                                                TextureTarget target,
                                                GLint level,
                                                GLenum pname,
                                                GLsizei bufSize,
-                                               GLsizei *length,
-                                               GLint *params)
+                                               const GLsizei *length,
+                                               const GLint *params)
 {
     UNIMPLEMENTED();
     return false;
 }
 
-bool ValidateTexStorage2DMultisample(Context *context,
+bool ValidateTexStorage2DMultisample(const Context *context,
+                                     angle::EntryPoint entryPoint,
                                      TextureType target,
                                      GLsizei samples,
                                      GLenum internalFormat,
@@ -939,17 +1044,12 @@ bool ValidateTexStorage2DMultisample(Context *context,
                                      GLsizei height,
                                      GLboolean fixedSampleLocations)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
-    return ValidateTexStorage2DMultisampleBase(context, target, samples, internalFormat, width,
-                                               height);
+    return ValidateTexStorage2DMultisampleBase(context, entryPoint, target, samples, internalFormat,
+                                               width, height);
 }
 
-bool ValidateTexStorageMem2DMultisampleEXT(Context *context,
+bool ValidateTexStorageMem2DMultisampleEXT(const Context *context,
+                                           angle::EntryPoint entryPoint,
                                            TextureType target,
                                            GLsizei samples,
                                            GLenum internalFormat,
@@ -959,235 +1059,112 @@ bool ValidateTexStorageMem2DMultisampleEXT(Context *context,
                                            MemoryObjectID memory,
                                            GLuint64 offset)
 {
-    if (!context->getExtensions().memoryObject)
-    {
-        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
-        return false;
-    }
-
     UNIMPLEMENTED();
     return false;
 }
 
-bool ValidateGetMultisamplefv(Context *context, GLenum pname, GLuint index, GLfloat *val)
+bool ValidateGetMultisamplefv(const Context *context,
+                              angle::EntryPoint entryPoint,
+                              GLenum pname,
+                              GLuint index,
+                              const GLfloat *val)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
-    return ValidateGetMultisamplefvBase(context, pname, index, val);
+    return ValidateGetMultisamplefvBase(context, entryPoint, pname, index, val);
 }
 
-bool ValidateGetMultisamplefvRobustANGLE(Context *context,
+bool ValidateGetMultisamplefvRobustANGLE(const Context *context,
+                                         angle::EntryPoint entryPoint,
                                          GLenum pname,
                                          GLuint index,
                                          GLsizei bufSize,
-                                         GLsizei *length,
-                                         GLfloat *val)
+                                         const GLsizei *length,
+                                         const GLfloat *val)
 {
     UNIMPLEMENTED();
     return false;
 }
 
-bool ValidateFramebufferParameteri(Context *context, GLenum target, GLenum pname, GLint param)
+bool ValidateFramebufferParameteri(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   GLenum target,
+                                   GLenum pname,
+                                   GLint param)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
-    if (!ValidFramebufferTarget(context, target))
-    {
-        context->validationError(GL_INVALID_ENUM, kInvalidFramebufferTarget);
-        return false;
-    }
-
-    switch (pname)
-    {
-        case GL_FRAMEBUFFER_DEFAULT_WIDTH:
-        {
-            GLint maxWidth = context->getCaps().maxFramebufferWidth;
-            if (param < 0 || param > maxWidth)
-            {
-                context->validationError(GL_INVALID_VALUE, kExceedsFramebufferWidth);
-                return false;
-            }
-            break;
-        }
-        case GL_FRAMEBUFFER_DEFAULT_HEIGHT:
-        {
-            GLint maxHeight = context->getCaps().maxFramebufferHeight;
-            if (param < 0 || param > maxHeight)
-            {
-                context->validationError(GL_INVALID_VALUE, kExceedsFramebufferHeight);
-                return false;
-            }
-            break;
-        }
-        case GL_FRAMEBUFFER_DEFAULT_SAMPLES:
-        {
-            GLint maxSamples = context->getCaps().maxFramebufferSamples;
-            if (param < 0 || param > maxSamples)
-            {
-                context->validationError(GL_INVALID_VALUE, kExceedsFramebufferSamples);
-                return false;
-            }
-            break;
-        }
-        case GL_FRAMEBUFFER_DEFAULT_FIXED_SAMPLE_LOCATIONS:
-        {
-            break;
-        }
-        case GL_FRAMEBUFFER_DEFAULT_LAYERS_EXT:
-        {
-            if (!context->getExtensions().geometryShader)
-            {
-                context->validationError(GL_INVALID_ENUM, kGeometryShaderExtensionNotEnabled);
-                return false;
-            }
-            GLint maxLayers = context->getCaps().maxFramebufferLayers;
-            if (param < 0 || param > maxLayers)
-            {
-                context->validationError(GL_INVALID_VALUE, kInvalidFramebufferLayer);
-                return false;
-            }
-            break;
-        }
-        default:
-        {
-            context->validationError(GL_INVALID_ENUM, kInvalidPname);
-            return false;
-        }
-    }
-
-    const Framebuffer *framebuffer = context->getState().getTargetFramebuffer(target);
-    ASSERT(framebuffer);
-    if (framebuffer->isDefault())
-    {
-        context->validationError(GL_INVALID_OPERATION, kDefaultFramebuffer);
-        return false;
-    }
-    return true;
+    return ValidateFramebufferParameteriBase(context, entryPoint, target, pname, param);
 }
 
-bool ValidateGetFramebufferParameteriv(Context *context, GLenum target, GLenum pname, GLint *params)
+bool ValidateGetFramebufferParameteriv(const Context *context,
+                                       angle::EntryPoint entryPoint,
+                                       GLenum target,
+                                       GLenum pname,
+                                       const GLint *params)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
-    if (!ValidFramebufferTarget(context, target))
-    {
-        context->validationError(GL_INVALID_ENUM, kInvalidFramebufferTarget);
-        return false;
-    }
-
-    switch (pname)
-    {
-        case GL_FRAMEBUFFER_DEFAULT_WIDTH:
-        case GL_FRAMEBUFFER_DEFAULT_HEIGHT:
-        case GL_FRAMEBUFFER_DEFAULT_SAMPLES:
-        case GL_FRAMEBUFFER_DEFAULT_FIXED_SAMPLE_LOCATIONS:
-            break;
-        case GL_FRAMEBUFFER_DEFAULT_LAYERS_EXT:
-            if (!context->getExtensions().geometryShader)
-            {
-                context->validationError(GL_INVALID_ENUM, kGeometryShaderExtensionNotEnabled);
-                return false;
-            }
-            break;
-        default:
-            context->validationError(GL_INVALID_ENUM, kInvalidPname);
-            return false;
-    }
-
-    const Framebuffer *framebuffer = context->getState().getTargetFramebuffer(target);
-    ASSERT(framebuffer);
-
-    if (framebuffer->isDefault())
-    {
-        context->validationError(GL_INVALID_OPERATION, kDefaultFramebuffer);
-        return false;
-    }
-    return true;
+    return ValidateGetFramebufferParameterivBase(context, entryPoint, target, pname, params);
 }
 
-bool ValidateGetFramebufferParameterivRobustANGLE(Context *context,
+bool ValidateGetFramebufferParameterivRobustANGLE(const Context *context,
+                                                  angle::EntryPoint entryPoint,
                                                   GLenum target,
                                                   GLenum pname,
                                                   GLsizei bufSize,
-                                                  GLsizei *length,
-                                                  GLint *params)
+                                                  const GLsizei *length,
+                                                  const GLint *params)
 {
     UNIMPLEMENTED();
     return false;
 }
 
-bool ValidateGetProgramResourceIndex(Context *context,
+bool ValidateGetProgramResourceIndex(const Context *context,
+                                     angle::EntryPoint entryPoint,
                                      ShaderProgramID program,
                                      GLenum programInterface,
                                      const GLchar *name)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
-    Program *programObject = GetValidProgram(context, program);
+    Program *programObject = GetValidProgram(context, entryPoint, program);
     if (programObject == nullptr)
     {
+        // Error already generated.
         return false;
     }
 
     if (!ValidateNamedProgramInterface(programInterface))
     {
-        context->validationError(GL_INVALID_ENUM, kInvalidProgramInterface);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidProgramInterface);
         return false;
     }
 
     return true;
 }
 
-bool ValidateBindVertexBuffer(Context *context,
+bool ValidateBindVertexBuffer(const Context *context,
+                              angle::EntryPoint entryPoint,
                               GLuint bindingIndex,
                               BufferID buffer,
                               GLintptr offset,
                               GLsizei stride)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
     if (!context->isBufferGenerated(buffer))
     {
-        context->validationError(GL_INVALID_OPERATION, kObjectNotGenerated);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kObjectNotGenerated);
         return false;
     }
 
     const Caps &caps = context->getCaps();
     if (bindingIndex >= static_cast<GLuint>(caps.maxVertexAttribBindings))
     {
-        context->validationError(GL_INVALID_VALUE, kExceedsMaxVertexAttribBindings);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kExceedsMaxVertexAttribBindings);
         return false;
     }
 
     if (offset < 0)
     {
-        context->validationError(GL_INVALID_VALUE, kNegativeOffset);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kNegativeOffset);
         return false;
     }
 
     if (stride < 0 || stride > caps.maxVertexAttribStride)
     {
-        context->validationError(GL_INVALID_VALUE, kExceedsMaxVertexAttribStride);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kExceedsMaxVertexAttribStride);
         return false;
     }
 
@@ -1195,25 +1172,22 @@ bool ValidateBindVertexBuffer(Context *context,
     // An INVALID_OPERATION error is generated if the default vertex array object is bound.
     if (context->getState().getVertexArrayId().value == 0)
     {
-        context->validationError(GL_INVALID_OPERATION, kDefaultVertexArray);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kDefaultVertexArray);
         return false;
     }
 
     return true;
 }
 
-bool ValidateVertexBindingDivisor(Context *context, GLuint bindingIndex, GLuint divisor)
+bool ValidateVertexBindingDivisor(const Context *context,
+                                  angle::EntryPoint entryPoint,
+                                  GLuint bindingIndex,
+                                  GLuint divisor)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
     const Caps &caps = context->getCaps();
     if (bindingIndex >= static_cast<GLuint>(caps.maxVertexAttribBindings))
     {
-        context->validationError(GL_INVALID_VALUE, kExceedsMaxVertexAttribBindings);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kExceedsMaxVertexAttribBindings);
         return false;
     }
 
@@ -1221,188 +1195,174 @@ bool ValidateVertexBindingDivisor(Context *context, GLuint bindingIndex, GLuint 
     // An INVALID_OPERATION error is generated if the default vertex array object is bound.
     if (context->getState().getVertexArrayId().value == 0)
     {
-        context->validationError(GL_INVALID_OPERATION, kDefaultVertexArray);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kDefaultVertexArray);
         return false;
     }
 
     return true;
 }
 
-bool ValidateVertexAttribFormat(Context *context,
+bool ValidateVertexAttribFormat(const Context *context,
+                                angle::EntryPoint entryPoint,
                                 GLuint attribindex,
                                 GLint size,
                                 VertexAttribType type,
                                 GLboolean normalized,
                                 GLuint relativeoffset)
 {
-    if (!ValidateVertexAttribFormatCommon(context, relativeoffset))
+    if (!ValidateVertexAttribFormatCommon(context, entryPoint, relativeoffset))
     {
         return false;
     }
 
-    return ValidateFloatVertexFormat(context, attribindex, size, type);
+    return ValidateFloatVertexFormat(context, entryPoint, attribindex, size, type);
 }
 
-bool ValidateVertexAttribIFormat(Context *context,
+bool ValidateVertexAttribIFormat(const Context *context,
+                                 angle::EntryPoint entryPoint,
                                  GLuint attribindex,
                                  GLint size,
                                  VertexAttribType type,
                                  GLuint relativeoffset)
 {
-    if (!ValidateVertexAttribFormatCommon(context, relativeoffset))
+    if (!ValidateVertexAttribFormatCommon(context, entryPoint, relativeoffset))
     {
         return false;
     }
 
-    return ValidateIntegerVertexFormat(context, attribindex, size, type);
+    return ValidateIntegerVertexFormat(context, entryPoint, attribindex, size, type);
 }
 
-bool ValidateVertexAttribBinding(Context *context, GLuint attribIndex, GLuint bindingIndex)
+bool ValidateVertexAttribBinding(const Context *context,
+                                 angle::EntryPoint entryPoint,
+                                 GLuint attribIndex,
+                                 GLuint bindingIndex)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
     // [OpenGL ES 3.1] Section 10.3.1 page 243:
     // An INVALID_OPERATION error is generated if the default vertex array object is bound.
     if (context->getState().getVertexArrayId().value == 0)
     {
-        context->validationError(GL_INVALID_OPERATION, kDefaultVertexArray);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kDefaultVertexArray);
         return false;
     }
 
     const Caps &caps = context->getCaps();
     if (attribIndex >= static_cast<GLuint>(caps.maxVertexAttributes))
     {
-        context->validationError(GL_INVALID_VALUE, kIndexExceedsMaxVertexAttribute);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kIndexExceedsMaxVertexAttribute);
         return false;
     }
 
     if (bindingIndex >= static_cast<GLuint>(caps.maxVertexAttribBindings))
     {
-        context->validationError(GL_INVALID_VALUE, kExceedsMaxVertexAttribBindings);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kExceedsMaxVertexAttribBindings);
         return false;
     }
 
     return true;
 }
 
-bool ValidateGetProgramResourceName(Context *context,
+bool ValidateGetProgramResourceName(const Context *context,
+                                    angle::EntryPoint entryPoint,
                                     ShaderProgramID program,
                                     GLenum programInterface,
                                     GLuint index,
                                     GLsizei bufSize,
-                                    GLsizei *length,
-                                    GLchar *name)
+                                    const GLsizei *length,
+                                    const GLchar *name)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
-    Program *programObject = GetValidProgram(context, program);
+    Program *programObject = GetValidProgram(context, entryPoint, program);
     if (programObject == nullptr)
     {
+        // Error already generated.
         return false;
     }
 
     if (!ValidateNamedProgramInterface(programInterface))
     {
-        context->validationError(GL_INVALID_ENUM, kInvalidProgramInterface);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidProgramInterface);
         return false;
     }
 
     if (!ValidateProgramResourceIndex(programObject, programInterface, index))
     {
-        context->validationError(GL_INVALID_VALUE, kInvalidProgramResourceIndex);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kInvalidProgramResourceIndex);
         return false;
     }
 
     if (bufSize < 0)
     {
-        context->validationError(GL_INVALID_VALUE, kNegativeBufferSize);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kNegativeBufSize);
         return false;
     }
 
     return true;
 }
 
-bool ValidateDispatchCompute(Context *context,
+bool ValidateDispatchCompute(const Context *context,
+                             angle::EntryPoint entryPoint,
                              GLuint numGroupsX,
                              GLuint numGroupsY,
                              GLuint numGroupsZ)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
+    const State &state                  = context->getState();
+    const ProgramExecutable *executable = state.getLinkedProgramExecutable(context);
 
-    const State &state = context->getState();
-    Program *program   = state.getLinkedProgram(context);
-
-    if (program == nullptr || !program->hasLinkedShaderStage(ShaderType::Compute))
+    if (executable == nullptr || !executable->hasLinkedShaderStage(ShaderType::Compute))
     {
-        context->validationError(GL_INVALID_OPERATION, kNoActiveProgramWithComputeShader);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kNoActiveProgramWithComputeShader);
         return false;
     }
 
     const Caps &caps = context->getCaps();
     if (numGroupsX > static_cast<GLuint>(caps.maxComputeWorkGroupCount[0]))
     {
-        context->validationError(GL_INVALID_VALUE, kExceedsComputeWorkGroupCountX);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kExceedsComputeWorkGroupCountX);
         return false;
     }
     if (numGroupsY > static_cast<GLuint>(caps.maxComputeWorkGroupCount[1]))
     {
-        context->validationError(GL_INVALID_VALUE, kExceedsComputeWorkGroupCountY);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kExceedsComputeWorkGroupCountY);
         return false;
     }
     if (numGroupsZ > static_cast<GLuint>(caps.maxComputeWorkGroupCount[2]))
     {
-        context->validationError(GL_INVALID_VALUE, kExceedsComputeWorkGroupCountZ);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kExceedsComputeWorkGroupCountZ);
         return false;
     }
 
     return true;
 }
 
-bool ValidateDispatchComputeIndirect(Context *context, GLintptr indirect)
+bool ValidateDispatchComputeIndirect(const Context *context,
+                                     angle::EntryPoint entryPoint,
+                                     GLintptr indirect)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
+    const State &state                  = context->getState();
+    const ProgramExecutable *executable = state.getProgramExecutable();
 
-    const State &state = context->getState();
-    Program *program   = state.getLinkedProgram(context);
-
-    if (program == nullptr || !program->hasLinkedShaderStage(ShaderType::Compute))
+    if (executable == nullptr || !executable->hasLinkedShaderStage(ShaderType::Compute))
     {
-        context->validationError(GL_INVALID_OPERATION, kNoActiveProgramWithComputeShader);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kNoActiveProgramWithComputeShader);
         return false;
     }
 
     if (indirect < 0)
     {
-        context->validationError(GL_INVALID_VALUE, kNegativeOffset);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kNegativeOffset);
         return false;
     }
 
     if ((indirect & (sizeof(GLuint) - 1)) != 0)
     {
-        context->validationError(GL_INVALID_VALUE, kOffsetMustBeMultipleOfUint);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kOffsetMustBeMultipleOfUint);
         return false;
     }
 
     Buffer *dispatchIndirectBuffer = state.getTargetBuffer(BufferBinding::DispatchIndirect);
     if (!dispatchIndirectBuffer)
     {
-        context->validationError(GL_INVALID_OPERATION, kDispatchIndirectBufferNotBound);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kDispatchIndirectBufferNotBound);
         return false;
     }
 
@@ -1411,14 +1371,15 @@ bool ValidateDispatchComputeIndirect(Context *context, GLintptr indirect)
     if (!checkedSum.IsValid() ||
         checkedSum.ValueOrDie() > static_cast<GLuint64>(dispatchIndirectBuffer->getSize()))
     {
-        context->validationError(GL_INVALID_OPERATION, kInsufficientBufferSize);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kInsufficientBufferSize);
         return false;
     }
 
     return true;
 }
 
-bool ValidateBindImageTexture(Context *context,
+bool ValidateBindImageTexture(const Context *context,
+                              angle::EntryPoint entryPoint,
                               GLuint unit,
                               TextureID texture,
                               GLint level,
@@ -1430,25 +1391,25 @@ bool ValidateBindImageTexture(Context *context,
     GLuint maxImageUnits = static_cast<GLuint>(context->getCaps().maxImageUnits);
     if (unit >= maxImageUnits)
     {
-        context->validationError(GL_INVALID_VALUE, kExceedsMaxImageUnits);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kExceedsMaxImageUnits);
         return false;
     }
 
     if (level < 0)
     {
-        context->validationError(GL_INVALID_VALUE, kNegativeLevel);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kNegativeLevel);
         return false;
     }
 
     if (layer < 0)
     {
-        context->validationError(GL_INVALID_VALUE, kNegativeLayer);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kNegativeLayer);
         return false;
     }
 
     if (access != GL_READ_ONLY && access != GL_WRITE_ONLY && access != GL_READ_WRITE)
     {
-        context->validationError(GL_INVALID_ENUM, kInvalidImageAccess);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidImageAccess);
         return false;
     }
 
@@ -1469,7 +1430,7 @@ bool ValidateBindImageTexture(Context *context,
         case GL_RGBA8_SNORM:
             break;
         default:
-            context->validationError(GL_INVALID_VALUE, kInvalidImageFormat);
+            ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kInvalidImageFormat);
             return false;
     }
 
@@ -1479,129 +1440,130 @@ bool ValidateBindImageTexture(Context *context,
 
         if (tex == nullptr)
         {
-            context->validationError(GL_INVALID_VALUE, kMissingTextureName);
+            ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kMissingTextureName);
             return false;
         }
 
-        if (!tex->getImmutableFormat())
+        if (!tex->getImmutableFormat() && tex->getType() != gl::TextureType::Buffer)
         {
-            context->validationError(GL_INVALID_OPERATION, kTextureIsNotImmutable);
+            ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION,
+                                   kTextureIsNeitherImmutableNorTextureBuffer);
             return false;
+        }
+
+        if (context->getExtensions().textureStorageCompressionEXT &&
+            tex->getType() != gl::TextureType::Buffer)
+        {
+            if (tex->getImageCompressionRate(context) != GL_SURFACE_COMPRESSION_FIXED_RATE_NONE_EXT)
+            {
+                ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE,
+                                       kTextureFixedCompressedNotSupportBindImageTexture);
+                return false;
+            }
         }
     }
 
     return true;
 }
 
-bool ValidateGetProgramResourceLocation(Context *context,
+bool ValidateGetProgramResourceLocation(const Context *context,
+                                        angle::EntryPoint entryPoint,
                                         ShaderProgramID program,
                                         GLenum programInterface,
                                         const GLchar *name)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
-    Program *programObject = GetValidProgram(context, program);
+    Program *programObject = GetValidProgram(context, entryPoint, program);
     if (programObject == nullptr)
     {
+        // Error already generated.
         return false;
     }
 
     if (!programObject->isLinked())
     {
-        context->validationError(GL_INVALID_OPERATION, kProgramNotLinked);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kProgramNotLinked);
         return false;
     }
 
     if (!ValidateLocationProgramInterface(programInterface))
     {
-        context->validationError(GL_INVALID_ENUM, kInvalidProgramInterface);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidProgramInterface);
         return false;
     }
     return true;
 }
 
-bool ValidateGetProgramResourceiv(Context *context,
+bool ValidateGetProgramResourceiv(const Context *context,
+                                  angle::EntryPoint entryPoint,
                                   ShaderProgramID program,
                                   GLenum programInterface,
                                   GLuint index,
                                   GLsizei propCount,
                                   const GLenum *props,
                                   GLsizei bufSize,
-                                  GLsizei *length,
-                                  GLint *params)
+                                  const GLsizei *length,
+                                  const GLint *params)
 {
-    if (context->getClientVersion() < ES_3_1)
+    Program *programObject = GetValidProgram(context, entryPoint, program);
+    if (programObject == nullptr)
     {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
+        // Error already generated.
         return false;
     }
 
-    Program *programObject = GetValidProgram(context, program);
-    if (programObject == nullptr)
-    {
-        return false;
-    }
     if (!ValidateProgramInterface(programInterface))
     {
-        context->validationError(GL_INVALID_ENUM, kInvalidProgramInterface);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidProgramInterface);
         return false;
     }
     if (propCount <= 0)
     {
-        context->validationError(GL_INVALID_VALUE, kInvalidPropCount);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kInvalidPropCount);
         return false;
     }
     if (bufSize < 0)
     {
-        context->validationError(GL_INVALID_VALUE, kNegativeBufSize);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kNegativeBufSize);
         return false;
     }
     if (!ValidateProgramResourceIndex(programObject, programInterface, index))
     {
-        context->validationError(GL_INVALID_VALUE, kInvalidProgramResourceIndex);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kInvalidProgramResourceIndex);
         return false;
     }
     for (GLsizei i = 0; i < propCount; i++)
     {
-        if (!ValidateProgramResourceProperty(context, props[i]))
+        if (!ValidateProgramResourceProperty(context, entryPoint, props[i]))
         {
-            context->validationError(GL_INVALID_ENUM, kInvalidProgramResourceProperty);
+            ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidProgramResourceProperty);
             return false;
         }
         if (!ValidateProgramResourcePropertyByInterface(props[i], programInterface))
         {
-            context->validationError(GL_INVALID_OPERATION, kInvalidPropertyForProgramInterface);
+            ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kInvalidPropertyForProgramInterface);
             return false;
         }
     }
     return true;
 }
 
-bool ValidateGetProgramInterfaceiv(Context *context,
+bool ValidateGetProgramInterfaceiv(const Context *context,
+                                   angle::EntryPoint entryPoint,
                                    ShaderProgramID program,
                                    GLenum programInterface,
                                    GLenum pname,
-                                   GLint *params)
+                                   const GLint *params)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
-    Program *programObject = GetValidProgram(context, program);
+    Program *programObject = GetValidProgram(context, entryPoint, program);
     if (programObject == nullptr)
     {
+        // Error already generated.
         return false;
     }
 
     if (!ValidateProgramInterface(programInterface))
     {
-        context->validationError(GL_INVALID_ENUM, kInvalidProgramInterface);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidProgramInterface);
         return false;
     }
 
@@ -1613,13 +1575,13 @@ bool ValidateGetProgramInterfaceiv(Context *context,
             break;
 
         default:
-            context->validationError(GL_INVALID_ENUM, kInvalidPname);
+            ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidPname);
             return false;
     }
 
     if (pname == GL_MAX_NAME_LENGTH && programInterface == GL_ATOMIC_COUNTER_BUFFER)
     {
-        context->validationError(GL_INVALID_OPERATION, kAtomicCounterResourceName);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kAtomicCounterResourceName);
         return false;
     }
 
@@ -1633,7 +1595,7 @@ bool ValidateGetProgramInterfaceiv(Context *context,
                 break;
 
             default:
-                context->validationError(GL_INVALID_OPERATION, kMaxActiveVariablesInterface);
+                ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kMaxActiveVariablesInterface);
                 return false;
         }
     }
@@ -1641,126 +1603,773 @@ bool ValidateGetProgramInterfaceiv(Context *context,
     return true;
 }
 
-bool ValidateGetProgramInterfaceivRobustANGLE(Context *context,
+bool ValidateGetProgramInterfaceivRobustANGLE(const Context *context,
+                                              angle::EntryPoint entryPoint,
                                               ShaderProgramID program,
                                               GLenum programInterface,
                                               GLenum pname,
                                               GLsizei bufSize,
-                                              GLsizei *length,
-                                              GLint *params)
+                                              const GLsizei *length,
+                                              const GLint *params)
 {
     UNIMPLEMENTED();
     return false;
 }
 
-static bool ValidateGenOrDeleteES31(Context *context, GLint n)
+bool ValidateGenProgramPipelinesBase(const Context *context,
+                                     angle::EntryPoint entryPoint,
+                                     GLsizei n,
+                                     const ProgramPipelineID *pipelines)
 {
-    if (context->getClientVersion() < ES_3_1)
+    return ValidateGenOrDelete(context, entryPoint, n, pipelines);
+}
+
+bool ValidateDeleteProgramPipelinesBase(const Context *context,
+                                        angle::EntryPoint entryPoint,
+                                        GLsizei n,
+                                        const ProgramPipelineID *pipelines)
+{
+    return ValidateGenOrDelete(context, entryPoint, n, pipelines);
+}
+
+bool ValidateBindProgramPipelineBase(const Context *context,
+                                     angle::EntryPoint entryPoint,
+                                     ProgramPipelineID pipeline)
+{
+    if (!context->isProgramPipelineGenerated({pipeline}))
     {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kObjectNotGenerated);
         return false;
     }
 
-    return ValidateGenOrDelete(context, n);
+    return true;
 }
 
-bool ValidateGenProgramPipelines(Context *context, GLint n, ProgramPipelineID *pipelines)
+bool ValidateIsProgramPipelineBase(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   ProgramPipelineID pipeline)
 {
-    return ValidateGenOrDeleteES31(context, n);
+    return true;
 }
 
-bool ValidateDeleteProgramPipelines(Context *context, GLint n, const ProgramPipelineID *pipelines)
+bool ValidateUseProgramStagesBase(const Context *context,
+                                  angle::EntryPoint entryPoint,
+                                  ProgramPipelineID pipeline,
+                                  GLbitfield stages,
+                                  ShaderProgramID programId)
 {
-    return ValidateGenOrDeleteES31(context, n);
-}
+    // GL_INVALID_VALUE is generated if shaders contains set bits that are not recognized, and is
+    // not the reserved value GL_ALL_SHADER_BITS.
+    GLbitfield knownShaderBits =
+        GL_VERTEX_SHADER_BIT | GL_FRAGMENT_SHADER_BIT | GL_COMPUTE_SHADER_BIT;
 
-bool ValidateBindProgramPipeline(Context *context, ProgramPipelineID pipeline)
-{
-    if (context->getClientVersion() < ES_3_1)
+    if (context->getClientVersion() >= ES_3_2 || context->getExtensions().geometryShaderAny())
     {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
+        knownShaderBits |= GL_GEOMETRY_SHADER_BIT;
+    }
+
+    if (context->getClientVersion() >= ES_3_2 || context->getExtensions().tessellationShaderAny())
+    {
+        knownShaderBits |= GL_TESS_CONTROL_SHADER_BIT;
+        knownShaderBits |= GL_TESS_EVALUATION_SHADER_BIT;
+    }
+
+    if ((stages & ~knownShaderBits) && (stages != GL_ALL_SHADER_BITS))
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kUnrecognizedShaderStageBit);
+        return false;
+    }
+
+    // GL_INVALID_OPERATION is generated if pipeline is not a name previously returned from a call
+    // to glGenProgramPipelines or if such a name has been deleted by a call to
+    // glDeleteProgramPipelines.
+    if ((pipeline.value == 0) || (!context->isProgramPipelineGenerated({pipeline})))
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kObjectNotGenerated);
+        return false;
+    }
+
+    // If program is zero, or refers to a program object with no valid shader executable for a given
+    // stage, it is as if the pipeline object has no programmable stage configured for the indicated
+    // shader stages.
+    if (programId.value == 0)
+    {
+        return true;
+    }
+
+    Program *program = context->getProgramNoResolveLink(programId);
+    if (!program)
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kProgramDoesNotExist);
+        return false;
+    }
+
+    // GL_INVALID_OPERATION is generated if program refers to a program object that was not linked
+    // with its GL_PROGRAM_SEPARABLE status set.
+    // resolveLink() may not have been called if glCreateShaderProgramv() was not used and
+    // glDetachShader() was not called.
+    program->resolveLink(context);
+    if (!program->isSeparable())
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kProgramNotSeparable);
+        return false;
+    }
+
+    // GL_INVALID_OPERATION is generated if program refers to a program object that has not been
+    // successfully linked.
+    if (!program->isLinked())
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kProgramNotLinked);
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateActiveShaderProgramBase(const Context *context,
+                                     angle::EntryPoint entryPoint,
+                                     ProgramPipelineID pipeline,
+                                     ShaderProgramID programId)
+{
+    // An INVALID_OPERATION error is generated if pipeline is not a name returned from a previous
+    // call to GenProgramPipelines or if such a name has since been deleted by
+    // DeleteProgramPipelines.
+    if ((pipeline.value == 0) || (!context->isProgramPipelineGenerated({pipeline})))
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kObjectNotGenerated);
+        return false;
+    }
+
+    // An INVALID_VALUE error is generated if program is not zero and is not the name of either a
+    // program or shader object.
+    if ((programId.value != 0) && !context->isProgram(programId) && !context->isShader(programId))
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kProgramDoesNotExist);
+        return false;
+    }
+
+    // An INVALID_OPERATION error is generated if program is the name of a shader object.
+    if (context->isShader(programId))
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kExpectedProgramName);
+        return false;
+    }
+
+    // An INVALID_OPERATION error is generated if program is not zero and has not been linked, or
+    // was last linked unsuccessfully. The active program is not modified.
+    Program *program = context->getProgramNoResolveLink(programId);
+    if ((programId.value != 0) && !program->isLinked())
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kProgramNotLinked);
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateCreateShaderProgramvBase(const Context *context,
+                                      angle::EntryPoint entryPoint,
+                                      ShaderType type,
+                                      GLsizei count,
+                                      const GLchar *const *strings)
+{
+    switch (type)
+    {
+        case ShaderType::InvalidEnum:
+            ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidShaderType);
+            return false;
+        case ShaderType::Vertex:
+        case ShaderType::Fragment:
+        case ShaderType::Compute:
+            break;
+        case ShaderType::Geometry:
+            if (!context->getExtensions().geometryShaderAny() &&
+                context->getClientVersion() < ES_3_2)
+            {
+                ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidShaderType);
+                return false;
+            }
+            break;
+        case ShaderType::TessControl:
+        case ShaderType::TessEvaluation:
+            if (!context->getExtensions().tessellationShaderAny() &&
+                context->getClientVersion() < ES_3_2)
+            {
+                ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidShaderType);
+                return false;
+            }
+            break;
+        default:
+            UNREACHABLE();
+    }
+
+    // GL_INVALID_VALUE is generated if count is negative.
+    if (count < 0)
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kNegativeCount);
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateCreateShaderProgramvBase(const Context *context,
+                                      angle::EntryPoint entryPoint,
+                                      ShaderType type,
+                                      GLsizei count,
+                                      const GLchar **strings)
+{
+    const GLchar *const *tmpStrings = strings;
+    return ValidateCreateShaderProgramvBase(context, entryPoint, type, count, tmpStrings);
+}
+
+bool ValidateGetProgramPipelineivBase(const Context *context,
+                                      angle::EntryPoint entryPoint,
+                                      ProgramPipelineID pipeline,
+                                      GLenum pname,
+                                      const GLint *params)
+{
+    // An INVALID_OPERATION error is generated if pipeline is not a name returned from a previous
+    // call to GenProgramPipelines or if such a name has since been deleted by
+    // DeleteProgramPipelines.
+    if ((pipeline.value == 0) || (!context->isProgramPipelineGenerated(pipeline)))
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kProgramPipelineDoesNotExist);
+        return false;
+    }
+
+    // An INVALID_ENUM error is generated if pname is not ACTIVE_PROGRAM,
+    // INFO_LOG_LENGTH, VALIDATE_STATUS, or one of the type arguments in
+    // table 7.1.
+    switch (pname)
+    {
+        case GL_ACTIVE_PROGRAM:
+        case GL_INFO_LOG_LENGTH:
+        case GL_VALIDATE_STATUS:
+        case GL_VERTEX_SHADER:
+        case GL_FRAGMENT_SHADER:
+        case GL_COMPUTE_SHADER:
+            break;
+        case GL_GEOMETRY_SHADER:
+            return context->getExtensions().geometryShaderAny() ||
+                   context->getClientVersion() >= ES_3_2;
+        case GL_TESS_CONTROL_SHADER:
+        case GL_TESS_EVALUATION_SHADER:
+            return context->getExtensions().tessellationShaderAny() ||
+                   context->getClientVersion() >= ES_3_2;
+
+        default:
+            ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidPname);
+            return false;
+    }
+
+    return true;
+}
+
+bool ValidateValidateProgramPipelineBase(const Context *context,
+                                         angle::EntryPoint entryPoint,
+                                         ProgramPipelineID pipeline)
+{
+    // An INVALID_OPERATION error is generated if pipeline is not a name returned from a previous
+    // call to GenProgramPipelines or if such a name has since been deleted by
+    // DeleteProgramPipelines.
+    if ((pipeline.value == 0) || (!context->isProgramPipelineGenerated(pipeline)))
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kProgramPipelineDoesNotExist);
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateGetProgramPipelineInfoLogBase(const Context *context,
+                                           angle::EntryPoint entryPoint,
+                                           ProgramPipelineID pipeline,
+                                           GLsizei bufSize,
+                                           const GLsizei *length,
+                                           const GLchar *infoLog)
+{
+    if (bufSize < 0)
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kNegativeBufSize);
+        return false;
+    }
+
+    if (bufSize > 0 && infoLog == nullptr)
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kProgramPipelineInfoLogNULL);
         return false;
     }
 
     if (!context->isProgramPipelineGenerated(pipeline))
     {
-        context->validationError(GL_INVALID_OPERATION, kObjectNotGenerated);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kProgramPipelineDoesNotExist);
         return false;
     }
 
     return true;
 }
 
-bool ValidateIsProgramPipeline(Context *context, ProgramPipelineID pipeline)
+bool ValidateActiveShaderProgram(const Context *context,
+                                 angle::EntryPoint entryPoint,
+                                 ProgramPipelineID pipelinePacked,
+                                 ShaderProgramID programPacked)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
-    return true;
+    return ValidateActiveShaderProgramBase(context, entryPoint, pipelinePacked, programPacked);
 }
 
-bool ValidateUseProgramStages(Context *context,
-                              ProgramPipelineID pipeline,
-                              GLbitfield stages,
-                              ShaderProgramID program)
+bool ValidateBindProgramPipeline(const Context *context,
+                                 angle::EntryPoint entryPoint,
+                                 ProgramPipelineID pipelinePacked)
 {
-    UNIMPLEMENTED();
-    return false;
+    return ValidateBindProgramPipelineBase(context, entryPoint, pipelinePacked);
 }
 
-bool ValidateActiveShaderProgram(Context *context,
-                                 ProgramPipelineID pipeline,
-                                 ShaderProgramID program)
-{
-    UNIMPLEMENTED();
-    return false;
-}
-
-bool ValidateCreateShaderProgramv(Context *context,
-                                  ShaderType type,
+bool ValidateCreateShaderProgramv(const Context *context,
+                                  angle::EntryPoint entryPoint,
+                                  ShaderType typePacked,
                                   GLsizei count,
                                   const GLchar *const *strings)
 {
-    UNIMPLEMENTED();
-    return false;
+    return ValidateCreateShaderProgramvBase(context, entryPoint, typePacked, count, strings);
 }
 
-bool ValidateGetProgramPipelineiv(Context *context,
-                                  ProgramPipelineID pipeline,
-                                  GLenum pname,
-                                  GLint *params)
+bool ValidateDeleteProgramPipelines(const Context *context,
+                                    angle::EntryPoint entryPoint,
+                                    GLsizei n,
+                                    const ProgramPipelineID *pipelinesPacked)
 {
-    UNIMPLEMENTED();
-    return false;
+    return ValidateDeleteProgramPipelinesBase(context, entryPoint, n, pipelinesPacked);
 }
 
-bool ValidateValidateProgramPipeline(Context *context, ProgramPipelineID pipeline)
+bool ValidateGenProgramPipelines(const Context *context,
+                                 angle::EntryPoint entryPoint,
+                                 GLsizei n,
+                                 const ProgramPipelineID *pipelinesPacked)
 {
-    UNIMPLEMENTED();
-    return false;
+    return ValidateGenProgramPipelinesBase(context, entryPoint, n, pipelinesPacked);
 }
 
-bool ValidateGetProgramPipelineInfoLog(Context *context,
-                                       ProgramPipelineID pipeline,
+bool ValidateGetProgramPipelineInfoLog(const Context *context,
+                                       angle::EntryPoint entryPoint,
+                                       ProgramPipelineID pipelinePacked,
                                        GLsizei bufSize,
-                                       GLsizei *length,
-                                       GLchar *infoLog)
+                                       const GLsizei *length,
+                                       const GLchar *infoLog)
 {
-    UNIMPLEMENTED();
-    return false;
+    return ValidateGetProgramPipelineInfoLogBase(context, entryPoint, pipelinePacked, bufSize,
+                                                 length, infoLog);
 }
 
-bool ValidateMemoryBarrier(Context *context, GLbitfield barriers)
+bool ValidateGetProgramPipelineiv(const Context *context,
+                                  angle::EntryPoint entryPoint,
+                                  ProgramPipelineID pipelinePacked,
+                                  GLenum pname,
+                                  const GLint *params)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
+    return ValidateGetProgramPipelineivBase(context, entryPoint, pipelinePacked, pname, params);
+}
 
+bool ValidateIsProgramPipeline(const Context *context,
+                               angle::EntryPoint entryPoint,
+                               ProgramPipelineID pipelinePacked)
+{
+    return ValidateIsProgramPipelineBase(context, entryPoint, pipelinePacked);
+}
+
+bool ValidateProgramUniform1f(const Context *context,
+                              angle::EntryPoint entryPoint,
+                              ShaderProgramID programPacked,
+                              UniformLocation locationPacked,
+                              GLfloat v0)
+{
+    return ValidateProgramUniform1fBase(context, entryPoint, programPacked, locationPacked, v0);
+}
+
+bool ValidateProgramUniform1fv(const Context *context,
+                               angle::EntryPoint entryPoint,
+                               ShaderProgramID programPacked,
+                               UniformLocation locationPacked,
+                               GLsizei count,
+                               const GLfloat *value)
+{
+    return ValidateProgramUniform1fvBase(context, entryPoint, programPacked, locationPacked, count,
+                                         value);
+}
+
+bool ValidateProgramUniform1i(const Context *context,
+                              angle::EntryPoint entryPoint,
+                              ShaderProgramID programPacked,
+                              UniformLocation locationPacked,
+                              GLint v0)
+{
+    return ValidateProgramUniform1iBase(context, entryPoint, programPacked, locationPacked, v0);
+}
+
+bool ValidateProgramUniform1iv(const Context *context,
+                               angle::EntryPoint entryPoint,
+                               ShaderProgramID programPacked,
+                               UniformLocation locationPacked,
+                               GLsizei count,
+                               const GLint *value)
+{
+    return ValidateProgramUniform1ivBase(context, entryPoint, programPacked, locationPacked, count,
+                                         value);
+}
+
+bool ValidateProgramUniform1ui(const Context *context,
+                               angle::EntryPoint entryPoint,
+                               ShaderProgramID programPacked,
+                               UniformLocation locationPacked,
+                               GLuint v0)
+{
+    return ValidateProgramUniform1uiBase(context, entryPoint, programPacked, locationPacked, v0);
+}
+
+bool ValidateProgramUniform1uiv(const Context *context,
+                                angle::EntryPoint entryPoint,
+                                ShaderProgramID programPacked,
+                                UniformLocation locationPacked,
+                                GLsizei count,
+                                const GLuint *value)
+{
+    return ValidateProgramUniform1uivBase(context, entryPoint, programPacked, locationPacked, count,
+                                          value);
+}
+
+bool ValidateProgramUniform2f(const Context *context,
+                              angle::EntryPoint entryPoint,
+                              ShaderProgramID programPacked,
+                              UniformLocation locationPacked,
+                              GLfloat v0,
+                              GLfloat v1)
+{
+    return ValidateProgramUniform2fBase(context, entryPoint, programPacked, locationPacked, v0, v1);
+}
+
+bool ValidateProgramUniform2fv(const Context *context,
+                               angle::EntryPoint entryPoint,
+                               ShaderProgramID programPacked,
+                               UniformLocation locationPacked,
+                               GLsizei count,
+                               const GLfloat *value)
+{
+    return ValidateProgramUniform2fvBase(context, entryPoint, programPacked, locationPacked, count,
+                                         value);
+}
+
+bool ValidateProgramUniform2i(const Context *context,
+                              angle::EntryPoint entryPoint,
+                              ShaderProgramID programPacked,
+                              UniformLocation locationPacked,
+                              GLint v0,
+                              GLint v1)
+{
+    return ValidateProgramUniform2iBase(context, entryPoint, programPacked, locationPacked, v0, v1);
+}
+
+bool ValidateProgramUniform2iv(const Context *context,
+                               angle::EntryPoint entryPoint,
+                               ShaderProgramID programPacked,
+                               UniformLocation locationPacked,
+                               GLsizei count,
+                               const GLint *value)
+{
+    return ValidateProgramUniform2ivBase(context, entryPoint, programPacked, locationPacked, count,
+                                         value);
+}
+
+bool ValidateProgramUniform2ui(const Context *context,
+                               angle::EntryPoint entryPoint,
+                               ShaderProgramID programPacked,
+                               UniformLocation locationPacked,
+                               GLuint v0,
+                               GLuint v1)
+{
+    return ValidateProgramUniform2uiBase(context, entryPoint, programPacked, locationPacked, v0,
+                                         v1);
+}
+
+bool ValidateProgramUniform2uiv(const Context *context,
+                                angle::EntryPoint entryPoint,
+                                ShaderProgramID programPacked,
+                                UniformLocation locationPacked,
+                                GLsizei count,
+                                const GLuint *value)
+{
+    return ValidateProgramUniform2uivBase(context, entryPoint, programPacked, locationPacked, count,
+                                          value);
+}
+
+bool ValidateProgramUniform3f(const Context *context,
+                              angle::EntryPoint entryPoint,
+                              ShaderProgramID programPacked,
+                              UniformLocation locationPacked,
+                              GLfloat v0,
+                              GLfloat v1,
+                              GLfloat v2)
+{
+    return ValidateProgramUniform3fBase(context, entryPoint, programPacked, locationPacked, v0, v1,
+                                        v2);
+}
+
+bool ValidateProgramUniform3fv(const Context *context,
+                               angle::EntryPoint entryPoint,
+                               ShaderProgramID programPacked,
+                               UniformLocation locationPacked,
+                               GLsizei count,
+                               const GLfloat *value)
+{
+    return ValidateProgramUniform3fvBase(context, entryPoint, programPacked, locationPacked, count,
+                                         value);
+}
+
+bool ValidateProgramUniform3i(const Context *context,
+                              angle::EntryPoint entryPoint,
+                              ShaderProgramID programPacked,
+                              UniformLocation locationPacked,
+                              GLint v0,
+                              GLint v1,
+                              GLint v2)
+{
+    return ValidateProgramUniform3iBase(context, entryPoint, programPacked, locationPacked, v0, v1,
+                                        v2);
+}
+
+bool ValidateProgramUniform3iv(const Context *context,
+                               angle::EntryPoint entryPoint,
+                               ShaderProgramID programPacked,
+                               UniformLocation locationPacked,
+                               GLsizei count,
+                               const GLint *value)
+{
+    return ValidateProgramUniform3ivBase(context, entryPoint, programPacked, locationPacked, count,
+                                         value);
+}
+
+bool ValidateProgramUniform3ui(const Context *context,
+                               angle::EntryPoint entryPoint,
+                               ShaderProgramID programPacked,
+                               UniformLocation locationPacked,
+                               GLuint v0,
+                               GLuint v1,
+                               GLuint v2)
+{
+    return ValidateProgramUniform3uiBase(context, entryPoint, programPacked, locationPacked, v0, v1,
+                                         v2);
+}
+
+bool ValidateProgramUniform3uiv(const Context *context,
+                                angle::EntryPoint entryPoint,
+                                ShaderProgramID programPacked,
+                                UniformLocation locationPacked,
+                                GLsizei count,
+                                const GLuint *value)
+{
+    return ValidateProgramUniform3uivBase(context, entryPoint, programPacked, locationPacked, count,
+                                          value);
+}
+
+bool ValidateProgramUniform4f(const Context *context,
+                              angle::EntryPoint entryPoint,
+                              ShaderProgramID programPacked,
+                              UniformLocation locationPacked,
+                              GLfloat v0,
+                              GLfloat v1,
+                              GLfloat v2,
+                              GLfloat v3)
+{
+    return ValidateProgramUniform4fBase(context, entryPoint, programPacked, locationPacked, v0, v1,
+                                        v2, v3);
+}
+
+bool ValidateProgramUniform4fv(const Context *context,
+                               angle::EntryPoint entryPoint,
+                               ShaderProgramID programPacked,
+                               UniformLocation locationPacked,
+                               GLsizei count,
+                               const GLfloat *value)
+{
+    return ValidateProgramUniform4fvBase(context, entryPoint, programPacked, locationPacked, count,
+                                         value);
+}
+
+bool ValidateProgramUniform4i(const Context *context,
+                              angle::EntryPoint entryPoint,
+                              ShaderProgramID programPacked,
+                              UniformLocation locationPacked,
+                              GLint v0,
+                              GLint v1,
+                              GLint v2,
+                              GLint v3)
+{
+    return ValidateProgramUniform4iBase(context, entryPoint, programPacked, locationPacked, v0, v1,
+                                        v2, v3);
+}
+
+bool ValidateProgramUniform4iv(const Context *context,
+                               angle::EntryPoint entryPoint,
+                               ShaderProgramID programPacked,
+                               UniformLocation locationPacked,
+                               GLsizei count,
+                               const GLint *value)
+{
+    return ValidateProgramUniform4ivBase(context, entryPoint, programPacked, locationPacked, count,
+                                         value);
+}
+
+bool ValidateProgramUniform4ui(const Context *context,
+                               angle::EntryPoint entryPoint,
+                               ShaderProgramID programPacked,
+                               UniformLocation locationPacked,
+                               GLuint v0,
+                               GLuint v1,
+                               GLuint v2,
+                               GLuint v3)
+{
+    return ValidateProgramUniform4uiBase(context, entryPoint, programPacked, locationPacked, v0, v1,
+                                         v2, v3);
+}
+
+bool ValidateProgramUniform4uiv(const Context *context,
+                                angle::EntryPoint entryPoint,
+                                ShaderProgramID programPacked,
+                                UniformLocation locationPacked,
+                                GLsizei count,
+                                const GLuint *value)
+{
+    return ValidateProgramUniform4uivBase(context, entryPoint, programPacked, locationPacked, count,
+                                          value);
+}
+
+bool ValidateProgramUniformMatrix2fv(const Context *context,
+                                     angle::EntryPoint entryPoint,
+                                     ShaderProgramID programPacked,
+                                     UniformLocation locationPacked,
+                                     GLsizei count,
+                                     GLboolean transpose,
+                                     const GLfloat *value)
+{
+    return ValidateProgramUniformMatrix2fvBase(context, entryPoint, programPacked, locationPacked,
+                                               count, transpose, value);
+}
+
+bool ValidateProgramUniformMatrix2x3fv(const Context *context,
+                                       angle::EntryPoint entryPoint,
+                                       ShaderProgramID programPacked,
+                                       UniformLocation locationPacked,
+                                       GLsizei count,
+                                       GLboolean transpose,
+                                       const GLfloat *value)
+{
+    return ValidateProgramUniformMatrix2x3fvBase(context, entryPoint, programPacked, locationPacked,
+                                                 count, transpose, value);
+}
+
+bool ValidateProgramUniformMatrix2x4fv(const Context *context,
+                                       angle::EntryPoint entryPoint,
+                                       ShaderProgramID programPacked,
+                                       UniformLocation locationPacked,
+                                       GLsizei count,
+                                       GLboolean transpose,
+                                       const GLfloat *value)
+{
+    return ValidateProgramUniformMatrix2x4fvBase(context, entryPoint, programPacked, locationPacked,
+                                                 count, transpose, value);
+}
+
+bool ValidateProgramUniformMatrix3fv(const Context *context,
+                                     angle::EntryPoint entryPoint,
+                                     ShaderProgramID programPacked,
+                                     UniformLocation locationPacked,
+                                     GLsizei count,
+                                     GLboolean transpose,
+                                     const GLfloat *value)
+{
+    return ValidateProgramUniformMatrix3fvBase(context, entryPoint, programPacked, locationPacked,
+                                               count, transpose, value);
+}
+
+bool ValidateProgramUniformMatrix3x2fv(const Context *context,
+                                       angle::EntryPoint entryPoint,
+                                       ShaderProgramID programPacked,
+                                       UniformLocation locationPacked,
+                                       GLsizei count,
+                                       GLboolean transpose,
+                                       const GLfloat *value)
+{
+    return ValidateProgramUniformMatrix3x2fvBase(context, entryPoint, programPacked, locationPacked,
+                                                 count, transpose, value);
+}
+
+bool ValidateProgramUniformMatrix3x4fv(const Context *context,
+                                       angle::EntryPoint entryPoint,
+                                       ShaderProgramID programPacked,
+                                       UniformLocation locationPacked,
+                                       GLsizei count,
+                                       GLboolean transpose,
+                                       const GLfloat *value)
+{
+    return ValidateProgramUniformMatrix3x4fvBase(context, entryPoint, programPacked, locationPacked,
+                                                 count, transpose, value);
+}
+
+bool ValidateProgramUniformMatrix4fv(const Context *context,
+                                     angle::EntryPoint entryPoint,
+                                     ShaderProgramID programPacked,
+                                     UniformLocation locationPacked,
+                                     GLsizei count,
+                                     GLboolean transpose,
+                                     const GLfloat *value)
+{
+    return ValidateProgramUniformMatrix4fvBase(context, entryPoint, programPacked, locationPacked,
+                                               count, transpose, value);
+}
+
+bool ValidateProgramUniformMatrix4x2fv(const Context *context,
+                                       angle::EntryPoint entryPoint,
+                                       ShaderProgramID programPacked,
+                                       UniformLocation locationPacked,
+                                       GLsizei count,
+                                       GLboolean transpose,
+                                       const GLfloat *value)
+{
+    return ValidateProgramUniformMatrix4x2fvBase(context, entryPoint, programPacked, locationPacked,
+                                                 count, transpose, value);
+}
+
+bool ValidateProgramUniformMatrix4x3fv(const Context *context,
+                                       angle::EntryPoint entryPoint,
+                                       ShaderProgramID programPacked,
+                                       UniformLocation locationPacked,
+                                       GLsizei count,
+                                       GLboolean transpose,
+                                       const GLfloat *value)
+{
+    return ValidateProgramUniformMatrix4x3fvBase(context, entryPoint, programPacked, locationPacked,
+                                                 count, transpose, value);
+}
+
+bool ValidateUseProgramStages(const Context *context,
+                              angle::EntryPoint entryPoint,
+                              ProgramPipelineID pipelinePacked,
+                              GLbitfield stages,
+                              ShaderProgramID programPacked)
+{
+    return ValidateUseProgramStagesBase(context, entryPoint, pipelinePacked, stages, programPacked);
+}
+
+bool ValidateValidateProgramPipeline(const Context *context,
+                                     angle::EntryPoint entryPoint,
+                                     ProgramPipelineID pipelinePacked)
+{
+    return ValidateValidateProgramPipelineBase(context, entryPoint, pipelinePacked);
+}
+
+bool ValidateMemoryBarrier(const Context *context,
+                           angle::EntryPoint entryPoint,
+                           GLbitfield barriers)
+{
     if (barriers == GL_ALL_BARRIER_BITS)
     {
         return true;
@@ -1772,23 +2381,25 @@ bool ValidateMemoryBarrier(Context *context, GLbitfield barriers)
         GL_PIXEL_BUFFER_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT |
         GL_FRAMEBUFFER_BARRIER_BIT | GL_TRANSFORM_FEEDBACK_BARRIER_BIT |
         GL_ATOMIC_COUNTER_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT;
+
+    if (context->getExtensions().bufferStorageEXT)
+    {
+        supported_barrier_bits |= GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT_EXT;
+    }
+
     if (barriers == 0 || (barriers & ~supported_barrier_bits) != 0)
     {
-        context->validationError(GL_INVALID_VALUE, kInvalidMemoryBarrierBit);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kInvalidMemoryBarrierBit);
         return false;
     }
 
     return true;
 }
 
-bool ValidateMemoryBarrierByRegion(Context *context, GLbitfield barriers)
+bool ValidateMemoryBarrierByRegion(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   GLbitfield barriers)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
     if (barriers == GL_ALL_BARRIER_BITS)
     {
         return true;
@@ -1800,39 +2411,40 @@ bool ValidateMemoryBarrierByRegion(Context *context, GLbitfield barriers)
                                         GL_TEXTURE_FETCH_BARRIER_BIT | GL_UNIFORM_BARRIER_BIT;
     if (barriers == 0 || (barriers & ~supported_barrier_bits) != 0)
     {
-        context->validationError(GL_INVALID_VALUE, kInvalidMemoryBarrierBit);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kInvalidMemoryBarrierBit);
         return false;
     }
 
     return true;
 }
 
-bool ValidateSampleMaski(Context *context, GLuint maskNumber, GLbitfield mask)
+bool ValidateSampleMaski(const PrivateState &state,
+                         ErrorSet *errors,
+                         angle::EntryPoint entryPoint,
+                         GLuint maskNumber,
+                         GLbitfield mask)
 {
-    if (context->getClientVersion() < ES_3_1)
-    {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
-        return false;
-    }
-
-    return ValidateSampleMaskiBase(context, maskNumber, mask);
+    return ValidateSampleMaskiBase(state, errors, entryPoint, maskNumber, mask);
 }
 
-bool ValidateFramebufferTextureEXT(Context *context,
-                                   GLenum target,
-                                   GLenum attachment,
-                                   TextureID texture,
-                                   GLint level)
+bool ValidateMinSampleShadingOES(const PrivateState &state,
+                                 ErrorSet *errors,
+                                 angle::EntryPoint entryPoint,
+                                 GLfloat value)
 {
-    if (!context->getExtensions().geometryShader)
-    {
-        context->validationError(GL_INVALID_OPERATION, kGeometryShaderExtensionNotEnabled);
-        return false;
-    }
+    return true;
+}
 
+bool ValidateFramebufferTextureCommon(const Context *context,
+                                      angle::EntryPoint entryPoint,
+                                      GLenum target,
+                                      GLenum attachment,
+                                      TextureID texture,
+                                      GLint level)
+{
     if (texture.value != 0)
     {
-        gl::Texture *tex = context->getTexture(texture);
+        Texture *tex = context->getTexture(texture);
 
         // [EXT_geometry_shader] Section 9.2.8 "Attaching Texture Images to a Framebuffer"
         // An INVALID_VALUE error is generated if <texture> is not the name of a texture object.
@@ -1846,18 +2458,24 @@ bool ValidateFramebufferTextureEXT(Context *context,
         // three-dimensional or two-dimensional array texture.
         if (tex == nullptr)
         {
-            context->validationError(GL_INVALID_VALUE, kInvalidTextureName);
+            ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kInvalidTextureName);
             return false;
         }
 
         if (!ValidMipLevel(context, tex->getType(), level))
         {
-            context->validationError(GL_INVALID_VALUE, kInvalidMipLevel);
+            ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kInvalidMipLevel);
             return false;
         }
+
+        // GLES spec 3.2, Section 9.2.8 "Attaching Texture Images to a Framebuffer"
+        // * If textarget is TEXTURE_2D_MULTISAMPLE, then level must be zero.
+        // * If texture is a two-dimensional multisample array texture, then level must be zero.
+        // Already validated in ValidMipLevel.
+        ASSERT(level == 0 || !IsMultisampled(tex->getType()));
     }
 
-    if (!ValidateFramebufferTextureBase(context, target, attachment, texture, level))
+    if (!ValidateFramebufferTextureBase(context, entryPoint, target, attachment, texture, level))
     {
         return false;
     }
@@ -1865,39 +2483,30 @@ bool ValidateFramebufferTextureEXT(Context *context,
     return true;
 }
 
-// GL_OES_texture_storage_multisample_2d_array
-bool ValidateTexStorage3DMultisampleOES(Context *context,
-                                        TextureType target,
-                                        GLsizei samples,
-                                        GLenum sizedinternalformat,
-                                        GLsizei width,
-                                        GLsizei height,
-                                        GLsizei depth,
-                                        GLboolean fixedsamplelocations)
+bool ValidateFramebufferTextureEXT(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   GLenum target,
+                                   GLenum attachment,
+                                   TextureID texture,
+                                   GLint level)
 {
-    if (!context->getExtensions().textureStorageMultisample2DArray)
-    {
-        context->validationError(GL_INVALID_ENUM, kMultisampleArrayExtensionRequired);
-        return false;
-    }
-
-    if (target != TextureType::_2DMultisampleArray)
-    {
-        context->validationError(GL_INVALID_ENUM, kTargetMustBeTexture2DMultisampleArrayOES);
-        return false;
-    }
-
-    if (width < 1 || height < 1 || depth < 1)
-    {
-        context->validationError(GL_INVALID_VALUE, kNegativeSize);
-        return false;
-    }
-
-    return ValidateTexStorageMultisample(context, target, samples, sizedinternalformat, width,
-                                         height);
+    return ValidateFramebufferTextureCommon(context, entryPoint, target, attachment, texture,
+                                            level);
 }
 
-bool ValidateTexStorageMem3DMultisampleEXT(Context *context,
+bool ValidateFramebufferTextureOES(const Context *context,
+                                   angle::EntryPoint entryPoint,
+                                   GLenum target,
+                                   GLenum attachment,
+                                   TextureID texture,
+                                   GLint level)
+{
+    return ValidateFramebufferTextureCommon(context, entryPoint, target, attachment, texture,
+                                            level);
+}
+
+bool ValidateTexStorageMem3DMultisampleEXT(const Context *context,
+                                           angle::EntryPoint entryPoint,
                                            TextureType target,
                                            GLsizei samples,
                                            GLenum internalFormat,
@@ -1908,46 +2517,228 @@ bool ValidateTexStorageMem3DMultisampleEXT(Context *context,
                                            MemoryObjectID memory,
                                            GLuint64 offset)
 {
-    if (!context->getExtensions().memoryObject)
-    {
-        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
-        return false;
-    }
-
     UNIMPLEMENTED();
     return false;
 }
 
-bool ValidateGetProgramResourceLocationIndexEXT(Context *context,
+bool ValidateGetProgramResourceLocationIndexEXT(const Context *context,
+                                                angle::EntryPoint entryPoint,
                                                 ShaderProgramID program,
                                                 GLenum programInterface,
                                                 const char *name)
 {
-    if (!context->getExtensions().blendFuncExtended)
-    {
-        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
-        return false;
-    }
     if (context->getClientVersion() < ES_3_1)
     {
-        context->validationError(GL_INVALID_OPERATION, kES31Required);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kES31Required);
         return false;
     }
     if (programInterface != GL_PROGRAM_OUTPUT)
     {
-        context->validationError(GL_INVALID_ENUM, kProgramInterfaceMustBeProgramOutput);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kProgramInterfaceMustBeProgramOutput);
         return false;
     }
-    Program *programObject = GetValidProgram(context, program);
-    if (!programObject)
+
+    Program *programObject = GetValidProgram(context, entryPoint, program);
+    if (programObject == nullptr)
     {
+        // Error already generated.
         return false;
     }
+
     if (!programObject->isLinked())
     {
-        context->validationError(GL_INVALID_OPERATION, kProgramNotLinked);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kProgramNotLinked);
         return false;
     }
+
+    return true;
+}
+
+// GL_OES_texture_buffer
+bool ValidateTexBufferOES(const Context *context,
+                          angle::EntryPoint entryPoint,
+                          TextureType target,
+                          GLenum internalformat,
+                          BufferID bufferPacked)
+{
+    return ValidateTexBufferBase(context, entryPoint, target, internalformat, bufferPacked);
+}
+
+bool ValidateTexBufferRangeOES(const Context *context,
+                               angle::EntryPoint entryPoint,
+                               TextureType target,
+                               GLenum internalformat,
+                               BufferID bufferPacked,
+                               GLintptr offset,
+                               GLsizeiptr size)
+{
+    return ValidateTexBufferRangeBase(context, entryPoint, target, internalformat, bufferPacked,
+                                      offset, size);
+}
+
+// GL_EXT_texture_buffer
+bool ValidateTexBufferEXT(const Context *context,
+                          angle::EntryPoint entryPoint,
+                          TextureType target,
+                          GLenum internalformat,
+                          BufferID bufferPacked)
+{
+    return ValidateTexBufferBase(context, entryPoint, target, internalformat, bufferPacked);
+}
+
+bool ValidateTexBufferRangeEXT(const Context *context,
+                               angle::EntryPoint entryPoint,
+                               TextureType target,
+                               GLenum internalformat,
+                               BufferID bufferPacked,
+                               GLintptr offset,
+                               GLsizeiptr size)
+{
+    return ValidateTexBufferRangeBase(context, entryPoint, target, internalformat, bufferPacked,
+                                      offset, size);
+}
+
+bool ValidateTexBufferBase(const Context *context,
+                           angle::EntryPoint entryPoint,
+                           TextureType target,
+                           GLenum internalformat,
+                           BufferID bufferPacked)
+{
+    if (target != TextureType::Buffer)
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kTextureBufferTarget);
+        return false;
+    }
+
+    switch (internalformat)
+    {
+        case GL_R8:
+        case GL_R16F:
+        case GL_R32F:
+        case GL_R8I:
+        case GL_R16I:
+        case GL_R32I:
+        case GL_R8UI:
+        case GL_R16UI:
+        case GL_R32UI:
+        case GL_RG8:
+        case GL_RG16F:
+        case GL_RG32F:
+        case GL_RG8I:
+        case GL_RG16I:
+        case GL_RG32I:
+        case GL_RG8UI:
+        case GL_RG16UI:
+        case GL_RG32UI:
+        case GL_RGB32F:
+        case GL_RGB32I:
+        case GL_RGB32UI:
+        case GL_RGBA8:
+        case GL_RGBA16F:
+        case GL_RGBA32F:
+        case GL_RGBA8I:
+        case GL_RGBA16I:
+        case GL_RGBA32I:
+        case GL_RGBA8UI:
+        case GL_RGBA16UI:
+        case GL_RGBA32UI:
+            break;
+        case GL_R16_EXT:
+        case GL_RG16_EXT:
+        case GL_RGBA16_EXT:
+        {
+            if (!context->getExtensions().textureNorm16EXT)
+            {
+                ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kTextureBufferInternalFormat);
+                return false;
+            }
+            break;
+        }
+
+        default:
+            ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kTextureBufferInternalFormat);
+            return false;
+    }
+
+    if (bufferPacked.value != 0)
+    {
+        if (!context->isBufferGenerated(bufferPacked))
+        {
+            ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kTextureBufferInvalidBuffer);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool ValidateTexBufferRangeBase(const Context *context,
+                                angle::EntryPoint entryPoint,
+                                TextureType target,
+                                GLenum internalformat,
+                                BufferID bufferPacked,
+                                GLintptr offset,
+                                GLsizeiptr size)
+{
+    const Caps &caps = context->getCaps();
+
+    if (offset < 0 || (offset % caps.textureBufferOffsetAlignment) != 0)
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kTextureBufferOffsetAlignment);
+        return false;
+    }
+    if (size <= 0)
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kTextureBufferSize);
+        return false;
+    }
+    const Buffer *buffer = context->getBuffer(bufferPacked);
+
+    if (!buffer)
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kBufferNotBound);
+        return false;
+    }
+
+    if (offset + size > buffer->getSize())
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kTextureBufferSizeOffset);
+        return false;
+    }
+
+    return ValidateTexBufferBase(context, entryPoint, target, internalformat, bufferPacked);
+}
+
+bool ValidatePatchParameteriBase(const PrivateState &state,
+                                 ErrorSet *errors,
+                                 angle::EntryPoint entryPoint,
+                                 GLenum pname,
+                                 GLint value)
+{
+    if (state.getClientVersion() < ES_3_1)
+    {
+        errors->validationError(entryPoint, GL_INVALID_OPERATION, kES31Required);
+        return false;
+    }
+
+    if (pname != GL_PATCH_VERTICES)
+    {
+        errors->validationError(entryPoint, GL_INVALID_ENUM, kInvalidPname);
+        return false;
+    }
+
+    if (value <= 0)
+    {
+        errors->validationError(entryPoint, GL_INVALID_VALUE, kInvalidValueNonPositive);
+        return false;
+    }
+
+    if (value > state.getCaps().maxPatchVertices)
+    {
+        errors->validationError(entryPoint, GL_INVALID_VALUE, kInvalidValueExceedsMaxPatchSize);
+        return false;
+    }
+
     return true;
 }
 

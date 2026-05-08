@@ -33,23 +33,18 @@
 #include <utility>
 #include <vector>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 #include "starboard/common/once.h"
 #include "starboard/common/string.h"
 #include "starboard/configuration.h"
 #include "starboard/configuration_constants.h"
-#include "starboard/directory.h"
 #include "starboard/input.h"
 #include "starboard/key.h"
-#include "starboard/memory.h"
 #include "starboard/shared/posix/handle_eintr.h"
 
 namespace starboard {
-namespace shared {
-namespace dev_input {
 namespace {
-
-using ::starboard::shared::starboard::Application;
 
 typedef int FileDescriptor;
 const FileDescriptor kInvalidFd = -ENODEV;
@@ -189,7 +184,7 @@ ControllerTuning* DeviceMap::GetControllerTuning(
   return NULL;
 }
 
-SB_ONCE_INITIALIZE_FUNCTION(DeviceMap, GetDeviceMap);
+SB_ONCE_INITIALIZE_FUNCTION(DeviceMap, GetDeviceMap)
 
 DeviceMap* DeviceMap::Get() {
   DeviceMap* device_map = GetDeviceMap();
@@ -632,7 +627,7 @@ bool IsBitSet(const std::vector<uint8_t>& bitset, int bit) {
 bool IsAxisFlat(int minimum_flat,
                 float rest_value,
                 const struct input_absinfo& axis_info) {
-  SB_DCHECK((axis_info.flat * 2) <= (axis_info.maximum - axis_info.minimum));
+  SB_DCHECK_LE((axis_info.flat * 2), (axis_info.maximum - axis_info.minimum));
   int flat = std::max(minimum_flat, axis_info.flat);
   return (flat != 0) && (axis_info.value > rest_value - flat) &&
          (axis_info.value < rest_value + flat);
@@ -801,7 +796,7 @@ std::vector<InputDeviceInfo> GetInputDevices() {
     info.fd = fd;
     GetInputDeviceInfo(&info);
 
-    SB_DCHECK(info.fd != kInvalidFd);
+    SB_DCHECK_NE(info.fd, kInvalidFd);
     input_devices.push_back(info);
   }
 
@@ -864,8 +859,7 @@ bool PollInputEvent(InputDeviceInfo* device_info,
       return false;
     }
 
-    SB_DCHECK(bytes_read <= remaining)
-        << "bytes_read=" << bytes_read << ", remaining=" << remaining;
+    SB_DCHECK_LE(bytes_read, remaining);
     remaining -= bytes_read;
     buffer += bytes_read;
   }
@@ -906,8 +900,6 @@ void CloseFdSafely(FileDescriptor* fd) {
   }
 }
 
-// Also in starboard/shared/libevent/socket_waiter_internal.cc
-// TODO: Consider consolidating.
 int SetNonBlocking(FileDescriptor fd) {
   int flags = fcntl(fd, F_GETFL, 0);
   if (flags == -1) {
@@ -938,17 +930,17 @@ void DevInputImpl::InitDevInputImpl(SbWindow window) {
   // Initialize wakeup pipe.
   FileDescriptor fds[2] = {kInvalidFd, kInvalidFd};
   int result = pipe(fds);
-  SB_DCHECK(result == 0) << "result=" << result;
+  SB_DCHECK_EQ(result, 0);
 
   wakeup_read_fd_ = fds[0];
-  SB_DCHECK(wakeup_read_fd_ != kInvalidFd);
+  SB_DCHECK_NE(wakeup_read_fd_, kInvalidFd);
   result = SetNonBlocking(wakeup_read_fd_);
-  SB_DCHECK(result == 0) << "result=" << result;
+  SB_DCHECK_EQ(result, 0);
 
   wakeup_write_fd_ = fds[1];
-  SB_DCHECK(wakeup_write_fd_ != kInvalidFd);
+  SB_DCHECK_NE(wakeup_write_fd_, kInvalidFd);
   result = SetNonBlocking(wakeup_write_fd_);
-  SB_DCHECK(result == 0) << "result=" << result;
+  SB_DCHECK_EQ(result, 0);
 }
 
 DevInputImpl::~DevInputImpl() {
@@ -1002,7 +994,7 @@ DevInput::Event* DevInputImpl::WaitForSystemEventWithTimeout(int64_t duration) {
   if (read_set.IsSet(wakeup_read_fd_)) {
     char buf;
     int bytes_read = HANDLE_EINTR(read(wakeup_read_fd_, &buf, 1));
-    SB_DCHECK(bytes_read == 1);
+    SB_DCHECK_EQ(bytes_read, 1);
   }
 
   return PollNextSystemEvent();
@@ -1013,7 +1005,7 @@ void DevInputImpl::WakeSystemEventWait() {
   while (true) {
     int bytes_written = HANDLE_EINTR(write(wakeup_write_fd_, &buf, 1));
     if (bytes_written > 0) {
-      SB_DCHECK(bytes_written == 1) << "bytes_written=" << bytes_written;
+      SB_DCHECK_EQ(bytes_written, 1);
       return;
     }
 
@@ -1116,7 +1108,7 @@ DevInput::Event* DevInputImpl::AxisInputToApplicationEvent(
     const struct input_event& event,
     int modifiers,
     InputDeviceInfo* device_info) {
-  SB_DCHECK(event.type == EV_ABS);
+  SB_DCHECK_EQ(event.type, EV_ABS);
   SbKey key = kSbKeyUnknown;
   float axis_value = 0;
   float previous_axis_value = 0;
@@ -1270,8 +1262,8 @@ DevInput::Event* DevInputImpl::KeyInputToApplicationEvent(
     const struct input_event& event,
     int modifiers,
     InputDeviceInfo* device_info) {
-  SB_DCHECK(event.type == EV_KEY);
-  SB_DCHECK(event.value <= 2);
+  SB_DCHECK_EQ(event.type, EV_KEY);
+  SB_DCHECK_LE(event.value, 2);
 
   SbKey key = KeyCodeToSbKey(device_info->tuning
                                  ? device_info->tuning->GetKeyCode(event.code)
@@ -1318,6 +1310,4 @@ DevInput* DevInput::Create(SbWindow window, int wake_up_fd) {
   return new DevInputImpl(window, wake_up_fd);
 }
 
-}  // namespace dev_input
-}  // namespace shared
 }  // namespace starboard

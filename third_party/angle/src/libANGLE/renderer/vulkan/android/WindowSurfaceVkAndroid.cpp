@@ -11,7 +11,7 @@
 
 #include <android/native_window.h>
 
-#include "libANGLE/renderer/vulkan/RendererVk.h"
+#include "libANGLE/renderer/vulkan/vk_renderer.h"
 
 namespace rx
 {
@@ -21,7 +21,7 @@ WindowSurfaceVkAndroid::WindowSurfaceVkAndroid(const egl::SurfaceState &surfaceS
     : WindowSurfaceVk(surfaceState, window)
 {}
 
-angle::Result WindowSurfaceVkAndroid::createSurfaceVk(vk::Context *context, gl::Extents *extentsOut)
+angle::Result WindowSurfaceVkAndroid::createSurfaceVk(vk::ErrorContext *context)
 {
     VkAndroidSurfaceCreateInfoKHR createInfo = {};
 
@@ -31,17 +31,18 @@ angle::Result WindowSurfaceVkAndroid::createSurfaceVk(vk::Context *context, gl::
     ANGLE_VK_TRY(context, vkCreateAndroidSurfaceKHR(context->getRenderer()->getInstance(),
                                                     &createInfo, nullptr, &mSurface));
 
-    return getCurrentWindowSize(context, extentsOut);
+    return angle::Result::Continue;
 }
 
-angle::Result WindowSurfaceVkAndroid::getCurrentWindowSize(vk::Context *context,
-                                                           gl::Extents *extentsOut)
+angle::Result WindowSurfaceVkAndroid::getCurrentWindowSize(vk::ErrorContext *context,
+                                                           gl::Extents *extentsOut) const
 {
-    int32_t width  = ANativeWindow_getWidth(mNativeWindowType);
-    int32_t height = ANativeWindow_getHeight(mNativeWindowType);
-    ANGLE_VK_CHECK(context, width > 0 && height > 0, VK_ERROR_INITIALIZATION_FAILED);
-
-    *extentsOut = gl::Extents(width, height, 1);
+    vk::Renderer *renderer                 = context->getRenderer();
+    const VkPhysicalDevice &physicalDevice = renderer->getPhysicalDevice();
+    VkSurfaceCapabilitiesKHR surfaceCaps;
+    ANGLE_VK_TRY(context,
+                 vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, mSurface, &surfaceCaps));
+    *extentsOut = gl::Extents(surfaceCaps.currentExtent.width, surfaceCaps.currentExtent.height, 1);
     return angle::Result::Continue;
 }
 

@@ -5,10 +5,20 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
-#include "src/core/SkImagePriv.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
 #include "tests/Test.h"
+
+#include <cstdint>
+#include <map>
 
 static const int gWidth = 20;
 static const int gHeight = 20;
@@ -45,4 +55,12 @@ DEF_TEST(SkImageFromBitmap_extractSubset, reporter) {
 
     tgt.readPixels(info, &pixel, 4, gWidth - 5, gWidth - 5);
     REPORTER_ASSERT(reporter, pixel == SK_ColorTRANSPARENT);
+}
+
+// This makes sure we can use RequiredProperties as a key in a map, which some
+// clients depend on.
+DEF_TEST(SkImageRequiredPropertiesCanBeMapKey, r) {
+    std::map<SkImage::RequiredProperties, int> test;
+    SkImage::RequiredProperties rp;
+    test.emplace(rp, 7);
 }

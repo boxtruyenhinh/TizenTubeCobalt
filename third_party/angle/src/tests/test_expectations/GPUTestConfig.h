@@ -25,6 +25,8 @@ struct GPUTestConfig
         kAPIVulkan,
         kAPISwiftShader,
         kAPIMetal,
+        kAPIWgpu,
+        kAPINative,
     };
 
     enum Condition
@@ -47,12 +49,15 @@ struct GPUTestConfig
         kConditionMacHighSierra,
         kConditionMacMojave,
         kConditionMac,
+        kConditionIOS,
         kConditionLinux,
         kConditionAndroid,
         kConditionNVIDIA,
         kConditionAMD,
         kConditionIntel,
         kConditionVMWare,
+        kConditionApple,
+        kConditionQualcomm,
         kConditionRelease,
         kConditionDebug,
         kConditionD3D9,
@@ -60,11 +65,36 @@ struct GPUTestConfig
         kConditionGLDesktop,
         kConditionGLES,
         kConditionVulkan,
+        kConditionNative,
         kConditionMetal,
+        kConditionWgpu,
         kConditionNexus5X,
         kConditionPixel2OrXL,
+        kConditionPixel4OrXL,
+        kConditionPixel6,
+        kConditionPixel7,
+        kConditionFlipN2,
+        kConditionMaliG710,
+        kConditionGalaxyA23,
+        kConditionGalaxyA34,
+        kConditionGalaxyA54,
+        kConditionGalaxyS22,
+        kConditionGalaxyS23,
+        kConditionGalaxyS24Exynos,
+        kConditionGalaxyS24Qualcomm,
+        kConditionFindX6,
         kConditionNVIDIAQuadroP400,
+        kConditionNVIDIAGTX1660,
+        kConditionPineapple,
         kConditionSwiftShader,
+        kConditionPreRotation,
+        kConditionPreRotation90,
+        kConditionPreRotation180,
+        kConditionPreRotation270,
+        kConditionNoSan,
+        kConditionASan,
+        kConditionTSan,
+        kConditionUBSan,
 
         kNumberOfConditions,
     };
@@ -72,7 +102,8 @@ struct GPUTestConfig
     using ConditionArray = angle::BitSet<GPUTestConfig::kNumberOfConditions>;
 
     GPUTestConfig();
-    GPUTestConfig(const API &api);
+    GPUTestConfig(bool isSwiftShader);
+    GPUTestConfig(const API &api, uint32_t preRotation);
 
     const GPUTestConfig::ConditionArray &getConditions() const;
 

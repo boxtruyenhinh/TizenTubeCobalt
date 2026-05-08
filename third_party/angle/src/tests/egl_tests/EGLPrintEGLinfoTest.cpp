@@ -12,9 +12,14 @@
 #include "common/string_utils.h"
 #include "test_utils/ANGLETest.h"
 
+#if defined(ANGLE_HAS_RAPIDJSON)
+#    include "common/serializer/JsonSerializer.h"
+#    include "test_utils/runner/TestSuite.h"
+#endif  // defined(ANGLE_HAS_RAPIDJSON)
+
 using namespace angle;
 
-class EGLPrintEGLinfoTest : public ANGLETest
+class EGLPrintEGLinfoTest : public ANGLETest<>
 {
   protected:
     EGLPrintEGLinfoTest() {}
@@ -28,6 +33,8 @@ class EGLPrintEGLinfoTest : public ANGLETest
     EGLDisplay mDisplay = EGL_NO_DISPLAY;
 };
 
+namespace
+{
 // Parse space separated extension string into a vector of strings
 std::vector<std::string> ParseExtensions(const char *extensions)
 {
@@ -50,6 +57,7 @@ const char *GetEGLString(EGLDisplay display, EGLint name)
 {
     const char *value = "";
     value             = eglQueryString(display, name);
+    EXPECT_EGL_ERROR(EGL_SUCCESS);
     EXPECT_TRUE(value != nullptr);
     return value;
 }
@@ -59,28 +67,31 @@ const char *GetGLString(EGLint name)
 {
     const char *value = "";
     value             = reinterpret_cast<const char *>(glGetString(name));
+    EXPECT_GL_ERROR(GL_NO_ERROR);
     EXPECT_TRUE(value != nullptr);
     return value;
 }
+
+}  // namespace
 
 // Print the EGL strings and extensions
 TEST_P(EGLPrintEGLinfoTest, PrintEGLInfo)
 {
     std::cout << "    EGL Information:" << std::endl;
-    std::cout << "\tVendor: " << GetEGLString(mDisplay, EGL_VENDOR) << std::endl;
-    std::cout << "\tVersion: " << GetEGLString(mDisplay, EGL_VENDOR) << std::endl;
-    std::cout << "\tClient APIs: " << GetEGLString(mDisplay, EGL_CLIENT_APIS) << std::endl;
+    std::cout << "    Vendor: " << GetEGLString(mDisplay, EGL_VENDOR) << std::endl;
+    std::cout << "    Version: " << GetEGLString(mDisplay, EGL_VERSION) << std::endl;
+    std::cout << "    Client APIs: " << GetEGLString(mDisplay, EGL_CLIENT_APIS) << std::endl;
 
-    std::cout << "\tEGL Client Extensions:" << std::endl;
+    std::cout << "    EGL Client Extensions:" << std::endl;
     for (auto extension : ParseExtensions(GetEGLString(EGL_NO_DISPLAY, EGL_EXTENSIONS)))
     {
-        std::cout << "\t\t" << extension << std::endl;
+        std::cout << "        " << extension << std::endl;
     }
 
-    std::cout << "\tEGL Display Extensions:" << std::endl;
+    std::cout << "    EGL Display Extensions:" << std::endl;
     for (auto extension : ParseExtensions(GetEGLString(mDisplay, EGL_EXTENSIONS)))
     {
-        std::cout << "\t\t" << extension << std::endl;
+        std::cout << "        " << extension << std::endl;
     }
 
     std::cout << std::endl;
@@ -90,18 +101,56 @@ TEST_P(EGLPrintEGLinfoTest, PrintEGLInfo)
 TEST_P(EGLPrintEGLinfoTest, PrintGLInfo)
 {
     std::cout << "    GLES Information:" << std::endl;
-    std::cout << "\tVendor: " << GetGLString(GL_VENDOR) << std::endl;
-    std::cout << "\tVersion: " << GetGLString(GL_VERSION) << std::endl;
-    std::cout << "\tRenderer: " << GetGLString(GL_RENDERER) << std::endl;
-    std::cout << "\tShader: " << GetGLString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+    std::cout << "    Vendor: " << GetGLString(GL_VENDOR) << std::endl;
+    std::cout << "    Version: " << GetGLString(GL_VERSION) << std::endl;
+    std::cout << "    Renderer: " << GetGLString(GL_RENDERER) << std::endl;
+    std::cout << "    Shader: " << GetGLString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
 
-    std::cout << "\tExtensions:" << std::endl;
-    for (auto extension : ParseExtensions(GetGLString(GL_EXTENSIONS)))
+    std::cout << "    Extensions:" << std::endl;
+
+    const std::vector<std::string> extensions = ParseExtensions(GetGLString(GL_EXTENSIONS));
+
+    for (const std::string &extension : extensions)
     {
-        std::cout << "\t\t" << extension << std::endl;
+        std::cout << "        " << extension << std::endl;
     }
 
     std::cout << std::endl;
+
+#if defined(ANGLE_HAS_RAPIDJSON)
+    angle::TestSuite *testSuite = angle::TestSuite::GetInstance();
+    if (!testSuite->hasTestArtifactsDirectory())
+    {
+        return;
+    }
+    JsonSerializer json;
+    json.addCString("Vendor", GetGLString(GL_VENDOR));
+    json.addCString("Version", GetGLString(GL_VERSION));
+    json.addCString("Renderer", GetGLString(GL_RENDERER));
+    json.addCString("ShaderLanguageVersion", GetGLString(GL_SHADING_LANGUAGE_VERSION));
+    json.addVectorOfStrings("Extensions", extensions);
+
+    constexpr size_t kBufferSize = 1000;
+    std::array<char, kBufferSize> buffer;
+    std::time_t timeNow = std::time(nullptr);
+    std::strftime(buffer.data(), buffer.size(), "%B %e, %Y", std::localtime(&timeNow));
+    json.addCString("DateRecorded", buffer.data());
+
+    std::stringstream fnameStream;
+    fnameStream << "GLinfo_" << GetParam() << ".json";
+    std::string fname = fnameStream.str();
+
+    const std::string artifactPath = testSuite->reserveTestArtifactPath(fname);
+
+    {
+        std::vector<uint8_t> jsonData = json.getData();
+
+        FILE *fp = fopen(artifactPath.c_str(), "wb");
+        ASSERT(fp);
+        fwrite(jsonData.data(), sizeof(uint8_t), jsonData.size(), fp);
+        fclose(fp);
+    }
+#endif  // defined(ANGLE_HAS_RAPIDJSON)
 }
 
 #define QUERY_HELPER(enumValue, enumString, stream)                                    \
@@ -154,7 +203,6 @@ static void LogGles2Capabilities(std::ostream &stream)
     constexpr int kMaxViewPortDimsReturnValuesSize = 2;
     QUERY_AND_LOG_CAPABILITY_ARRAY(GL_MAX_VIEWPORT_DIMS, kMaxViewPortDimsReturnValuesSize, stream);
     QUERY_AND_LOG_CAPABILITY(GL_NUM_COMPRESSED_TEXTURE_FORMATS, stream);
-    QUERY_AND_LOG_CAPABILITY(GL_NUM_PROGRAM_BINARY_FORMATS, stream);
     QUERY_AND_LOG_CAPABILITY(GL_NUM_SHADER_BINARY_FORMATS, stream);
 }
 
@@ -187,7 +235,7 @@ static void LogGles3Capabilities(std::ostream &stream)
     QUERY_AND_LOG_CAPABILITY(GL_MAX_VERTEX_UNIFORM_BLOCKS, stream);
     QUERY_AND_LOG_CAPABILITY(GL_MAX_VERTEX_UNIFORM_COMPONENTS, stream);
     QUERY_AND_LOG_CAPABILITY(GL_MIN_PROGRAM_TEXEL_OFFSET, stream);
-
+    QUERY_AND_LOG_CAPABILITY(GL_NUM_PROGRAM_BINARY_FORMATS, stream);
     // GLES3 capabilities are a superset of GLES2
     LogGles2Capabilities(stream);
 }
@@ -310,6 +358,11 @@ TEST_P(EGLPrintEGLinfoTest, PrintGLESCapabilities)
 
     switch (getClientMajorVersion())
     {
+        case 1:
+            break;
+        case 2:
+            LogGles2Capabilities(stream);
+            break;
         case 3:
             switch (getClientMinorVersion())
             {
@@ -325,9 +378,6 @@ TEST_P(EGLPrintEGLinfoTest, PrintGLESCapabilities)
                 default:
                     FAIL() << "unknown client minor version.";
             }
-            break;
-        case 2:
-            LogGles2Capabilities(stream);
             break;
         default:
             FAIL() << "unknown client major version.";
@@ -368,7 +418,7 @@ TEST_P(EGLPrintEGLinfoTest, PrintConfigInfo)
             (GetAttrib(mDisplay, config, EGL_COLOR_BUFFER_TYPE) == EGL_LUMINANCE_BUFFER)
                 ? "LUMINANCE"
                 : "RGB";
-        std::cout << "\tColor:" << GetAttrib(mDisplay, config, EGL_BUFFER_SIZE) << "bit "
+        std::cout << "    Color:" << GetAttrib(mDisplay, config, EGL_BUFFER_SIZE) << "bit "
                   << componentType << colorBuffType
                   << " Red:" << GetAttrib(mDisplay, config, EGL_RED_SIZE)
                   << " Green:" << GetAttrib(mDisplay, config, EGL_GREEN_SIZE)
@@ -378,7 +428,8 @@ TEST_P(EGLPrintEGLinfoTest, PrintConfigInfo)
                   << " AlphaMask:" << GetAttrib(mDisplay, config, EGL_ALPHA_MASK_SIZE) << std::endl;
 
         // Texture Binding
-        std::cout << "\tBinding RGB:" << (bool)GetAttrib(mDisplay, config, EGL_BIND_TO_TEXTURE_RGB)
+        std::cout << "    Binding RGB:"
+                  << (bool)GetAttrib(mDisplay, config, EGL_BIND_TO_TEXTURE_RGB)
                   << " RGBA:" << (bool)GetAttrib(mDisplay, config, EGL_BIND_TO_TEXTURE_RGBA)
                   << " MaxWidth:" << GetAttrib(mDisplay, config, EGL_MAX_PBUFFER_WIDTH)
                   << " MaxHeight:" << GetAttrib(mDisplay, config, EGL_MAX_PBUFFER_HEIGHT)
@@ -402,12 +453,10 @@ TEST_P(EGLPrintEGLinfoTest, PrintConfigInfo)
             default:
                 caveat = ".";
         }
-        std::cout << "\tCaveate: " << caveat;
+        std::cout << "    Caveate: " << caveat;
 
         EGLint conformant = GetAttrib(mDisplay, config, EGL_CONFORMANT);
         std::cout << " Conformant: ";
-        if (conformant & EGL_OPENGL_BIT)
-            std::cout << "OpenGL ";
         if (conformant & EGL_OPENGL_ES_BIT)
             std::cout << "ES1 ";
         if (conformant & EGL_OPENGL_ES2_BIT)
@@ -417,58 +466,73 @@ TEST_P(EGLPrintEGLinfoTest, PrintConfigInfo)
         std::cout << std::endl;
 
         // Ancilary buffers
-        std::cout << "\tAncilary "
-                  << "Depth:" << GetAttrib(mDisplay, config, EGL_DEPTH_SIZE)
+        std::cout << "    Ancilary " << "Depth:" << GetAttrib(mDisplay, config, EGL_DEPTH_SIZE)
                   << " Stencil:" << GetAttrib(mDisplay, config, EGL_STENCIL_SIZE)
                   << " SampleBuffs:" << GetAttrib(mDisplay, config, EGL_SAMPLE_BUFFERS)
                   << " Samples:" << GetAttrib(mDisplay, config, EGL_SAMPLES) << std::endl;
 
         // Swap interval
-        std::cout << "\tSwap Interval"
+        std::cout << "    Swap Interval"
                   << " Min:" << GetAttrib(mDisplay, config, EGL_MIN_SWAP_INTERVAL)
                   << " Max:" << GetAttrib(mDisplay, config, EGL_MAX_SWAP_INTERVAL) << std::endl;
 
         // Native
-        std::cout << "\tNative Renderable: " << GetAttrib(mDisplay, config, EGL_NATIVE_RENDERABLE)
+        std::cout << "    Native Renderable: " << GetAttrib(mDisplay, config, EGL_NATIVE_RENDERABLE)
                   << ", VisualID: " << GetAttrib(mDisplay, config, EGL_NATIVE_VISUAL_ID)
                   << ", VisualType: " << GetAttrib(mDisplay, config, EGL_NATIVE_VISUAL_TYPE)
                   << std::endl;
 
         // Surface type
         EGLint surfaceType = GetAttrib(mDisplay, config, EGL_SURFACE_TYPE);
-        std::cout << "\tSurface Type: ";
+        std::cout << "    Surface Type:";
         if (surfaceType & EGL_WINDOW_BIT)
-            std::cout << "WINDOW ";
+            std::cout << " WINDOW";
         if (surfaceType & EGL_PIXMAP_BIT)
-            std::cout << "PIXMAP ";
+            std::cout << " PIXMAP";
         if (surfaceType & EGL_PBUFFER_BIT)
-            std::cout << "PBUFFER ";
+            std::cout << " PBUFFER";
         if (surfaceType & EGL_MULTISAMPLE_RESOLVE_BOX_BIT)
-            std::cout << "MULTISAMPLE_RESOLVE_BOX ";
+            std::cout << " MULTISAMPLE_RESOLVE_BOX";
         if (surfaceType & EGL_SWAP_BEHAVIOR_PRESERVED_BIT)
-            std::cout << "SWAP_PRESERVE ";
+            std::cout << " SWAP_PRESERVE";
         std::cout << std::endl;
 
         // Renderable
         EGLint rendType = GetAttrib(mDisplay, config, EGL_RENDERABLE_TYPE);
-        std::cout << "\tRender: ";
-        if (rendType & EGL_OPENGL_BIT)
-            std::cout << "OpenGL ";
+        std::cout << "    Render:";
         if (rendType & EGL_OPENGL_ES_BIT)
-            std::cout << "ES1 ";
+            std::cout << " ES1";
         if (rendType & EGL_OPENGL_ES2_BIT)
-            std::cout << "ES2 ";
+            std::cout << " ES2";
         if (rendType & EGL_OPENGL_ES3_BIT)
-            std::cout << "ES3 ";
+            std::cout << " ES3";
         std::cout << std::endl;
 
         // Extensions
-        std::cout << "\tAndroid Recordable: " << GetAttrib(mDisplay, config, EGL_RECORDABLE_ANDROID)
-                  << std::endl;
+        if (IsEGLDisplayExtensionEnabled(mDisplay, "EGL_ANDROID_recordable"))
+        {
+            std::cout << "    Android Recordable: "
+                      << GetAttrib(mDisplay, config, EGL_RECORDABLE_ANDROID) << std::endl;
+        }
+        if (IsEGLDisplayExtensionEnabled(mDisplay, "EGL_ANDROID_framebuffer_target"))
+        {
+            std::cout << "    Android framebuffer target: "
+                      << GetAttrib(mDisplay, config, EGL_FRAMEBUFFER_TARGET_ANDROID) << std::endl;
+        }
 
         // Separator between configs
         std::cout << std::endl;
     }
 }
 
-ANGLE_INSTANTIATE_TEST(EGLPrintEGLinfoTest, ES2_VULKAN(), ES3_VULKAN());
+ANGLE_INSTANTIATE_TEST(EGLPrintEGLinfoTest,
+                       ES1_VULKAN(),
+                       ES1_VULKAN_SWIFTSHADER(),
+                       ES2_VULKAN(),
+                       ES3_VULKAN(),
+                       ES32_VULKAN(),
+                       ES31_VULKAN_SWIFTSHADER(),
+                       ES32_EGL());
+
+// This test suite is not instantiated on some OSes.
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(EGLPrintEGLinfoTest);

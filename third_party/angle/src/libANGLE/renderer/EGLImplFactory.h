@@ -18,6 +18,7 @@ class AttributeMap;
 struct Config;
 class ImageSibling;
 struct ImageState;
+class ShareGroupState;
 struct SurfaceState;
 }  // namespace egl
 
@@ -35,6 +36,7 @@ class EGLSyncImpl;
 class ImageImpl;
 class ExternalImageSiblingImpl;
 class SurfaceImpl;
+class ShareGroupImpl;
 
 class EGLImplFactory : angle::NonCopyable
 {
@@ -75,7 +77,9 @@ class EGLImplFactory : angle::NonCopyable
                                                                  EGLClientBuffer buffer,
                                                                  const egl::AttributeMap &attribs);
 
-    virtual EGLSyncImpl *createSync(const egl::AttributeMap &attribs);
+    virtual EGLSyncImpl *createSync();
+
+    virtual ShareGroupImpl *createShareGroup(const egl::ShareGroupState &state) = 0;
 };
 
 inline ExternalImageSiblingImpl *EGLImplFactory::createExternalImageSibling(
@@ -88,7 +92,7 @@ inline ExternalImageSiblingImpl *EGLImplFactory::createExternalImageSibling(
     return nullptr;
 }
 
-inline EGLSyncImpl *EGLImplFactory::createSync(const egl::AttributeMap &attribs)
+inline EGLSyncImpl *EGLImplFactory::createSync()
 {
     UNREACHABLE();
     return nullptr;

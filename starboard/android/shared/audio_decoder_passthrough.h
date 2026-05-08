@@ -26,25 +26,21 @@
 #include "starboard/shared/starboard/player/filter/common.h"
 #include "starboard/shared/starboard/player/input_buffer_internal.h"
 #include "starboard/shared/starboard/thread_checker.h"
-#include "starboard/types.h"
 
 namespace starboard {
-namespace android {
-namespace shared {
 
 // This class simply creates a DecodedAudio object from the InputBuffer passed
 // in, without actually decoding the input audio.  It can be used in situations
 // (like passthrough playbacks) where an AudioDecoder has to be used, but is
 // expected to not alter the input and pass it to the renderer as is.
-class AudioDecoderPassthrough
-    : public ::starboard::shared::starboard::player::filter::AudioDecoder {
+class AudioDecoderPassthrough : public AudioDecoder {
  public:
   explicit AudioDecoderPassthrough(int samples_per_second)
       : samples_per_second_(samples_per_second) {}
 
   // AudioDecoder methods.
   void Initialize(const OutputCB& output_cb, const ErrorCB& error_cb) override {
-    SB_DCHECK(thread_checker_.CalledOnValidThread());
+    SB_CHECK(thread_checker_.CalledOnValidThread());
     SB_DCHECK(!output_cb_);
     SB_DCHECK(output_cb);
 
@@ -53,7 +49,7 @@ class AudioDecoderPassthrough
 
   void Decode(const InputBuffers& input_buffers,
               const ConsumedCB& consumed_cb) override {
-    SB_DCHECK(thread_checker_.CalledOnValidThread());
+    SB_CHECK(thread_checker_.CalledOnValidThread());
     SB_DCHECK(!input_buffers.empty());
     SB_DCHECK(consumed_cb);
     SB_DCHECK(output_cb_);
@@ -80,7 +76,7 @@ class AudioDecoderPassthrough
   }
 
   void WriteEndOfStream() override {
-    SB_DCHECK(thread_checker_.CalledOnValidThread());
+    SB_CHECK(thread_checker_.CalledOnValidThread());
     SB_DCHECK(output_cb_);
 
     decoded_audios_.push(new DecodedAudio);
@@ -88,7 +84,7 @@ class AudioDecoderPassthrough
   }
 
   scoped_refptr<DecodedAudio> Read(int* samples_per_second) override {
-    SB_DCHECK(thread_checker_.CalledOnValidThread());
+    SB_CHECK(thread_checker_.CalledOnValidThread());
     SB_DCHECK(samples_per_second);
     SB_DCHECK(!decoded_audios_.empty());
 
@@ -100,21 +96,19 @@ class AudioDecoderPassthrough
   }
 
   void Reset() override {
-    SB_DCHECK(thread_checker_.CalledOnValidThread());
+    SB_CHECK(thread_checker_.CalledOnValidThread());
 
     decoded_audios_ = std::queue<scoped_refptr<DecodedAudio>>();  // Clear
   }
 
  private:
-  ::starboard::shared::starboard::ThreadChecker thread_checker_;
+  ThreadChecker thread_checker_;
 
   const int samples_per_second_;
   OutputCB output_cb_;
   std::queue<scoped_refptr<DecodedAudio>> decoded_audios_;
 };
 
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard
 
 #endif  // STARBOARD_ANDROID_SHARED_AUDIO_DECODER_PASSTHROUGH_H_

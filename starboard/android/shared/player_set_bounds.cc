@@ -12,11 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/player.h"
+// clang-format on
 
-#include "starboard/android/shared/jni_env_ext.h"
+#include <jni.h>
+
+#include "starboard/android/shared/starboard_bridge.h"
 #include "starboard/common/log.h"
 #include "starboard/shared/starboard/player/player_internal.h"
+#include "third_party/jni_zero/jni_zero.h"
 
 void SbPlayerSetBounds(SbPlayer player,
                        int z_index,
@@ -28,7 +33,9 @@ void SbPlayerSetBounds(SbPlayer player,
     SB_DLOG(WARNING) << "player is invalid.";
     return;
   }
-  starboard::android::shared::JniEnvExt::Get()->CallStarboardVoidMethodOrAbort(
-      "setVideoSurfaceBounds", "(IIII)V", x, y, width, height);
+
+  JNIEnv* env = jni_zero::AttachCurrentThread();
+  starboard::StarboardBridge::GetInstance()->SetVideoSurfaceBounds(
+      env, x, y, width, height);
   player->SetBounds(z_index, x, y, width, height);
 }

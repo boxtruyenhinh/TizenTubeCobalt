@@ -25,10 +25,6 @@
 #include "starboard/shared/starboard/thread_checker.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 class AudioRendererSinkImpl : public AudioRendererSink {
  public:
@@ -50,6 +46,10 @@ class AudioRendererSinkImpl : public AudioRendererSink {
   explicit AudioRendererSinkImpl(CreateAudioSinkFunc create_audio_sink_func);
   ~AudioRendererSinkImpl() override;
 
+  void GetAudioRendererParams(const AudioStreamInfo& audio_stream_info,
+                              int* max_cached_frames,
+                              int* min_frames_per_append) const override;
+
  private:
   // AudioRendererSink methods
   bool IsAudioSampleTypeSupported(
@@ -69,6 +69,7 @@ class AudioRendererSinkImpl : public AudioRendererSink {
              int frames_per_channel,
              RenderCallback* render_callback) override;
   void Stop() override;
+  void Reset() override;
 
   void SetVolume(double volume) override;
   void SetPlaybackRate(double playback_rate) override;
@@ -95,10 +96,6 @@ class AudioRendererSinkImpl : public AudioRendererSink {
   double volume_ = 1.0;
 };
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
-#endif  //  STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_AUDIO_RENDERER_SINK_IMPL_H_
+#endif  // STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_AUDIO_RENDERER_SINK_IMPL_H_

@@ -15,8 +15,10 @@
 #ifndef STARBOARD_SHARED_FFMPEG_FFMPEG_AUDIO_DECODER_IMPL_H_
 #define STARBOARD_SHARED_FFMPEG_FFMPEG_AUDIO_DECODER_IMPL_H_
 
+#include <memory>
 #include <queue>
 
+#include "starboard/common/pass_key.h"
 #include "starboard/common/ref_counted.h"
 #include "starboard/media.h"
 #include "starboard/shared/ffmpeg/ffmpeg_audio_decoder.h"
@@ -30,26 +32,27 @@
 #include "starboard/shared/starboard/player/job_queue.h"
 
 namespace starboard {
-namespace shared {
-namespace ffmpeg {
 
 // Forward class declaration of the explicit specialization with value FFMPEG.
 template <>
-class AudioDecoderImpl<FFMPEG>;
+class FfmpegAudioDecoderImpl<FFMPEG>;
 
 // Declare the explicit specialization of the class with value FFMPEG.
 template <>
-class AudioDecoderImpl<FFMPEG> : public AudioDecoder,
-                                 private starboard::player::JobQueue::JobOwner {
+class FfmpegAudioDecoderImpl<FFMPEG> : public FfmpegAudioDecoder,
+                                       private JobQueue::JobOwner {
  public:
-  explicit AudioDecoderImpl(const AudioStreamInfo& audio_stream_info);
-  ~AudioDecoderImpl() override;
+  FfmpegAudioDecoderImpl(starboard::PassKey<FfmpegAudioDecoderImpl<FFMPEG>>,
+                         JobQueue* job_queue,
+                         const AudioStreamInfo& audio_stream_info);
+  ~FfmpegAudioDecoderImpl() override;
+
+  // From: FfmpegAudioDecoder
+  static std::unique_ptr<FfmpegAudioDecoder> Create(
+      JobQueue* job_queue,
+      const AudioStreamInfo& audio_stream_info);
 
   // From: AudioDecoder
-  static AudioDecoder* Create(const AudioStreamInfo& audio_stream_info);
-  bool is_valid() const override;
-
-  // From: starboard::player::filter::AudioDecoder
   void Initialize(const OutputCB& output_cb, const ErrorCB& error_cb) override;
   void Decode(const InputBuffers& input_buffers,
               const ConsumedCB& consumed_cb) override;
@@ -61,7 +64,7 @@ class AudioDecoderImpl<FFMPEG> : public AudioDecoder,
   SbMediaAudioSampleType GetSampleType() const;
   SbMediaAudioFrameStorageType GetStorageType() const;
 
-  void InitializeCodec();
+  bool InitializeCodec();
   void TeardownCodec();
 
   // Processes decoded (PCM) audio data received from FFmpeg. The audio data is
@@ -71,19 +74,18 @@ class AudioDecoderImpl<FFMPEG> : public AudioDecoder,
 
   static const int kMaxDecodedAudiosSize = 64;
 
-  FFMPEGDispatch* ffmpeg_;
+  // Guaranteed to be non-null.
+  FFMPEGDispatch* const ffmpeg_;
   OutputCB output_cb_;
   ErrorCB error_cb_;
-  AVCodecContext* codec_context_;
-  AVFrame* av_frame_;
+  AVCodecContext* codec_context_ = nullptr;
+  AVFrame* av_frame_ = nullptr;
 
-  bool stream_ended_;
-  std::queue<scoped_refptr<DecodedAudio> > decoded_audios_;
+  bool stream_ended_ = false;
+  std::queue<scoped_refptr<DecodedAudio>> decoded_audios_;
   AudioStreamInfo audio_stream_info_;
 };
 
-}  // namespace ffmpeg
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_FFMPEG_FFMPEG_AUDIO_DECODER_IMPL_H_

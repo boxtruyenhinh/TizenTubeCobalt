@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/system.h"
+// clang-format on
 
 #include "starboard/common/string.h"
 #include "starboard/extension/configuration.h"
@@ -20,7 +22,7 @@
 
 const void* SbSystemGetExtension(const char* name) {
   if (strcmp(name, kCobaltExtensionConfigurationName) == 0) {
-    return starboard::x64x11::skia::GetConfigurationApi();
+    return starboard::GetConfigurationApiLinuxSkia();
   }
   return NULL;
 }

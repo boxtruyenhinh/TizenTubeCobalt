@@ -22,6 +22,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+
 #include <memory>
 #include <queue>
 #include <utility>
@@ -30,10 +31,6 @@
 #include "starboard/shared/internal_only.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 class InterleavedSincResampler {
  public:
@@ -171,10 +168,6 @@ class InterleavedSincResampler {
   void operator=(const InterleavedSincResampler&) = delete;
 };
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_INTERLEAVED_SINC_RESAMPLER_H_

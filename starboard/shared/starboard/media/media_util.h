@@ -19,15 +19,12 @@
 #include <string>
 #include <vector>
 
-#include "starboard/extension/enhanced_audio.h"
+#include "starboard/common/size.h"
 #include "starboard/media.h"
 #include "starboard/player.h"
 #include "starboard/shared/internal_only.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace media {
 
 // Encapsulates all information contained in `SbMediaAudioStreamInfo`.  It
 // doesn't maintain the same binary layout as `SbMediaAudioStreamInfo`, and is
@@ -40,12 +37,8 @@ struct AudioStreamInfo {
     *this = that;
   }
   AudioStreamInfo& operator=(const SbMediaAudioStreamInfo& that);
-  AudioStreamInfo& operator=(
-      const CobaltExtensionEnhancedAudioMediaAudioStreamInfo& that);
 
   void ConvertTo(SbMediaAudioStreamInfo* audio_stream_info) const;
-  void ConvertTo(CobaltExtensionEnhancedAudioMediaAudioStreamInfo*
-                     audio_stream_info) const;
 
   // The member variables are the C++ mappings of the members of
   // `SbMediaAudioStreamInfo` defined in `media.h`.  Please refer to the comment
@@ -61,6 +54,8 @@ struct AudioStreamInfo {
 bool operator==(const AudioStreamInfo& left, const AudioStreamInfo& right);
 bool operator!=(const AudioStreamInfo& left, const AudioStreamInfo& right);
 
+std::ostream& operator<<(std::ostream& os, const AudioStreamInfo& info);
+
 // Encapsulates all information contained in `SbMediaAudioSampleInfo`.  It
 // doesn't maintain the same binary layout as `SbMediaAudioSampleInfo`, and is
 // intended to be used across the codebase as a C++ wrapper that owns the memory
@@ -72,12 +67,8 @@ struct AudioSampleInfo {
     *this = that;
   }
   AudioSampleInfo& operator=(const SbMediaAudioSampleInfo& that);
-  AudioSampleInfo& operator=(
-      const CobaltExtensionEnhancedAudioMediaAudioSampleInfo& that);
 
   void ConvertTo(SbMediaAudioSampleInfo* audio_sample_info) const;
-  void ConvertTo(CobaltExtensionEnhancedAudioMediaAudioSampleInfo*
-                     audio_sample_info) const;
 
   // The member variables are the C++ mappings of the members of
   // `SbMediaAudioSampleInfo` defined in `media.h`.  Please refer to the comment
@@ -98,12 +89,8 @@ struct VideoStreamInfo {
     *this = that;
   }
   VideoStreamInfo& operator=(const SbMediaVideoStreamInfo& that);
-  VideoStreamInfo& operator=(
-      const CobaltExtensionEnhancedAudioMediaVideoStreamInfo& that);
 
   void ConvertTo(SbMediaVideoStreamInfo* video_stream_info) const;
-  void ConvertTo(CobaltExtensionEnhancedAudioMediaVideoStreamInfo*
-                     video_stream_info) const;
 
   // The member variables are the C++ mappings of the members of
   // `SbMediaVideoStreamInfo` defined in `media.h`.  Please refer to the comment
@@ -111,8 +98,7 @@ struct VideoStreamInfo {
   SbMediaVideoCodec codec = kSbMediaVideoCodecNone;
   std::string mime;
   std::string max_video_capabilities;
-  int frame_width = 0;
-  int frame_height = 0;
+  Size frame_size;
   SbMediaColorMetadata color_metadata = {};
 };
 
@@ -130,12 +116,8 @@ struct VideoSampleInfo {
     *this = that;
   }
   VideoSampleInfo& operator=(const SbMediaVideoSampleInfo& that);
-  VideoSampleInfo& operator=(
-      const CobaltExtensionEnhancedAudioMediaVideoSampleInfo& that);
 
   void ConvertTo(SbMediaVideoSampleInfo* video_sample_info) const;
-  void ConvertTo(CobaltExtensionEnhancedAudioMediaVideoSampleInfo*
-                     video_sample_info) const;
 
   // The member variables are the C++ mappings of the members of
   // `SbMediaVideoSampleInfo` defined in `media.h`.  Please refer to the comment
@@ -168,29 +150,8 @@ bool IsAudioSampleInfoSubstantiallyDifferent(const AudioStreamInfo& left,
 int AudioDurationToFrames(int64_t duration, int samples_per_second);
 int64_t AudioFramesToDuration(int frames, int samples_per_second);
 
-}  // namespace media
+int AlignUp(int value, int alignment);
+
 }  // namespace starboard
-}  // namespace shared
-}  // namespace starboard
-
-bool operator==(const SbMediaColorMetadata& metadata_1,
-                const SbMediaColorMetadata& metadata_2);
-bool operator==(const SbMediaVideoSampleInfo& sample_info_1,
-                const SbMediaVideoSampleInfo& sample_info_2);
-
-#if SB_API_VERSION >= 15
-bool operator==(const SbMediaVideoStreamInfo& stream_info_1,
-                const SbMediaVideoStreamInfo& stream_info_2);
-#endif  // SB_API_VERSION >= 15
-
-bool operator!=(const SbMediaColorMetadata& metadata_1,
-                const SbMediaColorMetadata& metadata_2);
-bool operator!=(const SbMediaVideoSampleInfo& sample_info_1,
-                const SbMediaVideoSampleInfo& sample_info_2);
-
-#if SB_API_VERSION >= 15
-bool operator!=(const SbMediaVideoStreamInfo& stream_info_1,
-                const SbMediaVideoStreamInfo& stream_info_2);
-#endif  // SB_API_VERSION >= 15
 
 #endif  // STARBOARD_SHARED_STARBOARD_MEDIA_MEDIA_UTIL_H_

@@ -19,6 +19,6 @@
   # Please keep alphabetical
   ##############################################################################
   'WATCHLISTS': {
-    'vulkan': ['jmadill+watch@chromium.org'],
+    'vulkan': ['cclao+angleWatchVk@google.com'],
   },
 }

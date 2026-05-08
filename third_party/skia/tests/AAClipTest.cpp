@@ -5,9 +5,12 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkClipOp.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPath.h"
@@ -16,14 +19,19 @@
 #include "include/core/SkRegion.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkMalloc.h"
-#include "include/utils/SkRandom.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkAAClip.h"
 #include "src/core/SkMask.h"
 #include "src/core/SkRasterClip.h"
 #include "tests/Test.h"
 
-#include <string.h>
+#include <cstdint>
+#include <cstring>
+#include <initializer_list>
+#include <limits>
+#include <string>
 
 static bool operator==(const SkMask& a, const SkMask& b) {
     if (a.fFormat != b.fFormat || a.fBounds != b.fBounds) {
@@ -68,27 +76,27 @@ static bool operator==(const SkMask& a, const SkMask& b) {
     return true;
 }
 
-static void copyToMask(const SkRegion& rgn, SkMask* mask) {
-    mask->fFormat = SkMask::kA8_Format;
+static void copyToMask(const SkRegion& rgn, SkMaskBuilder* mask) {
+    mask->format() = SkMask::kA8_Format;
 
     if (rgn.isEmpty()) {
-        mask->fBounds.setEmpty();
-        mask->fRowBytes = 0;
-        mask->fImage = nullptr;
+        mask->bounds().setEmpty();
+        mask->rowBytes() = 0;
+        mask->image() = nullptr;
         return;
     }
 
-    mask->fBounds = rgn.getBounds();
-    mask->fRowBytes = mask->fBounds.width();
-    mask->fImage = SkMask::AllocImage(mask->computeImageSize());
-    sk_bzero(mask->fImage, mask->computeImageSize());
+    mask->bounds() = rgn.getBounds();
+    mask->rowBytes() = mask->fBounds.width();
+    mask->image() = SkMaskBuilder::AllocImage(mask->computeImageSize());
+    sk_bzero(mask->image(), mask->computeImageSize());
 
     SkImageInfo info = SkImageInfo::Make(mask->fBounds.width(),
                                          mask->fBounds.height(),
                                          kAlpha_8_SkColorType,
                                          kPremul_SkAlphaType);
     SkBitmap bitmap;
-    bitmap.installPixels(info, mask->fImage, mask->fRowBytes);
+    bitmap.installPixels(info, mask->image(), mask->fRowBytes);
 
     // canvas expects its coordinate system to always be 0,0 in the top/left
     // so we translate the rgn to match that before drawing into the mask.
@@ -101,7 +109,7 @@ static void copyToMask(const SkRegion& rgn, SkMask* mask) {
     canvas.drawColor(SK_ColorBLACK);
 }
 
-static void copyToMask(const SkRasterClip& rc, SkMask* mask) {
+static void copyToMask(const SkRasterClip& rc, SkMaskBuilder* mask) {
     if (rc.isBW()) {
         copyToMask(rc.bwRgn(), mask);
     } else {
@@ -116,9 +124,11 @@ static bool operator==(const SkRasterClip& a, const SkRasterClip& b) {
         return false;
     }
 
-    SkMask mask0, mask1;
+    SkMaskBuilder mask0, mask1;
     copyToMask(a, &mask0);
     copyToMask(b, &mask1);
+    SkAutoMaskFreeImage free0(mask0.image());
+    SkAutoMaskFreeImage free1(mask1.image());
     return mask0 == mask1;
 }
 
@@ -138,15 +148,13 @@ static void make_rand_rgn(SkRegion* rgn, SkRandom& rand) {
 }
 
 static bool operator==(const SkRegion& rgn, const SkAAClip& aaclip) {
-    SkMask mask0, mask1;
+    SkMaskBuilder mask0, mask1;
 
     copyToMask(rgn, &mask0);
     aaclip.copyToMask(&mask1);
-    bool eq = (mask0 == mask1);
-
-    SkMask::FreeImage(mask0.fImage);
-    SkMask::FreeImage(mask1.fImage);
-    return eq;
+    SkAutoMaskFreeImage free0(mask0.image());
+    SkAutoMaskFreeImage free1(mask1.image());
+    return mask0 == mask1;
 }
 
 static bool equalsAAClip(const SkRegion& rgn) {
@@ -161,8 +169,7 @@ static void setRgnToPath(SkRegion* rgn, const SkPath& path) {
     rgn->setPath(path, SkRegion(ir));
 }
 
-// aaclip.setRegion should create idential masks to the region
-static void test_rgn(skiatest::Reporter* reporter) {
+DEF_TEST(AAClip_setPath_RandomRegion_MatchesSkRegion, reporter) {
     SkRandom rand;
     for (int i = 0; i < 1000; i++) {
         SkRegion rgn;
@@ -197,7 +204,7 @@ static void icubicTo(SkPath& path, int x0, int y0, int x1, int y1, int x2, int y
                  SkIntToScalar(x2), SkIntToScalar(y2));
 }
 
-static void test_path_bounds(skiatest::Reporter* reporter) {
+DEF_TEST(AAClip_setPath_ClipBoundsMatchExpectations, reporter) {
     SkPath path;
     SkAAClip clip;
     const int height = 40;
@@ -223,7 +230,7 @@ static void test_path_bounds(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, teardrop_height == clip.getBounds().height());
 }
 
-static void test_empty(skiatest::Reporter* reporter) {
+DEF_TEST(AAClip_BasicFunctionality, reporter) {
     SkAAClip clip;
 
     REPORTER_ASSERT(reporter, clip.isEmpty());
@@ -243,7 +250,7 @@ static void test_empty(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, clip.isEmpty());
     REPORTER_ASSERT(reporter, clip.getBounds().isEmpty());
 
-    SkMask mask;
+    SkMaskBuilder mask;
     clip.copyToMask(&mask);
     REPORTER_ASSERT(reporter, nullptr == mask.fImage);
     REPORTER_ASSERT(reporter, mask.fBounds.isEmpty());
@@ -257,7 +264,7 @@ static void rand_irect(SkIRect* r, int N, SkRandom& rand) {
     r->offset(N - dx, N - dy);
 }
 
-static void test_irect(skiatest::Reporter* reporter) {
+DEF_TEST(AAClip_setRect_RandomRects_MatchesSkRegion, reporter) {
     SkRandom rand;
 
     for (int i = 0; i < 10000; i++) {
@@ -290,17 +297,17 @@ static void test_irect(skiatest::Reporter* reporter) {
                        clip2.getBounds().right(), clip2.getBounds().bottom());
             }
 
-            SkMask maskBW, maskAA;
+            SkMaskBuilder maskBW, maskAA;
             copyToMask(rgn2, &maskBW);
             clip2.copyToMask(&maskAA);
-            SkAutoMaskFreeImage freeBW(maskBW.fImage);
-            SkAutoMaskFreeImage freeAA(maskAA.fImage);
+            SkAutoMaskFreeImage freeBW(maskBW.image());
+            SkAutoMaskFreeImage freeAA(maskAA.image());
             REPORTER_ASSERT(reporter, maskBW == maskAA);
         }
     }
 }
 
-static void test_path_with_hole(skiatest::Reporter* reporter) {
+DEF_TEST(AAClip_setPath_PathHasHole_MaskIsCorrect, reporter) {
     static const uint8_t gExpectedImage[] = {
         0xFF, 0xFF, 0xFF, 0xFF,
         0xFF, 0xFF, 0xFF, 0xFF,
@@ -309,11 +316,7 @@ static void test_path_with_hole(skiatest::Reporter* reporter) {
         0xFF, 0xFF, 0xFF, 0xFF,
         0xFF, 0xFF, 0xFF, 0xFF,
     };
-    SkMask expected;
-    expected.fBounds.setWH(4, 6);
-    expected.fRowBytes = 4;
-    expected.fFormat = SkMask::kA8_Format;
-    expected.fImage = (uint8_t*)gExpectedImage;
+    SkMask expected(gExpectedImage, SkIRect::MakeWH(4, 6), 4, SkMask::kA8_Format);
 
     SkPath path;
     path.addRect(SkRect::MakeXYWH(0, 0,
@@ -321,19 +324,31 @@ static void test_path_with_hole(skiatest::Reporter* reporter) {
     path.addRect(SkRect::MakeXYWH(0, SkIntToScalar(4),
                                   SkIntToScalar(4), SkIntToScalar(2)));
 
-    for (int i = 0; i < 2; ++i) {
+    {
+        skiatest::ReporterContext context(reporter, "noAA");
         SkAAClip clip;
-        clip.setPath(path, path.getBounds().roundOut(), 1 == i);
+        clip.setPath(path, path.getBounds().roundOut(), false);
 
-        SkMask mask;
+        SkMaskBuilder mask;
         clip.copyToMask(&mask);
-        SkAutoMaskFreeImage freeM(mask.fImage);
+        SkAutoMaskFreeImage freeM(mask.image());
+
+        REPORTER_ASSERT(reporter, expected == mask);
+    }
+    {
+        skiatest::ReporterContext context(reporter, "withAA");
+        SkAAClip clip;
+        clip.setPath(path, path.getBounds().roundOut(), true);
+
+        SkMaskBuilder mask;
+        clip.copyToMask(&mask);
+        SkAutoMaskFreeImage freeM(mask.image());
 
         REPORTER_ASSERT(reporter, expected == mask);
     }
 }
 
-static void test_really_a_rect(skiatest::Reporter* reporter) {
+DEF_TEST(AAClip_RRectIsReallyARect_ClipIsRect, reporter) {
     SkRRect rrect;
     rrect.setRectXY(SkRect::MakeWH(100, 100), 5, 5);
 
@@ -380,32 +395,30 @@ static void did_dx_affect(skiatest::Reporter* reporter, const SkScalar dx[],
     }
 }
 
-static void test_nearly_integral(skiatest::Reporter* reporter) {
+DEF_TEST(AAClip_op_NearlyIntegral_GenerateSameRasterClips, reporter) {
     // All of these should generate equivalent rasterclips
 
     static const SkScalar gSafeX[] = {
         0, SK_Scalar1/1000, SK_Scalar1/100, SK_Scalar1/10,
     };
-    did_dx_affect(reporter, gSafeX, SK_ARRAY_COUNT(gSafeX), false);
+    did_dx_affect(reporter, gSafeX, std::size(gSafeX), false);
 
     static const SkScalar gUnsafeX[] = {
         SK_Scalar1/4, SK_Scalar1/3,
     };
-    did_dx_affect(reporter, gUnsafeX, SK_ARRAY_COUNT(gUnsafeX), true);
+    did_dx_affect(reporter, gUnsafeX, std::size(gUnsafeX), true);
 }
 
-static void test_regressions() {
-    // these should not assert in the debug build
+DEF_TEST(AAClip_setPath_AvoidAssertion, reporter) {
+    // Should not assert in the debug build
     // bug was introduced in rev. 3209
-    {
-        SkAAClip clip;
-        SkRect r;
-        r.fLeft = 129.892181f;
-        r.fTop = 10.3999996f;
-        r.fRight = 130.892181f;
-        r.fBottom = 20.3999996f;
-        clip.setPath(SkPath::Rect(r), r.roundOut(), true);
-    }
+    SkAAClip clip;
+    SkRect r;
+    r.fLeft = 129.892181f;
+    r.fTop = 10.3999996f;
+    r.fRight = 130.892181f;
+    r.fBottom = 20.3999996f;
+    REPORTER_ASSERT(reporter, clip.setPath(SkPath::Rect(r), r.roundOut(), true));
 }
 
 // Building aaclip meant aa-scan-convert a path into a huge clip.
@@ -415,31 +428,45 @@ static void test_regressions() {
 //
 // Before the fix, the following code would assert in debug builds.
 //
-static void test_crbug_422693(skiatest::Reporter* reporter) {
+DEF_TEST(AAClip_crbug_422693_AvoidOverflow, reporter) {
     SkRasterClip rc(SkIRect::MakeLTRB(-25000, -25000, 25000, 25000));
     SkPath path;
     path.addCircle(50, 50, 50);
-    rc.op(path, SkMatrix::I(), SkClipOp::kIntersect, true);
+    REPORTER_ASSERT(reporter, rc.op(path, SkMatrix::I(), SkClipOp::kIntersect, true));
 }
 
-static void test_huge(skiatest::Reporter* reporter) {
+DEF_TEST(AAClip_setRect_HugeRect_ReturnsFalse, reporter) {
     SkAAClip clip;
     int big = 0x70000000;
     SkIRect r = { -big, -big, big, big };
     SkASSERT(r.width() < 0 && r.height() < 0);
 
-    clip.setRect(r);
+    REPORTER_ASSERT(reporter, !clip.setRect(r));
 }
 
-DEF_TEST(AAClip, reporter) {
-    test_empty(reporter);
-    test_path_bounds(reporter);
-    test_irect(reporter);
-    test_rgn(reporter);
-    test_path_with_hole(reporter);
-    test_regressions();
-    test_nearly_integral(reporter);
-    test_really_a_rect(reporter);
-    test_crbug_422693(reporter);
-    test_huge(reporter);
+DEF_TEST(AAClip_setPath_LargePathSmallClip_StillBlits, reporter) {
+    // This test verifies the root cause of https://bugzilla.mozilla.org/show_bug.cgi?id=1909796
+    // does not regress.
+    SkAAClip clip;
+
+    // Be advised that 2^31 will get turned into a float...
+    SkPath largePath = SkPath::Rect(SkRect::MakeLTRB(-1000, 10,
+         std::numeric_limits<int32_t>::max(), 20));
+    SkIRect bounds;
+    // ... and then back into an integer, so it won't be 2^31 any more
+    // (e.g. 2147483520). Therefore, we pick the left to be big enough
+    // to make the bounds exceed 31 bits again.
+    largePath.getBounds().roundOut(&bounds);
+    // SkIRect expects to work with 32 bit integers. If the width
+    // or height exceeds 32 bits, isEmpty() returns •true•
+    SkASSERT(bounds.isEmpty());
+    // But the 64 bit version works fine.
+    SkASSERT(!bounds.isEmpty64());
+
+    // Make sure the clip overlaps a little bit
+    SkIRect smallClip = SkIRect::MakeLTRB(5, 5, 15, 15);
+    SkASSERT(bounds.intersect(smallClip));
+
+    REPORTER_ASSERT(reporter, clip.setPath(largePath, smallClip, true));
+    REPORTER_ASSERT(reporter, clip.setPath(largePath, smallClip, false));
 }

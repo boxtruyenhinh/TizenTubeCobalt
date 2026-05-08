@@ -12,23 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/time_zone.h"
+// clang-format on
 
 #include <time.h>
 
-#include "starboard/android/shared/jni_env_ext.h"
-#include "starboard/android/shared/jni_utils.h"
-
-using starboard::android::shared::JniEnvExt;
-using starboard::android::shared::ScopedLocalJavaRef;
+#include "starboard/android/shared/starboard_bridge.h"
+#include "third_party/jni_zero/jni_zero.h"
 
 const char* SbTimeZoneGetName() {
   static char s_time_zone_id[64];
   // Note tzset() is called in ApplicationAndroid::Initialize()
-  JniEnvExt* env = JniEnvExt::Get();
-  ScopedLocalJavaRef<jstring> result(env->CallStarboardObjectMethodOrAbort(
-      "getTimeZoneId", "()Ljava/lang/String;"));
-  std::string time_zone_id = env->GetStringStandardUTFOrAbort(result.Get());
+  JNIEnv* env = jni_zero::AttachCurrentThread();
+  std::string time_zone_id =
+      starboard::StarboardBridge::GetInstance()->GetTimeZoneId(env);
+
   time_zone_id.push_back('\0');
   strncpy(s_time_zone_id, time_zone_id.c_str(), sizeof(s_time_zone_id));
   s_time_zone_id[sizeof(s_time_zone_id) - 1] = 0;

@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <condition_variable>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
-#include "starboard/common/condition_variable.h"
+#include "build/build_config.h"
 #include "starboard/common/media.h"
-#include "starboard/common/mutex.h"
-#include "starboard/common/optional.h"
 #include "starboard/common/time.h"
 #include "starboard/configuration_constants.h"
 #include "starboard/decode_target.h"
@@ -28,11 +29,14 @@
 #include "starboard/testing/fake_graphics_context_provider.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
+#if BUILDFLAG(IS_IOS_TVOS)
+#include "starboard/tvos/shared/run_in_background_thread_and_wait.h"
+#endif  // BUILDFLAG(IS_IOS_TVOS)
+
 namespace nplb {
 namespace {
 
-using ::starboard::testing::FakeGraphicsContextProvider;
+using ::starboard::FakeGraphicsContextProvider;
 using ::testing::Values;
 
 constexpr SbPlayerOutputMode kOutputModes[] = {
@@ -73,21 +77,21 @@ class SbPlayerTest : public ::testing::Test {
   }
 
   void OnPlayerStatus(SbPlayerState state) {
-    ScopedLock scoped_lock(mutex_);
+    std::lock_guard lock(mutex_);
     player_state_ = state;
-    condition_variable_.Signal();
+    condition_variable_.notify_one();
   }
 
   void OnPlayerError(SbPlayerError error) {
-    ScopedLock scoped_lock(mutex_);
+    std::lock_guard lock(mutex_);
     player_error_ = error;
-    condition_variable_.Signal();
+    condition_variable_.notify_one();
   }
 
   void ClearPlayerStateAndError() {
-    ScopedLock scoped_lock(mutex_);
-    player_state_ = nullopt;
-    player_error_ = nullopt;
+    std::lock_guard lock(mutex_);
+    player_state_ = std::nullopt;
+    player_error_ = std::nullopt;
   }
 
   void WaitForPlayerInitializedOrError(bool* error_occurred) {
@@ -96,26 +100,35 @@ class SbPlayerTest : public ::testing::Test {
     SB_DCHECK(error_occurred);
     *error_occurred = false;
 
-    const int64_t wait_end = CurrentMonotonicTime() + kWaitTimeout;
+    const int64_t wait_end = starboard::CurrentMonotonicTime() + kWaitTimeout;
 
     for (;;) {
-      ScopedLock scoped_lock(mutex_);
+      std::unique_lock lock(mutex_);
 
-      if (player_error_.has_engaged()) {
+      if (player_error_.has_value()) {
         *error_occurred = true;
         return;
       }
 
-      if (player_state_.has_engaged()) {
+      if (player_state_.has_value()) {
         *error_occurred = player_state_.value() == kSbPlayerStateInitialized;
         return;
       }
 
-      auto now = CurrentMonotonicTime();
+      auto now = starboard::CurrentMonotonicTime();
       if (now > wait_end) {
         break;
       }
-      condition_variable_.WaitTimed(wait_end - now);
+
+#if BUILDFLAG(IS_IOS_TVOS)
+      RunInBackgroundThreadAndWait([&] {
+        condition_variable_.wait_for(lock,
+                                     std::chrono::microseconds(wait_end - now));
+      });
+#else
+      condition_variable_.wait_for(lock,
+                                   std::chrono::microseconds(wait_end - now));
+#endif  // BUILDFLAG(IS_IOS_TVOS)
     }
 
     SB_LOG(INFO) << "WaitForPlayerInitializedOrError() timed out.";
@@ -124,10 +137,10 @@ class SbPlayerTest : public ::testing::Test {
 
   FakeGraphicsContextProvider fake_graphics_context_provider_;
 
-  Mutex mutex_;
-  ConditionVariable condition_variable_{mutex_};
-  optional<SbPlayerState> player_state_;
-  optional<SbPlayerError> player_error_;
+  std::mutex mutex_;
+  std::condition_variable condition_variable_;
+  std::optional<SbPlayerState> player_state_;
+  std::optional<SbPlayerError> player_error_;
 };
 
 TEST_F(SbPlayerTest, SunnyDay) {
@@ -317,9 +330,8 @@ TEST_F(SbPlayerTest, AudioOnly) {
 
 TEST_F(SbPlayerTest, MultiPlayer) {
   auto audio_stream_info = CreateAudioStreamInfo(kSbMediaAudioCodecAac);
-  SbDrmSystem kDrmSystem = kSbDrmSystemInvalid;
 
-  constexpr SbPlayerOutputMode kOutputModes[] = {
+  constexpr SbPlayerOutputMode kMultiPlayerOutputModes[] = {
       kSbPlayerOutputModeDecodeToTexture, kSbPlayerOutputModePunchOut};
 
   // clang-format off
@@ -334,9 +346,7 @@ TEST_F(SbPlayerTest, MultiPlayer) {
       kSbMediaAudioCodecMp3,
       kSbMediaAudioCodecFlac,
       kSbMediaAudioCodecPcm,
-#if SB_API_VERSION >= 15
       kSbMediaAudioCodecIamf,
-#endif  // SB_API_VERSION >= 15
   };
   // clang-format on
 
@@ -355,9 +365,7 @@ TEST_F(SbPlayerTest, MultiPlayer) {
     case kAudioCodecs[6]:
     case kAudioCodecs[7]:
     case kAudioCodecs[8]:
-#if SB_API_VERSION >= 15
     case kAudioCodecs[9]:
-#endif  // SB_API_VERSION >= 15
       break;
   }
 
@@ -373,6 +381,7 @@ TEST_F(SbPlayerTest, MultiPlayer) {
       kSbMediaVideoCodecAv1,
       kSbMediaVideoCodecVp8,
       kSbMediaVideoCodecVp9,
+      kSbMediaVideoCodecAv2,
   };
   // clang-format on
 
@@ -391,6 +400,7 @@ TEST_F(SbPlayerTest, MultiPlayer) {
     case kVideoCodecs[6]:
     case kVideoCodecs[7]:
     case kVideoCodecs[8]:
+    case kVideoCodecs[9]:
       break;
   }
 
@@ -400,7 +410,7 @@ TEST_F(SbPlayerTest, MultiPlayer) {
   int number_of_players = 0;
 
   for (int i = 0; i < kMaxPlayersPerConfig; ++i) {
-    for (int j = 0; j < SB_ARRAY_SIZE_INT(kOutputModes); ++j) {
+    for (int j = 0; j < SB_ARRAY_SIZE_INT(kMultiPlayerOutputModes); ++j) {
       for (int k = 0; k < SB_ARRAY_SIZE_INT(kAudioCodecs); ++k) {
         for (int l = 0; l < SB_ARRAY_SIZE_INT(kVideoCodecs); ++l) {
           ++number_of_create_attempts;
@@ -408,8 +418,9 @@ TEST_F(SbPlayerTest, MultiPlayer) {
                        << number_of_create_attempts << " times, with "
                        << created_players.size()
                        << " player created.\n Now creating player for "
-                       << GetMediaAudioCodecName(kAudioCodecs[k]) << " and "
-                       << GetMediaVideoCodecName(kVideoCodecs[l]);
+                       << starboard::GetMediaAudioCodecName(kAudioCodecs[k])
+                       << " and "
+                       << starboard::GetMediaVideoCodecName(kVideoCodecs[l]);
 
           audio_stream_info.codec = kAudioCodecs[k];
           created_players.push_back(CallSbPlayerCreate(
@@ -417,7 +428,7 @@ TEST_F(SbPlayerTest, MultiPlayer) {
               kAudioCodecs[k], kSbDrmSystemInvalid, &audio_stream_info,
               "" /* max_video_capabilities */, DummyDeallocateSampleFunc,
               DummyDecoderStatusFunc, PlayerStatusFunc, PlayerErrorFunc, this,
-              kOutputModes[j],
+              kMultiPlayerOutputModes[j],
               fake_graphics_context_provider_.decoder_target_provider()));
 
           if (SbPlayerIsValid(created_players.back())) {
@@ -431,7 +442,7 @@ TEST_F(SbPlayerTest, MultiPlayer) {
         }
       }
     }
-    if (created_players.size() == number_of_players) {
+    if (created_players.size() == static_cast<size_t>(number_of_players)) {
       break;
     }
     number_of_players = created_players.size();
@@ -444,4 +455,3 @@ TEST_F(SbPlayerTest, MultiPlayer) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

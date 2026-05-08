@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "starboard/shared/starboard/player/filter/video_decoder_internal.h"
-
 #include <algorithm>
 #include <deque>
 #include <functional>
@@ -21,19 +19,19 @@
 #include <memory>
 #include <set>
 
-#include "starboard/common/condition_variable.h"
-#include "starboard/common/mutex.h"
 #include "starboard/common/string.h"
 #include "starboard/common/time.h"
 #include "starboard/configuration_constants.h"
 #include "starboard/drm.h"
 #include "starboard/media.h"
-#include "starboard/memory.h"
+#include "starboard/shared/starboard/experimental_features.h"
 #include "starboard/shared/starboard/media/media_util.h"
 #include "starboard/shared/starboard/player/filter/player_components.h"
 #include "starboard/shared/starboard/player/filter/stub_player_components_factory.h"
 #include "starboard/shared/starboard/player/filter/testing/test_util.h"
 #include "starboard/shared/starboard/player/filter/testing/video_decoder_test_fixture.h"
+#include "starboard/shared/starboard/player/filter/video_decoder_internal.h"
+#include "starboard/shared/starboard/player/filter/video_renderer_sink.h"
 #include "starboard/shared/starboard/player/job_queue.h"
 #include "starboard/shared/starboard/player/video_dmp_reader.h"
 #include "starboard/testing/fake_graphics_context_provider.h"
@@ -41,14 +39,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
-namespace testing {
 namespace {
 
-using ::starboard::testing::FakeGraphicsContextProvider;
 using ::std::placeholders::_1;
 using ::std::placeholders::_2;
 using ::testing::Bool;
@@ -113,7 +105,9 @@ TEST_P(VideoDecoderTest, OutputModeSupported) {
   SbMediaVideoCodec kVideoCodecs[] = {
       kSbMediaVideoCodecNone,  kSbMediaVideoCodecH264,   kSbMediaVideoCodecH265,
       kSbMediaVideoCodecMpeg2, kSbMediaVideoCodecTheora, kSbMediaVideoCodecVc1,
-      kSbMediaVideoCodecAv1,   kSbMediaVideoCodecVp8,    kSbMediaVideoCodecVp9};
+      kSbMediaVideoCodecAv1,   kSbMediaVideoCodecVp8,    kSbMediaVideoCodecVp9,
+      kSbMediaVideoCodecAv2,
+  };
   for (auto output_mode : kOutputModes) {
     for (auto video_codec : kVideoCodecs) {
       PlayerComponents::Factory::OutputModeSupported(output_mode, video_codec,
@@ -140,7 +134,9 @@ TEST_P(VideoDecoderTest, ThreeMoreDecoders) {
   SbMediaVideoCodec kVideoCodecs[] = {
       kSbMediaVideoCodecNone,  kSbMediaVideoCodecH264,   kSbMediaVideoCodecH265,
       kSbMediaVideoCodecMpeg2, kSbMediaVideoCodecTheora, kSbMediaVideoCodecVc1,
-      kSbMediaVideoCodecAv1,   kSbMediaVideoCodecVp8,    kSbMediaVideoCodecVp9};
+      kSbMediaVideoCodecAv1,   kSbMediaVideoCodecVp8,    kSbMediaVideoCodecVp9,
+      kSbMediaVideoCodecAv2,
+  };
   int kMaxVideoInputSizes[] = {0, 777000, 3110500};
 
   for (auto output_mode : kOutputModes) {
@@ -149,11 +145,8 @@ TEST_P(VideoDecoderTest, ThreeMoreDecoders) {
         if (PlayerComponents::Factory::OutputModeSupported(
                 output_mode, video_codec, kSbDrmSystemInvalid)) {
           SbPlayerPrivate players[kDecodersToCreate];
-          std::unique_ptr<VideoDecoder> video_decoders[kDecodersToCreate];
-          std::unique_ptr<VideoRenderAlgorithm>
-              video_render_algorithms[kDecodersToCreate];
-          scoped_refptr<VideoRendererSink>
-              video_renderer_sinks[kDecodersToCreate];
+          std::vector<PlayerComponents::Factory::VideoComponents>
+              video_components;
 
           for (int i = 0; i < kDecodersToCreate; ++i) {
             SbMediaAudioSampleInfo dummy_audio_sample_info = {
@@ -161,24 +154,24 @@ TEST_P(VideoDecoderTest, ThreeMoreDecoders) {
             PlayerComponents::Factory::CreationParameters creation_parameters(
                 CreateVideoStreamInfo(fixture_.dmp_reader().video_codec()),
                 &players[i], output_mode, max_video_input_size,
+                ExperimentalFeatures{},
+                /*surface_view=*/nullptr,
                 fake_graphics_context_provider_.decoder_target_provider(),
-                nullptr);
+                &job_queue_);
             ASSERT_EQ(creation_parameters.max_video_input_size(),
                       max_video_input_size);
 
-            std::string error_message;
-            ASSERT_TRUE(factory->CreateSubComponents(
-                creation_parameters, nullptr, nullptr, &video_decoders[i],
-                &video_render_algorithms[i], &video_renderer_sinks[i],
-                &error_message));
-            ASSERT_TRUE(video_decoders[i]);
+            auto sub_components =
+                factory->CreateSubComponents(creation_parameters);
+            ASSERT_TRUE(sub_components) << sub_components.error();
+            video_components.push_back(std::move(sub_components->video));
 
-            if (video_renderer_sinks[i]) {
-              video_renderer_sinks[i]->SetRenderCB(
+            if (video_components[i].renderer_sink) {
+              video_components[i].renderer_sink->SetRenderCB(
                   std::bind(&VideoDecoderTestFixture::Render, &fixture_, _1));
             }
 
-            video_decoders[i]->Initialize(
+            video_components[i].decoder->Initialize(
                 std::bind(&VideoDecoderTestFixture::OnDecoderStatusUpdate,
                           &fixture_, _1, _2),
                 std::bind(&VideoDecoderTestFixture::OnError, &fixture_));
@@ -514,9 +507,5 @@ INSTANTIATE_TEST_CASE_P(VideoDecoderTests,
                         GetVideoDecoderTestConfigName);
 
 }  // namespace
-}  // namespace testing
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
+
 }  // namespace starboard

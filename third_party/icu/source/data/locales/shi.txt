@@ -33,6 +33,16 @@ shi{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMMMd",
+                "GGGGGyMd",
+            }
             availableFormats{
                 M{"M"}
                 MMM{"MMM"}
@@ -55,10 +65,6 @@ shi{
             }
         }
         gregorian{
-            AmPmMarkers{
-                "ⵜⵉⴼⴰⵡⵜ",
-                "ⵜⴰⴷⴳⴳⵯⴰⵜ",
-            }
             AmPmMarkersAbbr{
                 "ⵜⵉⴼⴰⵡⵜ",
                 "ⵜⴰⴷⴳⴳⵯⴰⵜ",
@@ -78,18 +84,15 @@ shi{
                 "{1} {0}",
                 "{1} {0}",
             }
-            appendItems{
-                Day{"{0} ({2}: {1})"}
-                Day-Of-Week{"{0} {1}"}
-                Era{"{1} {0}"}
-                Hour{"{0} ({2}: {1})"}
-                Minute{"{0} ({2}: {1})"}
-                Month{"{0} ({2}: {1})"}
-                Quarter{"{0} ({2}: {1})"}
-                Second{"{0} ({2}: {1})"}
-                Timezone{"{0} {1}"}
-                Week{"{0} ({2}: {1})"}
-                Year{"{1} {0}"}
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "yMMMMEEEEd",
+                "yMMMMd",
+                "yMMMd",
+                "yMd",
             }
             availableFormats{
                 M{"M"}
@@ -102,7 +105,6 @@ shi{
                 MMdd{"dd/MM"}
                 Md{"d/M"}
                 ms{"m:ss"}
-                y{"y"}
                 yM{"M/y"}
                 yMEd{"E d/M/y"}
                 yMMM{"MMM y"}

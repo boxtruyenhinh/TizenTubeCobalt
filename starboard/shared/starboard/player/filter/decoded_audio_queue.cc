@@ -20,14 +20,11 @@
 
 #include <algorithm>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 #include "starboard/media.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 DecodedAudioQueue::DecodedAudioQueue() {
   Clear();
@@ -43,9 +40,8 @@ void DecodedAudioQueue::Clear() {
 
 void DecodedAudioQueue::Append(
     const scoped_refptr<DecodedAudio>& decoded_audio) {
-  SB_DCHECK(decoded_audio->storage_type() ==
-            kSbMediaAudioFrameStorageTypeInterleaved)
-      << decoded_audio->storage_type();
+  SB_DCHECK_EQ(decoded_audio->storage_type(),
+               kSbMediaAudioFrameStorageTypeInterleaved);
   // Add the buffer to the queue. Inserting into deque invalidates all
   // iterators, so point to the first buffer.
   buffers_.push_back(decoded_audio);
@@ -53,13 +49,13 @@ void DecodedAudioQueue::Append(
 
   // Update the |frames_| counter since we have added frames.
   frames_ += decoded_audio->frames();
-  SB_CHECK(frames_ > 0);  // make sure it doesn't overflow.
+  SB_CHECK_GT(frames_, 0);  // make sure it doesn't overflow.
 }
 
 int DecodedAudioQueue::ReadFrames(int frames,
                                   int dest_frame_offset,
                                   DecodedAudio* dest) {
-  SB_DCHECK(dest->frames() >= frames + dest_frame_offset);
+  SB_DCHECK_GE(dest->frames(), frames + dest_frame_offset);
   return InternalRead(frames, true, 0, dest_frame_offset, dest);
 }
 
@@ -67,16 +63,16 @@ int DecodedAudioQueue::PeekFrames(int frames,
                                   int source_frame_offset,
                                   int dest_frame_offset,
                                   DecodedAudio* dest) {
-  SB_DCHECK(dest->frames() >= frames);
+  SB_DCHECK_GE(dest->frames(), frames);
   return InternalRead(frames, false, source_frame_offset, dest_frame_offset,
                       dest);
 }
 
 void DecodedAudioQueue::SeekFrames(int frames) {
   // Perform seek only if we have enough bytes in the queue.
-  SB_CHECK(frames <= frames_);
-  int taken = InternalRead(frames, true, 0, 0, NULL);
-  SB_DCHECK(taken == frames);
+  SB_CHECK_LE(frames, frames_);
+  [[maybe_unused]] int taken = InternalRead(frames, true, 0, 0, NULL);
+  SB_DCHECK_EQ(taken, frames);
 }
 
 int DecodedAudioQueue::InternalRead(int frames,
@@ -93,8 +89,9 @@ int DecodedAudioQueue::InternalRead(int frames,
   while (taken < frames) {
     // |current_buffer| is valid since the first time this buffer is appended
     // with data. Make sure there is data to be processed.
-    if (current_buffer == buffers_.end())
+    if (current_buffer == buffers_.end()) {
       break;
+    }
 
     scoped_refptr<DecodedAudio> buffer = *current_buffer;
 
@@ -114,7 +111,7 @@ int DecodedAudioQueue::InternalRead(int frames,
 
       // if |dest| is NULL, there's no need to copy.
       if (dest) {
-        SB_DCHECK(buffer->channels() == dest->channels());
+        SB_DCHECK_EQ(buffer->channels(), dest->channels());
         if (dest->sample_type() == kSbMediaAudioSampleTypeFloat32) {
           const float* source = reinterpret_cast<const float*>(buffer->data()) +
                                 buffer->channels() * current_buffer_offset;
@@ -144,8 +141,9 @@ int DecodedAudioQueue::InternalRead(int frames,
     if (current_buffer_offset == buffer->frames()) {
       // If we are at the last buffer, no more data to be copied, so stop.
       BufferQueue::iterator next = current_buffer + 1;
-      if (next == buffers_.end())
+      if (next == buffers_.end()) {
         break;
+      }
 
       // Advances the iterator.
       current_buffer = next;
@@ -156,7 +154,7 @@ int DecodedAudioQueue::InternalRead(int frames,
   if (advance_position) {
     // Update the appropriate values since |taken| frames have been copied out.
     frames_ -= taken;
-    SB_DCHECK(frames_ >= 0);
+    SB_DCHECK_GE(frames_, 0);
     SB_DCHECK(current_buffer_ != buffers_.end() || frames_ == 0);
 
     // Remove any buffers before the current buffer as there is no going
@@ -169,8 +167,4 @@ int DecodedAudioQueue::InternalRead(int frames,
   return taken;
 }
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

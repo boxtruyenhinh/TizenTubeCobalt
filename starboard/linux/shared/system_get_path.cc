@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/system.h"
+// clang-format on
 
 #include <linux/limits.h>
 #include <sys/stat.h>
@@ -25,7 +27,6 @@
 #include "starboard/common/log.h"
 #include "starboard/common/string.h"
 #include "starboard/configuration_constants.h"
-#include "starboard/directory.h"
 #if SB_IS(EVERGREEN_COMPATIBLE)
 #include "starboard/elf_loader/evergreen_config.h"
 #endif
@@ -37,8 +38,7 @@ const int kMaxPathSize = kSbFileMaxPath;
 // Gets the path to the cache directory, using the home directory.
 bool GetCacheDirectory(char* out_path, int path_size) {
   std::vector<char> home_path(kMaxPathSize + 1);
-  if (!starboard::shared::starboard::GetHomeDirectory(home_path.data(),
-                                                      kMaxPathSize)) {
+  if (!starboard::GetHomeDirectory(home_path.data(), kMaxPathSize)) {
     return false;
   }
   int result = snprintf(out_path, path_size, "%s/.cache", home_path.data());
@@ -54,12 +54,28 @@ bool GetCacheDirectory(char* out_path, int path_size) {
 // Gets the path to the storage directory, using the home directory.
 bool GetStorageDirectory(char* out_path, int path_size) {
   std::vector<char> home_path(kMaxPathSize + 1);
-  if (!starboard::shared::starboard::GetHomeDirectory(home_path.data(),
-                                                      kMaxPathSize)) {
+  if (!starboard::GetHomeDirectory(home_path.data(), kMaxPathSize)) {
     return false;
   }
   int result =
       snprintf(out_path, path_size, "%s/.cobalt_storage", home_path.data());
+  if (result < 0 || result >= path_size) {
+    out_path[0] = '\0';
+    return false;
+  }
+  struct stat info;
+  return mkdir(out_path, 0700) == 0 ||
+         (stat(out_path, &info) == 0 && S_ISDIR(info.st_mode));
+}
+
+// Gets the path to the file directory, using the home directory.
+bool GetFilesDirectory(char* out_path, int path_size) {
+  std::vector<char> home_path(kMaxPathSize + 1);
+  if (!starboard::GetHomeDirectory(home_path.data(), kMaxPathSize)) {
+    return false;
+  }
+  int result =
+      snprintf(out_path, path_size, "%s/.cobalt_files", home_path.data());
   if (result < 0 || result >= path_size) {
     out_path[0] = '\0';
     return false;
@@ -99,8 +115,8 @@ bool GetExecutablePath(char* out_path, int path_size) {
 // on the Evergreen binary executed.
 // Returns false if it failed.
 bool GetEvergreenContentPathOverride(char* out_path, int path_size) {
-  const starboard::elf_loader::EvergreenConfig* evergreen_config =
-      starboard::elf_loader::EvergreenConfig::GetInstance();
+  const elf_loader::EvergreenConfig* evergreen_config =
+      elf_loader::EvergreenConfig::GetInstance();
   if (!evergreen_config) {
     return true;
   }
@@ -175,14 +191,6 @@ bool GetTemporaryDirectory(char* out_path, int path_size) {
 // Gets the path to the content directory.
 bool GetContentDirectory(char* out_path, int path_size) {
   if (!GetExecutableDirectory(out_path, path_size)) {
-    return false;
-  }
-#ifdef USE_COMMON_CONTENT_DIR
-  if (!GetParentDirectory(out_path)) {
-    return false;
-  }
-#endif
-  if (starboard::strlcat(out_path, "/content", path_size) >= path_size) {
     return false;
   }
   return true;
@@ -262,6 +270,12 @@ bool SbSystemGetPath(SbSystemPathId path_id, char* out_path, int path_size) {
 
     case kSbSystemPathStorageDirectory:
       if (!GetStorageDirectory(path.data(), kPathSize)) {
+        return false;
+      }
+      break;
+
+    case kSbSystemPathFilesDirectory:
+      if (!GetFilesDirectory(path.data(), kPathSize)) {
         return false;
       }
       break;

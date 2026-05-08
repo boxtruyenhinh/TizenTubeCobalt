@@ -16,11 +16,14 @@ class Visitor;
 
 namespace internal {
 
+class RootVisitor;
+
+using TraceRootCallback = void (*)(RootVisitor&, const void* object);
+
 // Implementation of the default TraceTrait handling GarbageCollected and
 // GarbageCollectedMixin.
 template <typename T,
-          bool =
-              IsGarbageCollectedMixinTypeV<typename std::remove_const<T>::type>>
+          bool = IsGarbageCollectedMixinTypeV<std::remove_const_t<T>>>
 struct TraceTraitImpl;
 
 }  // namespace internal
@@ -48,6 +51,14 @@ struct TraceDescriptor {
    */
   TraceCallback callback;
 };
+
+/**
+ * Callback for getting a TraceDescriptor for a given address.
+ *
+ * \param address Possibly inner address of an object.
+ * \returns a TraceDescriptor for the provided address.
+ */
+using TraceDescriptorCallback = TraceDescriptor (*)(const void* address);
 
 namespace internal {
 
@@ -96,6 +107,8 @@ namespace internal {
 
 template <typename T>
 struct TraceTraitImpl<T, false> {
+  static_assert(IsGarbageCollectedTypeV<T>,
+                "T must be of type GarbageCollected or GarbageCollectedMixin");
   static TraceDescriptor GetTraceDescriptor(const void* self) {
     return {self, TraceTrait<T>::Trace};
   }

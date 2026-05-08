@@ -1,6 +1,3 @@
-Project: /youtube/cobalt/_project.yaml
-Book: /youtube/cobalt/_book.yaml
-
 # Getting started
 
 Cobalt is a lightweight HTML5/CSS/JS application container that is designed
@@ -43,8 +40,7 @@ These are some other benefits that Cobalt provides:
     *   Cobalt precompiles a set of shaders that are sufficient to express all
         graphical effects, thereby accommodating platforms that cannot compile
         shaders at runtime.
-    *   Cobalt requires a compliant C++11 compiler, allowing it to reach
-        platforms with toolchains that don't support the newest C++17 features.
+    *   Cobalt requires a compliant C++17 compiler.
 
 *   **Small footprint**
     *   Cobalt is optimized for memory. Its surface cache never exceeds a

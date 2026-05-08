@@ -1,4 +1,4 @@
-// Copyright 2014 The Crashpad Authors. All rights reserved.
+// Copyright 2014 The Crashpad Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 #include <utility>
 
+#include "build/build_config.h"
 #include "util/net/http_body.h"
 
 namespace crashpad {
@@ -52,15 +53,16 @@ void HTTPTransport::SetTimeout(double timeout) {
   timeout_ = timeout;
 }
 
-#if defined(STARBOARD) || defined(NATIVE_TARGET_BUILD)
+#if BUILDFLAG(IS_NATIVE_TARGET)
 void HTTPTransport::SetRootCACertificatesDirectoryPath(
-    const std::string& path) {
+    const base::FilePath& path) {
   root_ca_certificates_directory_path_ = path;
 }
-#else
+#else  // BUILDFLAG(IS_NATIVE_TARGET)
+
 void HTTPTransport::SetRootCACertificatePath(const base::FilePath& cert) {
   root_ca_certificate_path_ = cert;
 }
-#endif  // defined(STARBOARD) || defined(NATIVE_TARGET_BUILD)
+#endif  // BUILDFLAG(IS_NATIVE_TARGET)
 
 }  // namespace crashpad

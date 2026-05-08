@@ -5,9 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "src/core/SkColorSpacePriv.h"
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkRefCnt.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "tests/Test.h"
+
+#include <cstdint>
 
 DEF_TEST(SkColorSpaceXformSteps, r) {
     auto srgb   = SkColorSpace::MakeSRGB(),
@@ -134,11 +138,11 @@ DEF_TEST(SkColorSpaceXformSteps, r) {
     for (const Test& t : tests) {
         SkColorSpaceXformSteps steps{t.src.get(), t.srcAT,
                                      t.dst.get(), t.dstAT};
-        REPORTER_ASSERT(r, steps.flags.unpremul        == t.unpremul);
-        REPORTER_ASSERT(r, steps.flags.linearize       == t.linearize);
-        REPORTER_ASSERT(r, steps.flags.gamut_transform == t.gamut_transform);
-        REPORTER_ASSERT(r, steps.flags.encode          == t.encode);
-        REPORTER_ASSERT(r, steps.flags.premul          == t.premul);
+        REPORTER_ASSERT(r, steps.fFlags.unpremul        == t.unpremul);
+        REPORTER_ASSERT(r, steps.fFlags.linearize       == t.linearize);
+        REPORTER_ASSERT(r, steps.fFlags.gamut_transform == t.gamut_transform);
+        REPORTER_ASSERT(r, steps.fFlags.encode          == t.encode);
+        REPORTER_ASSERT(r, steps.fFlags.premul          == t.premul);
 
         uint32_t bits = (uint32_t)t.unpremul        << 0
                       | (uint32_t)t.linearize       << 1

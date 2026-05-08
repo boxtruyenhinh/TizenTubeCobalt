@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
+#include "starboard/shared/ffmpeg/ffmpeg_audio_decoder.h"
+// clang-format on
+
 // This file contains the creation of the specialized AudioDecoderImpl object
 // corresponding to the version of the linked ffmpeg library.
 
-#include "starboard/shared/ffmpeg/ffmpeg_audio_decoder.h"
-
-#include "starboard/memory.h"
 #include "starboard/player.h"
 #include "starboard/shared/ffmpeg/ffmpeg_audio_decoder_impl.h"
 #include "starboard/shared/ffmpeg/ffmpeg_common.h"
@@ -25,18 +26,14 @@
 #include "starboard/shared/starboard/media/media_util.h"
 
 namespace starboard {
-namespace shared {
-namespace ffmpeg {
 
 // static
 AudioDecoder* AudioDecoder::Create(const AudioStreamInfo& audio_stream_info) {
   FFMPEGDispatch* ffmpeg = FFMPEGDispatch::GetInstance();
-  SB_DCHECK(ffmpeg && ffmpeg->is_valid());
-  SB_DCHECK(FFMPEG == ffmpeg->specialization_version());
+  SB_DCHECK(ffmpeg);
+  SB_DCHECK_EQ(FFMPEG, ffmpeg->specialization_version());
 
   return AudioDecoderImpl<FFMPEG>::Create(audio_stream_info);
 }
 
-}  // namespace ffmpeg
-}  // namespace shared
 }  // namespace starboard

@@ -7,6 +7,7 @@
 
 #include "bench/Benchmark.h"
 #include "include/core/SkBitmap.h"
+#include "include/core/SkColorSpace.h"
 #include "src/core/SkMipmap.h"
 
 class MipmapBench: public Benchmark {
@@ -27,7 +28,7 @@ public:
 
 protected:
     bool isSuitableFor(Backend backend) override {
-        return kNonRendering_Backend == backend;
+        return Backend::kNonRendering == backend;
     }
 
     const char* onGetName() override { return fName.c_str(); }

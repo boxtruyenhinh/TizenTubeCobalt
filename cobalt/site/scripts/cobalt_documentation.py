@@ -18,16 +18,14 @@ import shutil
 import sys
 
 _COBALT_DOC_LOCATIONS = [
-    'cobalt/doc/',
-    'starboard/doc/',
-    'starboard/build/doc/',
-    'starboard/tools/doc/',
+    'starboard/doc/evergreen/',
+    'starboard/doc/eap/',
 ]
 
 
-def write_header(doc):
-  doc.write('Project: /youtube/cobalt/_project.yaml\n')
-  doc.write('Book: /youtube/cobalt/_book.yaml\n\n')
+def get_header():
+  return ('Project: /youtube/cobalt/_project.yaml\n' +
+          'Book: /youtube/cobalt/_book.yaml\n\n')
 
 
 def copy_doc_locations(source_dir, output_dir=None):
@@ -48,12 +46,10 @@ def copy_doc_locations(source_dir, output_dir=None):
     for filename in files:
       if not filename.endswith('.md'):
         continue
-      filename = os.path.join(root, filename)
-      with open(filename, encoding='utf8') as f:
-        lines = f.readlines()
-      with open(filename, 'w', encoding='utf8') as f:
-        write_header(f)
-        f.writelines(lines)
+      file_path = os.path.join(root, filename)
+      with open(file_path, 'r', encoding='utf8') as f:
+        content = f.read()
+      environment.write_file(file_path, get_header() + content)
 
 
 if __name__ == '__main__':

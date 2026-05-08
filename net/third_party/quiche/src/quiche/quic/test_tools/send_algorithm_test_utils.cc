@@ -4,6 +4,8 @@
 
 #include "quiche/quic/test_tools/send_algorithm_test_utils.h"
 
+#include <string>
+
 #include "absl/strings/str_cat.h"
 #include "quiche/quic/platform/api/quic_logging.h"
 #include "quiche/quic/platform/api/quic_test.h"
@@ -35,11 +37,8 @@ void RecordSendAlgorithmTestResult(uint64_t random_seed,
 void CompareSendAlgorithmTestResult(int64_t actual_simulated_duration_micros) {
   SendAlgorithmTestResult expected;
   ASSERT_TRUE(LoadSendAlgorithmTestResult(&expected));
-#ifndef USE_COBALT_CUSTOMIZATIONS
-// Cobalt's protobuf is too old to support ShortDebugString().
   QUIC_LOG(INFO) << "Loaded expected test result: "
                  << expected.ShortDebugString();
-#endif
 
   EXPECT_GE(expected.simulated_duration_micros(),
             actual_simulated_duration_micros);

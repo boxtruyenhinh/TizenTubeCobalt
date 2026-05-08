@@ -7,9 +7,22 @@
 
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathTypes.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkRRect.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
+#include "include/private/SkPathRef.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMalloc.h"
+#include "src/base/SkFloatBits.h"
 #include "src/core/SkPathPriv.h"
 #include "tests/Test.h"
+
+#include <cstdint>
+#include <initializer_list>
 
 static SkRRect path_contains_rrect(skiatest::Reporter* reporter, const SkPath& path,
                                    SkPathDirection* dir, unsigned* start) {
@@ -86,7 +99,7 @@ static void path_contains_rrect_check(skiatest::Reporter* reporter, const SkRect
 class ForceIsRRect_Private {
 public:
     ForceIsRRect_Private(SkPath* path, SkPathDirection dir, unsigned start) {
-        path->fPathRef->setIsRRect(true, dir == SkPathDirection::kCCW, start);
+        path->fPathRef->setIsRRect(dir == SkPathDirection::kCCW, start);
     }
 };
 

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax
-// Files: tools/clusterfuzz/v8_mock.js
+// Flags: --allow-natives-syntax --correctness-fuzzer-suppressions
+// Files: tools/clusterfuzz/foozzie/v8_mock.js
 
 // Test foozzie mocks for differential fuzzing.
 
@@ -22,8 +22,17 @@ assertEquals(710, new Date.prototype.constructor().getUTCMilliseconds());
 assertEquals(819134640000,
              new Date('December 17, 1995 03:24:00 GMT+1000').getTime());
 
+// Deterministic DateTimeFormat.
+if (this.Intl) {
+  const df = new Intl.DateTimeFormat(undefined, {fractionalSecondDigits: 3});
+  assertEquals('004', df.format());
+  assertEquals('004', df.formatToParts()[0].value);
+}
+
 // Dummy performance methods.
 assertEquals(1.2, performance.now());
+assertEquals(undefined, performance.mark("a mark"));
+assertEquals(undefined, performance.measure("a measure"));
 assertEquals([], performance.measureMemory());
 
 // Worker messages follow a predefined deterministic pattern.
@@ -99,16 +108,24 @@ testSameOptimized(expected_array, () => {
 // Realm.eval is just eval.
 assertEquals(1477662728716, Realm.eval(Realm.create(), `Date.now()`));
 
-// Test suppressions when Math.pow is optimized.
-function callPow(v) {
-  return Math.pow(v, -0.5);
-}
-%PrepareFunctionForOptimization(callPow);
-const unoptimized = callPow(6996);
-%OptimizeFunctionOnNextCall(callPow);
-assertEquals(unoptimized, callPow(6996));
-
 // Test mocked Atomics.waitAsync.
 let then_called = false;
 Atomics.waitAsync().value.then(() => {then_called = true;});
 assertEquals(true, then_called);
+
+// Test .caller access is neutralized.
+function callee() {
+  assertEquals(null, callee.caller);
+}
+function caller() {
+  callee();
+}
+caller();
+
+// Neutralized APIs.
+let object = {'foo': 42}
+assertEquals(d8.serializer.serialize(object), object)
+assertEquals(d8.serializer.deserialize(object), object)
+assertEquals(d8.profiler.setOnProfileEndListener(object), object)
+assertEquals(d8.profiler.triggerSample(object), object)
+assertEquals(d8.log.getAndStop(object), object)

@@ -6,9 +6,15 @@
  */
 
 #include "include/core/SkFont.h"
-#include "include/core/SkPaint.h"
-#include "src/utils/SkUTF.h"
+#include "include/core/SkFontTypes.h"
+#include "src/base/SkUTF.h"
+#include "src/core/SkFontPriv.h"
 #include "tests/Test.h"
+#include "tools/fonts/FontToolUtils.h"
+
+#include <cstdint>
+#include <cstring>
+#include <string>
 
 // Simple test to ensure that when we call textToGlyphs, we get the same
 // result (for the same text) when using UTF8, UTF16, UTF32.
@@ -26,29 +32,26 @@ DEF_TEST(Unicode_textencodings, reporter) {
         text32[i] = text16[i] = text8[i];
     }
 
-    uint16_t glyphs8[sizeof(text8)];
-    uint16_t glyphs16[sizeof(text8)];
-    uint16_t glyphs32[sizeof(text8)];
+    SkGlyphID glyphs8[sizeof(text8)];
+    SkGlyphID glyphs16[sizeof(text8)];
+    SkGlyphID glyphs32[sizeof(text8)];
 
-    SkFont font;
+    SkFont font = ToolUtils::DefaultFont();
 
-    int count8  = font.textToGlyphs(text8,  len8,  SkTextEncoding::kUTF8,  glyphs8,  SK_ARRAY_COUNT(glyphs8));
-    int count16 = font.textToGlyphs(text16, len16, SkTextEncoding::kUTF16, glyphs16, SK_ARRAY_COUNT(glyphs16));
-    int count32 = font.textToGlyphs(text32, len32, SkTextEncoding::kUTF32, glyphs32, SK_ARRAY_COUNT(glyphs32));
+    int count8  = font.textToGlyphs(text8,  len8,  SkTextEncoding::kUTF8,  glyphs8,  std::size(glyphs8));
+    int count16 = font.textToGlyphs(text16, len16, SkTextEncoding::kUTF16, glyphs16, std::size(glyphs16));
+    int count32 = font.textToGlyphs(text32, len32, SkTextEncoding::kUTF32, glyphs32, std::size(glyphs32));
 
     REPORTER_ASSERT(reporter, (int)len8 == count8);
     REPORTER_ASSERT(reporter, (int)len8 == count16);
     REPORTER_ASSERT(reporter, (int)len8 == count32);
 
-    REPORTER_ASSERT(reporter, !memcmp(glyphs8, glyphs16, count8 * sizeof(uint16_t)));
-    REPORTER_ASSERT(reporter, !memcmp(glyphs8, glyphs32, count8 * sizeof(uint16_t)));
+    REPORTER_ASSERT(reporter, !memcmp(glyphs8, glyphs16, count8 * sizeof(SkGlyphID)));
+    REPORTER_ASSERT(reporter, !memcmp(glyphs8, glyphs32, count8 * sizeof(SkGlyphID)));
 }
 
-#include "include/core/SkFont.h"
-#include "src/core/SkFontPriv.h"
-
 DEF_TEST(glyphs_to_unichars, reporter) {
-    SkFont font;
+    SkFont font = ToolUtils::DefaultFont();
 
     const int N = 52;
     SkUnichar uni[N];
@@ -56,7 +59,7 @@ DEF_TEST(glyphs_to_unichars, reporter) {
         uni[i +  0] = i + 'A';
         uni[i + 26] = i + 'a';
     }
-    uint16_t glyphs[N];
+    SkGlyphID glyphs[N];
     font.textToGlyphs(uni, sizeof(uni), SkTextEncoding::kUTF32, glyphs, N);
 
     SkUnichar uni2[N];

@@ -4,13 +4,15 @@
 
 #include "src/builtins/builtins-utils-gen.h"
 #include "src/builtins/builtins.h"
-#include "src/codegen/code-factory.h"
-#include "src/codegen/code-stub-assembler.h"
+#include "src/codegen/code-stub-assembler-inl.h"
+#include "src/codegen/tnode.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/oddball.h"
 
 namespace v8 {
 namespace internal {
+
+#include "src/codegen/define-code-stub-assembler-macros.inc"
 
 // ES6 section 7.1.3 ToNumber ( argument )
 TF_BUILTIN(ToNumber, CodeStubAssembler) {
@@ -18,6 +20,41 @@ TF_BUILTIN(ToNumber, CodeStubAssembler) {
   auto input = Parameter<Object>(Descriptor::kArgument);
 
   Return(ToNumber(context, input));
+}
+
+TF_BUILTIN(ToBigInt, CodeStubAssembler) {
+  auto context = Parameter<Context>(Descriptor::kContext);
+  auto input = Parameter<Object>(Descriptor::kArgument);
+
+  Return(ToBigInt(context, input));
+}
+
+TF_BUILTIN(ToNumber_Baseline, CodeStubAssembler) {
+  auto input = Parameter<Object>(Descriptor::kArgument);
+  auto slot = UncheckedParameter<UintPtrT>(Descriptor::kSlot);
+  auto context = [this] { return LoadContextFromBaseline(); };
+
+  TVARIABLE(Smi, var_type_feedback);
+  TNode<Number> result = CAST(ToNumberOrNumeric(
+      context, input, &var_type_feedback, Object::Conversion::kToNumber));
+
+  auto feedback_vector = LoadFeedbackVectorFromBaseline();
+  UpdateFeedback(var_type_feedback.value(), feedback_vector, slot);
+  Return(result);
+}
+
+TF_BUILTIN(ToNumeric_Baseline, CodeStubAssembler) {
+  auto input = Parameter<Object>(Descriptor::kArgument);
+  auto slot = UncheckedParameter<UintPtrT>(Descriptor::kSlot);
+  auto context = [this] { return LoadContextFromBaseline(); };
+
+  TVARIABLE(Smi, var_type_feedback);
+  TNode<Numeric> result = ToNumberOrNumeric(context, input, &var_type_feedback,
+                                            Object::Conversion::kToNumeric);
+
+  auto feedback_vector = LoadFeedbackVectorFromBaseline();
+  UpdateFeedback(var_type_feedback.value(), feedback_vector, slot);
+  Return(result);
 }
 
 TF_BUILTIN(PlainPrimitiveToNumber, CodeStubAssembler) {
@@ -32,6 +69,13 @@ TF_BUILTIN(ToNumberConvertBigInt, CodeStubAssembler) {
   auto input = Parameter<Object>(Descriptor::kArgument);
 
   Return(ToNumber(context, input, BigIntHandling::kConvertToNumber));
+}
+
+TF_BUILTIN(ToBigIntConvertNumber, CodeStubAssembler) {
+  auto context = Parameter<Context>(Descriptor::kContext);
+  auto input = Parameter<Object>(Descriptor::kArgument);
+
+  Return(ToBigIntConvertNumber(context, input));
 }
 
 // ES6 section 7.1.2 ToBoolean ( argument )
@@ -50,12 +94,47 @@ TF_BUILTIN(ToBooleanLazyDeoptContinuation, CodeStubAssembler) {
   Return(FalseConstant());
 }
 
+TF_BUILTIN(MathClz32Continuation, CodeStubAssembler) {
+  auto input = Parameter<Number>(Descriptor::kArgument);
+  Return(ChangeInt32ToTaggedNoOverflow(NumberToMathClz32(input)));
+}
+
+// Requires parameter on stack so that it can be used as a continuation from a
+// LAZY deopt.
+TF_BUILTIN(MathRoundContinuation, CodeStubAssembler) {
+  auto value = Parameter<Number>(Descriptor::kArgument);
+  Return(ChangeFloat64ToTagged(Float64Round(ChangeNumberToFloat64(value))));
+}
+
+// Requires parameter on stack so that it can be used as a continuation from a
+// LAZY deopt.
+TF_BUILTIN(MathFloorContinuation, CodeStubAssembler) {
+  auto value = Parameter<Number>(Descriptor::kArgument);
+  Return(ChangeFloat64ToTagged(Float64Floor(ChangeNumberToFloat64(value))));
+}
+
+// Requires parameter on stack so that it can be used as a continuation from a
+// LAZY deopt.
+TF_BUILTIN(MathCeilContinuation, CodeStubAssembler) {
+  auto value = Parameter<Number>(Descriptor::kArgument);
+  Return(ChangeFloat64ToTagged(Float64Ceil(ChangeNumberToFloat64(value))));
+}
+
 // ES6 section 12.5.5 typeof operator
 TF_BUILTIN(Typeof, CodeStubAssembler) {
   auto object = Parameter<Object>(Descriptor::kObject);
 
   Return(Typeof(object));
 }
+
+TF_BUILTIN(Typeof_Baseline, CodeStubAssembler) {
+  auto object = Parameter<Object>(Descriptor::kValue);
+  auto slot = UncheckedParameter<UintPtrT>(Descriptor::kSlot);
+  auto feedback_vector = LoadFeedbackVectorFromBaseline();
+  Return(Typeof(object, slot, feedback_vector));
+}
+
+#include "src/codegen/undef-code-stub-assembler-macros.inc"
 
 }  // namespace internal
 }  // namespace v8

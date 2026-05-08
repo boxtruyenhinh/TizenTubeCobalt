@@ -16,12 +16,10 @@
 
 #include <unistd.h>
 
-#include "starboard/shared/pthread/thread_create_priority.h"
+#include "starboard/common/check_op.h"
+#include "starboard/thread.h"
 
 namespace starboard {
-namespace raspi {
-namespace shared {
-namespace open_max {
 
 namespace {
 
@@ -33,29 +31,30 @@ const int64_t kUpdateIntervalUsec = 5'000;
 
 }  // namespace
 
-VideoDecoder::VideoDecoder(SbMediaVideoCodec video_codec)
-    : resource_pool_(new DispmanxResourcePool(kResourcePoolSize)),
+OpenMaxVideoDecoder::OpenMaxVideoDecoder(JobQueue* job_queue,
+                                         SbMediaVideoCodec video_codec)
+    : JobOwner(job_queue),
+      resource_pool_(new DispmanxResourcePool(kResourcePoolSize)),
       eos_written_(false),
-      thread_(0),
       request_thread_termination_(false) {
-  SB_DCHECK(video_codec == kSbMediaVideoCodecH264);
-  update_job_ = std::bind(&VideoDecoder::Update, this);
+  SB_DCHECK_EQ(video_codec, kSbMediaVideoCodecH264);
+  update_job_ = std::bind(&OpenMaxVideoDecoder::Update, this);
   update_job_token_ = Schedule(update_job_, kUpdateIntervalUsec);
 }
 
-VideoDecoder::~VideoDecoder() {
-  if (thread_ != 0) {
+OpenMaxVideoDecoder::~OpenMaxVideoDecoder() {
+  if (thread_) {
     {
-      ScopedLock scoped_lock(mutex_);
+      std::lock_guard scoped_lock(mutex_);
       request_thread_termination_ = true;
     }
-    pthread_join(thread_, NULL);
+    pthread_join(*thread_, nullptr);
   }
   RemoveJobByToken(update_job_token_);
 }
 
-void VideoDecoder::Initialize(const DecoderStatusCB& decoder_status_cb,
-                              const ErrorCB& error_cb) {
+void OpenMaxVideoDecoder::Initialize(const DecoderStatusCB& decoder_status_cb,
+                                     const ErrorCB& error_cb) {
   SB_DCHECK(decoder_status_cb);
   SB_DCHECK(!decoder_status_cb_);
   SB_DCHECK(error_cb);
@@ -64,13 +63,16 @@ void VideoDecoder::Initialize(const DecoderStatusCB& decoder_status_cb,
   decoder_status_cb_ = decoder_status_cb;
   error_cb_ = error_cb;
 
-  SB_DCHECK(thread_ == 0);
-  pthread_create(&thread_, nullptr, &VideoDecoder::ThreadEntryPoint, this);
-  SB_DCHECK(thread_ != 0);
+  SB_DCHECK(!thread_);
+  pthread_t thread;
+  const int result = pthread_create(
+      &thread, nullptr, &OpenMaxVideoDecoder::ThreadEntryPoint, this);
+  SB_CHECK_EQ(result, 0);
+  thread_ = thread;
 }
 
-void VideoDecoder::WriteInputBuffers(const InputBuffers& input_buffers) {
-  SB_DCHECK(input_buffers.size() == 1);
+void OpenMaxVideoDecoder::WriteInputBuffers(const InputBuffers& input_buffers) {
+  SB_DCHECK_EQ(input_buffers.size(), 1);
   SB_DCHECK(input_buffers[0]);
   SB_DCHECK(decoder_status_cb_);
   SB_DCHECK(!eos_written_);
@@ -86,7 +88,7 @@ void VideoDecoder::WriteInputBuffers(const InputBuffers& input_buffers) {
   }
 }
 
-void VideoDecoder::WriteEndOfStream() {
+void OpenMaxVideoDecoder::WriteEndOfStream() {
   eos_written_ = true;
   if (first_input_written_) {
     queue_.Put(new Event(Event::kWriteEOS));
@@ -95,7 +97,7 @@ void VideoDecoder::WriteEndOfStream() {
   }
 }
 
-void VideoDecoder::Reset() {
+void OpenMaxVideoDecoder::Reset() {
   queue_.Put(new Event(Event::kReset));
   // TODO: we should introduce a wait here for |queue_| to be fully processed
   // before returning however the wait time is very long (over 40 seconds).
@@ -104,17 +106,17 @@ void VideoDecoder::Reset() {
   first_input_written_ = false;
 }
 
-void VideoDecoder::Update() {
+void OpenMaxVideoDecoder::Update() {
   if (eos_written_) {
     TryToDeliverOneFrame();
   }
   update_job_token_ = Schedule(update_job_, kUpdateIntervalUsec);
 }
 
-bool VideoDecoder::TryToDeliverOneFrame() {
+bool OpenMaxVideoDecoder::TryToDeliverOneFrame() {
   scoped_refptr<VideoFrame> frame;
   {
-    ScopedLock scoped_lock(mutex_);
+    std::lock_guard scoped_lock(mutex_);
     if (filled_buffers_.empty()) {
       return false;
     }
@@ -133,15 +135,16 @@ bool VideoDecoder::TryToDeliverOneFrame() {
 }
 
 // static
-void* VideoDecoder::ThreadEntryPoint(void* context) {
+void* OpenMaxVideoDecoder::ThreadEntryPoint(void* context) {
   pthread_setname_np(pthread_self(), "omx_video_decoder");
-  ::starboard::shared::pthread::ThreadSetPriority(kSbThreadPriorityHigh);
-  VideoDecoder* decoder = reinterpret_cast<VideoDecoder*>(context);
+  SbThreadSetPriority(kSbThreadPriorityHigh);
+  OpenMaxVideoDecoder* decoder =
+      reinterpret_cast<OpenMaxVideoDecoder*>(context);
   decoder->RunLoop();
   return NULL;
 }
 
-void VideoDecoder::RunLoop() {
+void OpenMaxVideoDecoder::RunLoop() {
   bool stream_ended = false;
   bool eos_written = false;
   OpenMaxVideoDecodeComponent component;
@@ -154,7 +157,7 @@ void VideoDecoder::RunLoop() {
   for (;;) {
     OMX_BUFFERHEADERTYPE* buffer = NULL;
     {
-      ScopedLock scoped_lock(mutex_);
+      std::lock_guard scoped_lock(mutex_);
 
       if (request_thread_termination_) {
         break;
@@ -169,7 +172,7 @@ void VideoDecoder::RunLoop() {
     }
 
     if (OMX_BUFFERHEADERTYPE* buffer = component.GetOutputBuffer()) {
-      ScopedLock scoped_lock(mutex_);
+      std::lock_guard scoped_lock(mutex_);
       filled_buffers_.push(buffer);
     }
 
@@ -179,7 +182,7 @@ void VideoDecoder::RunLoop() {
         int written = component.WriteData(
             current_buffer->data() + offset, size - offset,
             OpenMaxComponent::kDataNonEOS, current_buffer->timestamp());
-        SB_DCHECK(written >= 0);
+        SB_DCHECK_GE(written, 0);
         offset += written;
         if (written == 0) {
           break;
@@ -216,7 +219,7 @@ void VideoDecoder::RunLoop() {
       eos_written = component.WriteEOS();
       stream_ended = true;
     } else if (event->type == Event::kReset) {
-      ScopedLock scoped_lock(mutex_);
+      std::lock_guard scoped_lock(mutex_);
 
       while (!freed_buffers_.empty()) {
         component.DropOutputBuffer(freed_buffers_.front());
@@ -241,7 +244,7 @@ void VideoDecoder::RunLoop() {
     delete event;
   }
 
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   while (!freed_buffers_.empty()) {
     component.DropOutputBuffer(freed_buffers_.front());
     freed_buffers_.pop();
@@ -253,7 +256,7 @@ void VideoDecoder::RunLoop() {
   }
 }
 
-scoped_refptr<VideoDecoder::VideoFrame> VideoDecoder::CreateFrame(
+scoped_refptr<VideoFrame> OpenMaxVideoDecoder::CreateFrame(
     const OMX_BUFFERHEADERTYPE* buffer) {
   scoped_refptr<VideoFrame> frame;
   if (buffer->nFlags & OMX_BUFFERFLAG_EOS) {
@@ -282,7 +285,4 @@ scoped_refptr<VideoDecoder::VideoFrame> VideoDecoder::CreateFrame(
   return frame;
 }
 
-}  // namespace open_max
-}  // namespace shared
-}  // namespace raspi
 }  // namespace starboard

@@ -3,7 +3,8 @@
 # found in the LICENSE file.
 
 
-# Recipe module for Skia Swarming compile.
+# Recipe module for compiling Skia when the checkout has already been done
+# (e.g. repo brought in via CAS)
 
 PYTHON_VERSION_COMPATIBILITY = "PY3"
 
@@ -16,7 +17,6 @@ DEPS = [
   'recipe_engine/path',
   'recipe_engine/platform',
   'recipe_engine/properties',
-  'recipe_engine/python',
   'recipe_engine/step',
   'run',
   'vars',
@@ -26,8 +26,8 @@ DEPS = [
 def RunSteps(api):
   api.vars.setup()
 
-  checkout_root = api.path['start_dir']
-  out_dir = api.vars.cache_dir.join(
+  checkout_root = api.path.start_dir
+  out_dir = api.vars.cache_dir.joinpath(
       'work', 'skia', 'out', api.vars.builder_name, api.vars.configuration)
 
   try:
@@ -38,26 +38,11 @@ def RunSteps(api):
     api.build.copy_build_products(out_dir=out_dir, dst=dst)
   finally:
     if 'Win' in api.vars.builder_cfg.get('os', ''):
-      api.python.inline(
+      script = api.build.resource('cleanup_win_processes.py')
+      api.step(
           name='cleanup',
-          program='''
-# [VPYTHON:BEGIN]
-# wheel: <
-#  name: "infra/python/wheels/psutil/${vpython_platform}"
-#  version: "version:5.8.0.chromium.2"
-# >
-# [VPYTHON:END]
-
-import psutil
-for p in psutil.process_iter():
-  try:
-    if p.name in ('mspdbsrv.exe', 'vctip.exe', 'cl.exe', 'link.exe'):
-      p.kill()
-  except psutil._error.AccessDenied:
-    pass
-''',
-          infra_step=True,
-          venv=True)
+          cmd=['vpython3', script],
+          infra_step=True)
 
   api.run.check_failure()
 
@@ -75,10 +60,7 @@ def GenTests(api):
                      repository='https://skia.googlesource.com/skia.git',
                      revision='abc123',
                      path_config='kitchen',
-                     swarm_out_dir='[SWARM_OUT_DIR]') +
-      api.path.exists(
-          api.path['start_dir'].join('tmp', 'uninteresting_hashes.txt')
-      )
+                     swarm_out_dir='[SWARM_OUT_DIR]')
     )
     if 'Win' in builder:
       test += api.platform('win', 64)

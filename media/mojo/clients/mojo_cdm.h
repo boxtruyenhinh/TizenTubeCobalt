@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -26,7 +27,6 @@
 #include "mojo/public/cpp/bindings/associated_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -83,10 +83,14 @@ class MojoCdm final : public ContentDecryptionModule,
   // All GetDecryptor() calls must be made on the same thread.
   std::unique_ptr<CallbackRegistration> RegisterEventCB(EventCB event_cb) final;
   Decryptor* GetDecryptor() final;
-  absl::optional<base::UnguessableToken> GetCdmId() const final;
+  std::optional<base::UnguessableToken> GetCdmId() const final;
 #if BUILDFLAG(IS_WIN)
   bool RequiresMediaFoundationRenderer() final;
 #endif  // BUILDFLAG(IS_WIN)
+
+#if BUILDFLAG(USE_STARBOARD_MEDIA)
+  void GetMetrics(std::unique_ptr<GetMetricsCdmPromise> promise);
+#endif  // BUILDFLAG(USE_STARBOARD_MEDIA)
 
  private:
   ~MojoCdm() final;
@@ -133,7 +137,7 @@ class MojoCdm final : public ContentDecryptionModule,
 
   // CDM ID of the remote CDM. Set after initialization is completed. Must not
   // be invalid if initialization succeeded.
-  absl::optional<base::UnguessableToken> cdm_id_ GUARDED_BY(lock_);
+  std::optional<base::UnguessableToken> cdm_id_ GUARDED_BY(lock_);
 
   // The mojo::PendingRemote<mojom::Decryptor> exposed by the remote CDM. Set
   // after initialization is completed and cleared after |decryptor_| is
@@ -167,6 +171,11 @@ class MojoCdm final : public ContentDecryptionModule,
   CdmPromiseAdapter cdm_promise_adapter_;
 
   CallbackRegistry<EventCB::RunType> event_callbacks_;
+
+#if BUILDFLAG(USE_STARBOARD_MEDIA)
+  void OnMetricsReceived(uint32_t promise_id,
+                         const std::optional<std::string>& metrics_string);
+#endif  // BUILDFLAG(USE_STARBOARD_MEDIA)
 
   // This must be the last member.
   base::WeakPtrFactory<MojoCdm> weak_factory_{this};

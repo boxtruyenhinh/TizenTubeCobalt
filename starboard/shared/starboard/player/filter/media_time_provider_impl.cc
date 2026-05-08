@@ -14,62 +14,61 @@
 
 #include "starboard/shared/starboard/player/filter/media_time_provider_impl.h"
 
+#include <mutex>
 #include <utility>
 
 #include "starboard/common/log.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 MediaTimeProviderImpl::MediaTimeProviderImpl(
+    JobQueue* job_queue,
     std::unique_ptr<MonotonicSystemTimeProvider> system_time_provider)
-    : system_time_provider_(std::move(system_time_provider)) {
-  SB_DCHECK(system_time_provider_);
+    : JobOwner(job_queue),
+      system_time_provider_(std::move(system_time_provider)) {
+  SB_CHECK(system_time_provider_);
 }
 
 void MediaTimeProviderImpl::Play() {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
 
   if (is_playing_) {
     return;
   }
 
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   seek_to_time_ = GetCurrentMediaTime_Locked(&seek_to_time_set_at_);
   is_playing_ = true;
 }
 
 void MediaTimeProviderImpl::Pause() {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
 
   if (!is_playing_) {
     return;
   }
 
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   seek_to_time_ = GetCurrentMediaTime_Locked(&seek_to_time_set_at_);
   is_playing_ = false;
 }
 
 void MediaTimeProviderImpl::SetPlaybackRate(double playback_rate) {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
 
   if (playback_rate_ == playback_rate) {
     return;
   }
 
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   seek_to_time_ = GetCurrentMediaTime_Locked(&seek_to_time_set_at_);
   playback_rate_ = playback_rate;
 }
 
 void MediaTimeProviderImpl::Seek(int64_t seek_to_time) {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
 
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
 
   seek_to_time_ = seek_to_time;
   seek_to_time_set_at_ = system_time_provider_->GetMonotonicNow();
@@ -83,7 +82,7 @@ int64_t MediaTimeProviderImpl::GetCurrentMediaTime(bool* is_playing,
                                                    bool* is_eos_played,
                                                    bool* is_underflow,
                                                    double* playback_rate) {
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
 
   int64_t current = GetCurrentMediaTime_Locked();
 
@@ -97,8 +96,6 @@ int64_t MediaTimeProviderImpl::GetCurrentMediaTime(bool* is_playing,
 
 int64_t MediaTimeProviderImpl::GetCurrentMediaTime_Locked(
     int64_t* current_time /*= NULL*/) {
-  mutex_.DCheckAcquired();
-
   int64_t now = system_time_provider_->GetMonotonicNow();
 
   if (!is_playing_ || playback_rate_ == 0.0) {
@@ -115,8 +112,4 @@ int64_t MediaTimeProviderImpl::GetCurrentMediaTime_Locked(
   return seek_to_time_ + elapsed;
 }
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

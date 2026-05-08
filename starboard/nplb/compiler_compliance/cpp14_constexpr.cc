@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "starboard/configuration.h"
-#include "starboard/types.h"
+#include <stddef.h>
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -30,8 +28,7 @@ constexpr size_t CompileTimeStringLength(const char* str) {
   return length + 1;
 }
 
-SB_COMPILE_ASSERT(CompileTimeStringLength(kPangram) == sizeof(kPangram),
-                  CompileTimeStringLength_does_not_return_correct_length);
+static_assert(CompileTimeStringLength(kPangram) == sizeof(kPangram),
+              "CompileTimeStringLength does not return correct length");
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

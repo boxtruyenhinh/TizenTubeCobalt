@@ -5,12 +5,22 @@
  * found in the LICENSE file.
  */
 
+#include "bench/GpuTools.h"
 #include "bench/SKPBench.h"
 #include "include/core/SkSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrDirectContextPriv.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
 #include "tools/flags/CommandLineFlags.h"
 
+#if defined(SK_GRAPHITE)
+#include "include/gpu/graphite/Context.h"
+#include "include/gpu/graphite/Recorder.h"
+#include "src/gpu/graphite/RecorderPriv.h"
+#endif
+
+using namespace skia_private;
 
 // These CPU tile sizes are not good per se, but they are similar to what Chrome uses.
 static DEFINE_int(CPUbenchTileW, 256, "Tile width  used for CPU SKP playback.");
@@ -30,7 +40,7 @@ SKPBench::SKPBench(const char* name, const SkPicture* pic, const SkIRect& clip, 
 }
 
 SKPBench::~SKPBench() {
-    for (int i = 0; i < fSurfaces.count(); ++i) {
+    for (int i = 0; i < fSurfaces.size(); ++i) {
         fSurfaces[i]->unref();
     }
 }
@@ -49,7 +59,11 @@ void SKPBench::onPerCanvasPreDraw(SkCanvas* canvas) {
     bounds.intersect(fPic->cullRect().roundOut());
     SkAssertResult(!bounds.isEmpty());
 
+#if defined(SK_GRAPHITE)
+    const bool gpu = canvas->recordingContext() != nullptr || canvas->recorder() != nullptr;
+#else
     const bool gpu = canvas->recordingContext() != nullptr;
+#endif
     int tileW = gpu ? FLAGS_GPUbenchTileW : FLAGS_CPUbenchTileW,
         tileH = gpu ? FLAGS_GPUbenchTileH : FLAGS_CPUbenchTileH;
 
@@ -59,8 +73,8 @@ void SKPBench::onPerCanvasPreDraw(SkCanvas* canvas) {
     int xTiles = SkScalarCeilToInt(bounds.width()  / SkIntToScalar(tileW));
     int yTiles = SkScalarCeilToInt(bounds.height() / SkIntToScalar(tileH));
 
-    fSurfaces.reserve_back(xTiles * yTiles);
-    fTileRects.setReserve(xTiles * yTiles);
+    fSurfaces.reserve_exact(fSurfaces.size() + (xTiles * yTiles));
+    fTileRects.reserve(xTiles * yTiles);
 
     SkImageInfo ii = canvas->imageInfo().makeWH(tileW, tileH);
 
@@ -85,37 +99,30 @@ void SKPBench::onPerCanvasPreDraw(SkCanvas* canvas) {
 void SKPBench::onPerCanvasPostDraw(SkCanvas* canvas) {
     // Draw the last set of tiles into the main canvas in case we're
     // saving the images
-    for (int i = 0; i < fTileRects.count(); ++i) {
+    for (int i = 0; i < fTileRects.size(); ++i) {
         sk_sp<SkImage> image(fSurfaces[i]->makeImageSnapshot());
         canvas->drawImage(image,
                           SkIntToScalar(fTileRects[i].fLeft), SkIntToScalar(fTileRects[i].fTop));
     }
 
-    fSurfaces.reset();
-    fTileRects.rewind();
+    fSurfaces.clear();
+    fTileRects.clear();
 }
 
 bool SKPBench::isSuitableFor(Backend backend) {
-    return backend != kNonRendering_Backend;
+    return backend != Backend::kNonRendering;
 }
 
-SkIPoint SKPBench::onGetSize() {
-    return SkIPoint::Make(fClip.width(), fClip.height());
+SkISize SKPBench::onGetSize() {
+    return SkISize::Make(fClip.width(), fClip.height());
 }
 
-void SKPBench::onDraw(int loops, SkCanvas* canvas) {
+void SKPBench::onDrawFrame(int loops, SkCanvas* canvas, std::function<void()> submitFrame) {
     SkASSERT(fDoLooping || 1 == loops);
-    while (1) {
+    for (int i = 0; i < loops; ++i) {
         this->drawPicture();
-        if (0 == --loops) {
-            break;
-        }
-
-        auto direct = canvas->recordingContext() ? canvas->recordingContext()->asDirectContext()
-                                                 : nullptr;
-        // Ensure the GrContext doesn't combine ops across draw loops.
-        if (direct) {
-            direct->flushAndSubmit();
+        if (submitFrame) {
+            submitFrame();
         }
     }
 }
@@ -125,23 +132,22 @@ void SKPBench::drawMPDPicture() {
 }
 
 void SKPBench::drawPicture() {
-    for (int j = 0; j < fTileRects.count(); ++j) {
+    for (int j = 0; j < fTileRects.size(); ++j) {
         const SkMatrix trans = SkMatrix::Translate(-fTileRects[j].fLeft / fScale,
                                                    -fTileRects[j].fTop / fScale);
         fSurfaces[j]->getCanvas()->drawPicture(fPic.get(), &trans, nullptr);
     }
 
-    for (int j = 0; j < fTileRects.count(); ++j) {
-        fSurfaces[j]->flush();
+    for (int j = 0; j < fTileRects.size(); ++j) {
+        skgpu::Flush(fSurfaces[j].get());
     }
 }
 
-#include "src/gpu/GrGpu.h"
 static void draw_pic_for_stats(SkCanvas* canvas,
                                GrDirectContext* dContext,
                                const SkPicture* picture,
-                               SkTArray<SkString>* keys,
-                               SkTArray<double>* values) {
+                               TArray<SkString>* keys,
+                               TArray<double>* values) {
     dContext->priv().resetGpuStats();
     dContext->priv().resetContextStats();
     canvas->drawPicture(picture);
@@ -152,7 +158,7 @@ static void draw_pic_for_stats(SkCanvas* canvas,
     dContext->priv().dumpContextStatsKeyValuePairs(keys, values);
 }
 
-void SKPBench::getGpuStats(SkCanvas* canvas, SkTArray<SkString>* keys, SkTArray<double>* values) {
+void SKPBench::getGpuStats(SkCanvas* canvas, TArray<SkString>* keys, TArray<double>* values) {
     // we do a special single draw and then dump the key / value pairs
     auto direct = canvas->recordingContext() ? canvas->recordingContext()->asDirectContext()
                                              : nullptr;

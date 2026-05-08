@@ -193,15 +193,20 @@ void Debug::insertMessage(GLenum source,
         return;
     }
 
+    // TODO(geofflang) Check the synchronous flag and potentially flush messages from another
+    // thread.
+    // If isOutputSynchronous(), mMutex does not need to be held, but instead the message should be
+    // dropped/queued if it doesn't originate from the current context.  If !isOutputSynchronous(),
+    // the callback is expected to be thread-safe per spec, so there is no need for locking.
     if (mCallbackFunction != nullptr)
     {
-        // TODO(geofflang) Check the synchronous flag and potentially flush messages from another
-        // thread.
         mCallbackFunction(source, type, id, severity, static_cast<GLsizei>(message.length()),
                           message.c_str(), mCallbackUserParam);
     }
     else
     {
+        std::lock_guard<angle::SimpleMutex> lock(mMutex);
+
         if (mMessages.size() >= mMaxLoggedMessages)
         {
             // Drop messages over the limit
@@ -228,6 +233,8 @@ size_t Debug::getMessages(GLuint count,
                           GLsizei *lengths,
                           GLchar *messageLog)
 {
+    std::lock_guard<angle::SimpleMutex> lock(mMutex);
+
     size_t messageCount       = 0;
     size_t messageStringIndex = 0;
     while (messageCount <= count && !mMessages.empty())
@@ -271,7 +278,7 @@ size_t Debug::getMessages(GLuint count,
 
         if (lengths != nullptr)
         {
-            lengths[messageCount] = static_cast<GLsizei>(m.message.length());
+            lengths[messageCount] = static_cast<GLsizei>(m.message.length()) + 1;
         }
 
         mMessages.pop_front();
@@ -284,11 +291,13 @@ size_t Debug::getMessages(GLuint count,
 
 size_t Debug::getNextMessageLength() const
 {
-    return mMessages.empty() ? 0 : mMessages.front().message.length();
+    std::lock_guard<angle::SimpleMutex> lock(mMutex);
+    return mMessages.empty() ? 0 : mMessages.front().message.length() + 1;
 }
 
 size_t Debug::getMessageCount() const
 {
+    std::lock_guard<angle::SimpleMutex> lock(mMutex);
     return mMessages.size();
 }
 
@@ -336,6 +345,19 @@ void Debug::popGroup()
 size_t Debug::getGroupStackDepth() const
 {
     return mGroups.size();
+}
+
+void Debug::insertPerfWarning(GLenum severity, bool isLastRepeat, const char *message) const
+{
+    std::string msg = message;
+    if (isLastRepeat)
+    {
+        msg += " (this message will no longer repeat)";
+    }
+
+    // Note: insertMessage will acquire GetDebugMutex(), so it must be released before this call.
+    insertMessage(GL_DEBUG_SOURCE_API, GL_DEBUG_TYPE_PERFORMANCE, 0, severity, std::move(msg),
+                  gl::LOG_INFO);
 }
 
 bool Debug::isMessageEnabled(GLenum source, GLenum type, GLuint id, GLenum severity) const
@@ -462,7 +484,7 @@ void Debug::insertMessage(EGLenum error,
         INFO() << messageStream.str();
     }
 
-    // TODO(geofflang): Lock before checking the callback. http://anglebug.com/2464
+    // TODO(geofflang): Lock before checking the callback. http://anglebug.com/40096492
     if (mCallback && isMessageTypeEnabled(messageType))
     {
         mCallback(error, command, egl::ToEGLenum(messageType), threadLabel, objectLabel,

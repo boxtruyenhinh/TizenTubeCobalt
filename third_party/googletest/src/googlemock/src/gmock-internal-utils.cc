@@ -35,18 +35,16 @@
 
 #include "gmock/internal/gmock-internal-utils.h"
 
-#if GTEST_OS_STARBOARD
-#include "starboard/common/log.h"
-#endif
-
 #include <ctype.h>
 
 #include <array>
 #include <cctype>
 #include <cstdint>
 #include <cstring>
+#include <iostream>
 #include <ostream>  // NOLINT
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "gmock/gmock.h"
@@ -91,7 +89,7 @@ GTEST_API_ std::string ConvertIdentifierNameToWords(const char* id_name) {
                                  (!IsDigit(prev_char) && IsDigit(*p));
 
     if (IsAlNum(*p)) {
-      if (starts_new_word && result != "") result += ' ';
+      if (starts_new_word && !result.empty()) result += ' ';
       result += ToLower(*p);
     }
   }
@@ -162,23 +160,13 @@ GTEST_API_ void Log(LogSeverity severity, const std::string& message,
 
   if (severity == kWarning) {
     // Prints a GMOCK WARNING marker to make the warnings easily searchable.
-#if !GTEST_OS_STARBOARD
     std::cout << "\nGMOCK WARNING:";
-#endif
   }
   // Pre-pends a new-line to message if it doesn't start with one.
   if (message.empty() || message[0] != '\n') {
-#if !GTEST_OS_STARBOARD
     std::cout << "\n";
-#endif
   }
-
-#if GTEST_OS_STARBOARD
-  SB_LOG(INFO) << "\nGMOCK" << ((severity == kWarning) ? " WARNING" : "")
-               << ": " << message;
-#else
   std::cout << message;
-#endif
   if (stack_frames_to_skip >= 0) {
 #ifdef NDEBUG
     // In opt mode, we have to be conservative and skip no stack frame.
@@ -191,26 +179,13 @@ GTEST_API_ void Log(LogSeverity severity, const std::string& message,
 
     // Appends a new-line to message if it doesn't end with one.
     if (!message.empty() && *message.rbegin() != '\n') {
-#if GTEST_OS_STARBOARD
-      SB_LOG(INFO) << "\n";
-#else
       std::cout << "\n";
-#endif
     }
-
-#if GTEST_OS_STARBOARD
-    SB_LOG(INFO) << "Stack trace:\n"
-                 << ::testing::internal::GetCurrentOsStackTraceExceptTop(
-                     ::testing::UnitTest::GetInstance(), actual_to_skip);
-  }
-  SB_LOG(INFO) << ::std::flush;
-#else
     std::cout << "Stack trace:\n"
               << ::testing::internal::GetCurrentOsStackTraceExceptTop(
-                     ::testing::UnitTest::GetInstance(), actual_to_skip);
+                     actual_to_skip);
   }
   std::cout << ::std::flush;
-#endif
 }
 
 GTEST_API_ WithoutMatchers GetWithoutMatchers() { return WithoutMatchers(); }
@@ -225,20 +200,26 @@ GTEST_API_ void IllegalDoDefault(const char* file, int line) {
       "the variable in various places.");
 }
 
+constexpr char UndoWebSafeEncoding(char c) {
+  return c == '-' ? '+' : c == '_' ? '/' : c;
+}
+
 constexpr char UnBase64Impl(char c, const char* const base64, char carry) {
-  return *base64 == 0   ? static_cast<char>(65)
-         : *base64 == c ? carry
-                        : UnBase64Impl(c, base64 + 1, carry + 1);
+  return *base64 == 0 ? static_cast<char>(65)
+         : *base64 == c
+             ? carry
+             : UnBase64Impl(c, base64 + 1, static_cast<char>(carry + 1));
 }
 
 template <size_t... I>
-constexpr std::array<char, 256> UnBase64Impl(IndexSequence<I...>,
+constexpr std::array<char, 256> UnBase64Impl(std::index_sequence<I...>,
                                              const char* const base64) {
-  return {{UnBase64Impl(static_cast<char>(I), base64, 0)...}};
+  return {
+      {UnBase64Impl(UndoWebSafeEncoding(static_cast<char>(I)), base64, 0)...}};
 }
 
 constexpr std::array<char, 256> UnBase64(const char* const base64) {
-  return UnBase64Impl(MakeIndexSequence<256>{}, base64);
+  return UnBase64Impl(std::make_index_sequence<256>{}, base64);
 }
 
 static constexpr char kBase64[] =
@@ -261,7 +242,7 @@ bool Base64Unescape(const std::string& encoded, std::string* decoded) {
       return false;
     }
     if (bit_pos == 0) {
-      dst |= src_bin << 2;
+      dst |= static_cast<char>(src_bin << 2);
       bit_pos = 6;
     } else {
       dst |= static_cast<char>(src_bin >> (bit_pos - 2));

@@ -51,3 +51,4 @@ root.add("locator", "lib@PLUGIN_COBALT_IMPLEMENTATION@.so")
 root.add("user", "@PLUGIN_COBALT_USER@")
 root.add("group", "@PLUGIN_COBALT_GROUP@")
 configuration.add("root", root)
+

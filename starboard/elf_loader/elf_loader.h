@@ -15,12 +15,12 @@
 #ifndef STARBOARD_ELF_LOADER_ELF_LOADER_H_
 #define STARBOARD_ELF_LOADER_ELF_LOADER_H_
 
+#include <atomic>
 #include <memory>
 #include <string>
 
 #include "starboard/configuration.h"
 
-namespace starboard {
 namespace elf_loader {
 
 class ElfLoaderImpl;
@@ -64,13 +64,12 @@ class ElfLoader {
   std::unique_ptr<ElfLoaderImpl> impl_;
 
   // The single ELF Loader instance.
-  static ElfLoader* g_instance;
+  static std::atomic<ElfLoader*> g_instance;
 
   ElfLoader(const ElfLoader&) = delete;
   void operator=(const ElfLoader&) = delete;
 };
 
 }  // namespace elf_loader
-}  // namespace starboard
 
 #endif  // STARBOARD_ELF_LOADER_ELF_LOADER_H_

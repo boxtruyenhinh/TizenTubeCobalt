@@ -20,15 +20,13 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 
-#include "starboard/common/condition_variable.h"
-#include "starboard/common/mutex.h"
 #include "starboard/common/string.h"
 #include "starboard/configuration_constants.h"
 #include "starboard/drm.h"
 #include "starboard/media.h"
-#include "starboard/memory.h"
 #include "starboard/shared/starboard/media/media_util.h"
 #include "starboard/shared/starboard/player/filter/stub_player_components_factory.h"
 #include "starboard/shared/starboard/player/filter/testing/test_util.h"
@@ -44,11 +42,6 @@
 struct SbPlayerPrivate {};
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
-namespace testing {
 
 class VideoDecoderTestFixture {
  public:
@@ -77,12 +70,12 @@ class VideoDecoderTestFixture {
   // stop further processing.
   typedef std::function<void(const Event&, bool* continue_process)> EventCB;
 
-  VideoDecoderTestFixture(JobQueue* job_queue,
-                          ::starboard::testing::FakeGraphicsContextProvider*
-                              fake_graphics_context_provider,
-                          const char* test_filename,
-                          SbPlayerOutputMode output_mode,
-                          bool using_stub_decoder);
+  VideoDecoderTestFixture(
+      JobQueue* job_queue,
+      FakeGraphicsContextProvider* fake_graphics_context_provider,
+      const char* test_filename,
+      SbPlayerOutputMode output_mode,
+      bool using_stub_decoder);
 
   ~VideoDecoderTestFixture() {
     if (video_decoder_) {
@@ -132,16 +125,16 @@ class VideoDecoderTestFixture {
   const std::unique_ptr<VideoDecoder>& video_decoder() const {
     return video_decoder_;
   }
-  const video_dmp::VideoDmpReader& dmp_reader() const { return dmp_reader_; }
+  const VideoDmpReader& dmp_reader() const { return dmp_reader_; }
   SbPlayerOutputMode output_mode() const { return output_mode_; }
   size_t GetDecodedFramesCount() const { return decoded_frames_.size(); }
   void PopDecodedFrame() { decoded_frames_.pop_front(); }
   void ClearDecodedFrames() { decoded_frames_.clear(); }
 
  protected:
-  JobQueue* job_queue_;
+  JobQueue* const job_queue_;
 
-  Mutex mutex_;
+  std::mutex mutex_;
   std::deque<Event> event_queue_;
 
   // Test parameter filename for the VideoDmpReader to load and test with.
@@ -154,9 +147,8 @@ class VideoDecoderTestFixture {
   // platform-specific VideoDecoderImpl.
   bool using_stub_decoder_;
 
-  ::starboard::testing::FakeGraphicsContextProvider*
-      fake_graphics_context_provider_;
-  video_dmp::VideoDmpReader dmp_reader_;
+  FakeGraphicsContextProvider* fake_graphics_context_provider_;
+  VideoDmpReader dmp_reader_;
   std::unique_ptr<VideoDecoder> video_decoder_;
 
   bool need_more_input_ = true;
@@ -172,11 +164,6 @@ class VideoDecoderTestFixture {
   std::map<size_t, uint8_t> invalid_inputs_;
 };
 
-}  // namespace testing
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_TESTING_VIDEO_DECODER_TEST_FIXTURE_H_

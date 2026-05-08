@@ -12,24 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/shared/starboard/media/media_support_internal.h"
+// clang-format on
 
 #include "starboard/media.h"
 
-using ::starboard::shared::starboard::media::MimeType;
+namespace starboard {
 
-bool SbMediaIsVideoSupported(SbMediaVideoCodec video_codec,
-                             const MimeType* mime_type,
-                             int profile,
-                             int level,
-                             int bit_depth,
-                             SbMediaPrimaryId primary_id,
-                             SbMediaTransferId transfer_id,
-                             SbMediaMatrixId matrix_id,
-                             int frame_width,
-                             int frame_height,
-                             int64_t bitrate,
-                             int fps,
-                             bool decode_to_texture_required) {
+bool MediaIsVideoSupported(SbMediaVideoCodec video_codec,
+                           const MimeType* mime_type,
+                           int profile,
+                           int level,
+                           int bit_depth,
+                           SbMediaPrimaryId primary_id,
+                           SbMediaTransferId transfer_id,
+                           SbMediaMatrixId matrix_id,
+                           int frame_width,
+                           int frame_height,
+                           int64_t bitrate,
+                           int fps,
+                           bool decode_to_texture_required) {
   return false;
 }
+
+}  // namespace starboard

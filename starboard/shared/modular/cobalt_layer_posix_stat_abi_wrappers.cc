@@ -12,22 +12,46 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#if SB_API_VERSION >= 16
-
 #include <sys/stat.h>
 
 extern "C" {
 
 int __abi_wrap_fstat(int fildes, struct stat* info);
-int __abi_wrap_stat(const char* path, struct stat* info);
 
 int fstat(int fildes, struct stat* info) {
   return __abi_wrap_fstat(fildes, info);
 }
 
-int stat(const char* path, struct stat* info) {
-  return __abi_wrap_stat(path, info);
-}
+int __abi_wrap_chmod(const char* path, mode_t mode);
+
+int chmod(const char* path, mode_t mode) {
+  return __abi_wrap_chmod(path, mode);
 }
 
-#endif  // SB_API_VERSION >= 16
+int __abi_wrap_fchmod(int fd, mode_t mode);
+
+int fchmod(int fd, mode_t mode) {
+  return __abi_wrap_fchmod(fd, mode);
+}
+
+int __abi_wrap_utimensat(int fildes,
+                         const char* path,
+                         const struct timespec times[2],
+                         int flag);
+
+int utimensat(int fildes,
+              const char* path,
+              const struct timespec times[2],
+              int flag) {
+  return __abi_wrap_utimensat(fildes, path, times, flag);
+}
+
+int __abi_wrap_fstatat(int fildes,
+                       const char* path,
+                       struct stat* info,
+                       int flag);
+
+int fstatat(int fildes, const char* path, struct stat* info, int flag) {
+  return __abi_wrap_fstatat(fildes, path, info, flag);
+}
+}

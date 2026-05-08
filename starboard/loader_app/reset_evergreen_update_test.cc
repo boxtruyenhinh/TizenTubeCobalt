@@ -20,12 +20,11 @@
 #include <vector>
 
 #include "starboard/common/file.h"
-#include "starboard/directory.h"
+#include "starboard/configuration_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if SB_IS(EVERGREEN_COMPATIBLE)
 
-namespace starboard {
 namespace loader_app {
 namespace {
 
@@ -92,6 +91,5 @@ TEST(ResetEvergreenUpdateTest, TestSunnyDaySubdir) {
 }
 }  // namespace
 }  // namespace loader_app
-}  // namespace starboard
 
 #endif  //  SB_IS(EVERGREEN_COMPATIBLE)

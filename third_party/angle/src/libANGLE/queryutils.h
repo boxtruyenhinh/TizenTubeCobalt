@@ -43,7 +43,7 @@ void QueryFramebufferAttachmentParameteriv(const Context *context,
 void QueryBufferParameteriv(const Buffer *buffer, GLenum pname, GLint *params);
 void QueryBufferParameteri64v(const Buffer *buffer, GLenum pname, GLint64 *params);
 void QueryBufferPointerv(const Buffer *buffer, GLenum pname, void **params);
-void QueryProgramiv(Context *context, const Program *program, GLenum pname, GLint *params);
+void QueryProgramiv(Context *context, Program *program, GLenum pname, GLint *params);
 void QueryRenderbufferiv(const Context *context,
                          const Renderbuffer *renderbuffer,
                          GLenum pname,
@@ -63,6 +63,10 @@ void QueryTexParameterfv(const Context *context,
                          const Texture *texture,
                          GLenum pname,
                          GLfloat *params);
+void QueryTexParameterxv(const Context *context,
+                         const Texture *texture,
+                         GLenum pname,
+                         GLfixed *params);
 void QueryTexParameteriv(const Context *context,
                          const Texture *texture,
                          GLenum pname,
@@ -109,13 +113,30 @@ void QueryVertexAttribIuiv(const VertexAttribute &attrib,
                            GLuint *params);
 
 void QueryActiveUniformBlockiv(const Program *program,
-                               GLuint uniformBlockIndex,
+                               UniformBlockIndex uniformBlockIndex,
                                GLenum pname,
                                GLint *params);
 
-void QueryInternalFormativ(const TextureCaps &format, GLenum pname, GLsizei bufSize, GLint *params);
+void QueryInternalFormativ(const Context *context,
+                           const Texture *texture,
+                           GLenum internalformat,
+                           const TextureCaps &format,
+                           GLenum pname,
+                           GLsizei bufSize,
+                           GLint *params);
 
 void QueryFramebufferParameteriv(const Framebuffer *framebuffer, GLenum pname, GLint *params);
+
+void QueryFramebufferPixelLocalStorageParameterfv(Context *context,
+                                                  GLint plane,
+                                                  GLenum pname,
+                                                  GLsizei *length,
+                                                  GLfloat *params);
+void QueryFramebufferPixelLocalStorageParameteriv(Context *context,
+                                                  GLint plane,
+                                                  GLenum pname,
+                                                  GLsizei *length,
+                                                  GLint *params);
 
 angle::Result QuerySynciv(const Context *context,
                           const Sync *sync,
@@ -130,6 +151,8 @@ void SetTexParameteri(Context *context, Texture *texture, GLenum pname, GLint pa
 void SetTexParameteriv(Context *context, Texture *texture, GLenum pname, const GLint *params);
 void SetTexParameterIiv(Context *context, Texture *texture, GLenum pname, const GLint *params);
 void SetTexParameterIuiv(Context *context, Texture *texture, GLenum pname, const GLuint *params);
+void SetTexParameterx(Context *context, Texture *texture, GLenum pname, GLfixed param);
+void SetTexParameterxv(Context *context, Texture *texture, GLenum pname, const GLfixed *params);
 
 void SetSamplerParameterf(Context *context, Sampler *sampler, GLenum pname, GLfloat param);
 void SetSamplerParameterfv(Context *context, Sampler *sampler, GLenum pname, const GLfloat *params);
@@ -146,7 +169,7 @@ void SetFramebufferParameteri(const Context *context,
                               GLenum pname,
                               GLint param);
 
-void SetProgramParameteri(Program *program, GLenum pname, GLint value);
+void SetProgramParameteri(const Context *context, Program *program, GLenum pname, GLint value);
 
 GLint GetUniformResourceProperty(const Program *program, GLuint index, const GLenum prop);
 
@@ -154,7 +177,8 @@ GLuint QueryProgramResourceIndex(const Program *program,
                                  GLenum programInterface,
                                  const GLchar *name);
 
-void QueryProgramResourceName(const Program *program,
+void QueryProgramResourceName(const Context *context,
+                              const Program *program,
                               GLenum programInterface,
                               GLuint index,
                               GLsizei bufSize,
@@ -166,7 +190,7 @@ GLint QueryProgramResourceLocation(const Program *program,
                                    const GLchar *name);
 void QueryProgramResourceiv(const Program *program,
                             GLenum programInterface,
-                            GLuint index,
+                            UniformBlockIndex index,
                             GLsizei propCount,
                             const GLenum *props,
                             GLsizei bufSize,
@@ -177,6 +201,13 @@ void QueryProgramInterfaceiv(const Program *program,
                              GLenum programInterface,
                              GLenum pname,
                              GLint *params);
+
+angle::Result SetMemoryObjectParameteriv(const Context *context,
+                                         MemoryObject *memoryObject,
+                                         GLenum pname,
+                                         const GLint *params);
+void QueryMemoryObjectParameteriv(const MemoryObject *memoryObject, GLenum pname, GLint *params);
+
 // GLES1 emulation
 
 ClientVertexArrayType ParamToVertexArrayType(GLenum param);
@@ -235,7 +266,7 @@ void SetPointParameter(GLES1State *state, PointParameter pname, const GLfloat *p
 void GetPointParameter(const GLES1State *state, PointParameter pname, GLfloat *params);
 
 void SetPointSize(GLES1State *state, GLfloat size);
-void GetPointSize(GLES1State *state, GLfloat *sizeOut);
+void GetPointSize(const GLES1State *state, GLfloat *sizeOut);
 
 unsigned int GetTexParameterCount(GLenum pname);
 
@@ -243,6 +274,16 @@ bool GetQueryParameterInfo(const State &glState,
                            GLenum pname,
                            GLenum *type,
                            unsigned int *numParams);
+
+bool GetIndexedQueryParameterInfo(const State &glState,
+                                  GLenum target,
+                                  GLenum *type,
+                                  unsigned int *numParams);
+
+void QueryProgramPipelineiv(const Context *context,
+                            ProgramPipeline *programPipeline,
+                            GLenum pname,
+                            GLint *params);
 }  // namespace gl
 
 namespace egl
@@ -256,9 +297,18 @@ void QueryConfigAttrib(const Config *config, EGLint attribute, EGLint *value);
 
 void QueryContextAttrib(const gl::Context *context, EGLint attribute, EGLint *value);
 
-void QuerySurfaceAttrib(const Surface *surface, EGLint attribute, EGLint *value);
-void SetSurfaceAttrib(Surface *surface, EGLint attribute, EGLint value);
-Error GetSyncAttrib(Display *display, Sync *sync, EGLint attribute, EGLint *value);
+egl::Error QuerySurfaceAttrib(const Display *display,
+                              const gl::Context *context,
+                              Surface *surface,
+                              EGLint attribute,
+                              EGLint *value);
+egl::Error SetSurfaceAttrib(Surface *surface, EGLint attribute, EGLint value);
+Error GetSyncAttrib(Display *display, SyncID sync, EGLint attribute, EGLint *value);
+egl::Error QuerySurfaceAttrib64KHR(const Display *display,
+                                   const gl::Context *context,
+                                   Surface *surface,
+                                   EGLint attribute,
+                                   EGLAttribKHR *value);
 
 }  // namespace egl
 

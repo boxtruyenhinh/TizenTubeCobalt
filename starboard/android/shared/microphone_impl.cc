@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/shared/starboard/microphone/microphone_internal.h"
+// clang-format on
 
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
@@ -20,19 +22,20 @@
 #include <algorithm>
 #include <cstddef>
 #include <memory>
+#include <mutex>
 #include <queue>
 
-#include "starboard/android/shared/jni_env_ext.h"
+#include "starboard/android/shared/audio_permission_requester.h"
+#include "starboard/android/shared/starboard_bridge.h"
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
-#include "starboard/common/mutex.h"
-#include "starboard/memory.h"
 #include "starboard/shared/starboard/thread_checker.h"
-
-using starboard::android::shared::JniEnvExt;
+#include "third_party/jni_zero/jni_zero.h"
 
 namespace starboard {
-namespace android {
-namespace shared {
+
+using jni_zero::AttachCurrentThread;
+
 namespace {
 
 const int kSampleRateInHz = 16000;
@@ -85,10 +88,10 @@ class SbMicrophoneImpl : public SbMicrophonePrivate {
   // Keeps track of the microphone's current state.
   State state_;
   // Audio data that has been delivered to the buffer queue.
-  Mutex delivered_queue_mutex_;
+  std::mutex delivered_queue_mutex_;
   std::queue<int16_t*> delivered_queue_;
   // Audio data that is ready to be read.
-  Mutex ready_queue_mutex_;
+  std::mutex ready_queue_mutex_;
   std::queue<int16_t*> ready_queue_;
 };
 
@@ -106,31 +109,23 @@ SbMicrophoneImpl::~SbMicrophoneImpl() {
 }
 
 bool SbMicrophoneImpl::RequestAudioPermission() {
-  JniEnvExt* env = JniEnvExt::Get();
-  jobject j_audio_permission_requester =
-      static_cast<jobject>(env->CallStarboardObjectMethodOrAbort(
-          "getAudioPermissionRequester",
-          "()Ldev/cobalt/coat/AudioPermissionRequester;"));
-  jboolean j_permission = env->CallBooleanMethodOrAbort(
-      j_audio_permission_requester, "requestRecordAudioPermission", "(J)Z",
-      reinterpret_cast<intptr_t>(this));
-  return j_permission;
+  JNIEnv* env = AttachCurrentThread();
+  return RequestRecordAudioPermission(env);
 }
 
 // static
 bool SbMicrophoneImpl::IsMicrophoneDisconnected() {
-  JniEnvExt* env = JniEnvExt::Get();
+  JNIEnv* env = AttachCurrentThread();
   jboolean j_microphone =
-      env->CallStarboardBooleanMethodOrAbort("isMicrophoneDisconnected", "()Z");
-  return j_microphone;
+      StarboardBridge::GetInstance()->IsMicrophoneDisconnected(env);
+  return j_microphone == JNI_TRUE;
 }
 
 // static
 bool SbMicrophoneImpl::IsMicrophoneMute() {
-  JniEnvExt* env = JniEnvExt::Get();
-  jboolean j_microphone =
-      env->CallStarboardBooleanMethodOrAbort("isMicrophoneMute", "()Z");
-  return j_microphone;
+  JNIEnv* env = AttachCurrentThread();
+  jboolean j_microphone = StarboardBridge::GetInstance()->IsMicrophoneMute(env);
+  return j_microphone == JNI_TRUE;
 }
 
 bool SbMicrophoneImpl::Open() {
@@ -174,7 +169,7 @@ bool SbMicrophoneImpl::StartRecording() {
     int16_t* buffer = new int16_t[kSamplesPerBuffer];
     memset(buffer, 0, kBufferSizeInBytes);
     {
-      ScopedLock lock(delivered_queue_mutex_);
+      std::lock_guard lock(delivered_queue_mutex_);
       delivered_queue_.push(buffer);
     }
     SLresult result =
@@ -253,7 +248,7 @@ int SbMicrophoneImpl::Read(void* out_audio_data, int audio_data_size) {
   int read_bytes = 0;
   std::unique_ptr<int16_t> buffer;
   {
-    ScopedLock lock(ready_queue_mutex_);
+    std::lock_guard lock(ready_queue_mutex_);
     // Go through the ready queue, reading and sending audio data.
     while (!ready_queue_.empty() &&
            audio_data_size - read_bytes >= kBufferSizeInBytes) {
@@ -284,7 +279,7 @@ void SbMicrophoneImpl::SwapAndPublishBuffer(
 void SbMicrophoneImpl::SwapAndPublishBuffer() {
   int16_t* buffer = nullptr;
   {
-    ScopedLock lock(delivered_queue_mutex_);
+    std::lock_guard lock(delivered_queue_mutex_);
     if (!delivered_queue_.empty()) {
       // The front item in the delivered queue already has the buffered data, so
       // move it from the delivered queue to the ready queue for future reads.
@@ -294,19 +289,20 @@ void SbMicrophoneImpl::SwapAndPublishBuffer() {
   }
 
   if (buffer != NULL) {
-    ScopedLock lock(ready_queue_mutex_);
+    std::lock_guard lock(ready_queue_mutex_);
     ready_queue_.push(buffer);
   }
 
   if (state_ == kOpened) {
-    int16_t* buffer = new int16_t[kSamplesPerBuffer];
-    memset(buffer, 0, kBufferSizeInBytes);
+    int16_t* open_buffer = new int16_t[kSamplesPerBuffer];
+    memset(open_buffer, 0, kBufferSizeInBytes);
     {
-      ScopedLock lock(delivered_queue_mutex_);
-      delivered_queue_.push(buffer);
+      std::lock_guard lock(delivered_queue_mutex_);
+      delivered_queue_.push(open_buffer);
     }
     SLresult result =
-        (*buffer_object_)->Enqueue(buffer_object_, buffer, kBufferSizeInBytes);
+        (*buffer_object_)
+            ->Enqueue(buffer_object_, open_buffer, kBufferSizeInBytes);
     CheckReturnValue(result);
   }
 }
@@ -459,7 +455,7 @@ void SbMicrophoneImpl::ClearBuffer() {
   }
 
   {
-    ScopedLock lock(delivered_queue_mutex_);
+    std::lock_guard lock(delivered_queue_mutex_);
     while (!delivered_queue_.empty()) {
       delete[] delivered_queue_.front();
       delivered_queue_.pop();
@@ -467,7 +463,7 @@ void SbMicrophoneImpl::ClearBuffer() {
   }
 
   {
-    ScopedLock lock(ready_queue_mutex_);
+    std::lock_guard lock(ready_queue_mutex_);
     while (!ready_queue_.empty()) {
       delete[] ready_queue_.front();
       ready_queue_.pop();
@@ -475,8 +471,6 @@ void SbMicrophoneImpl::ClearBuffer() {
   }
 }
 
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard
 
 int SbMicrophonePrivate::GetAvailableMicrophones(
@@ -485,12 +479,11 @@ int SbMicrophonePrivate::GetAvailableMicrophones(
   // Note that there is no way of checking for a connected microphone/device
   // before API 23, so GetAvailableMicrophones() will assume a microphone is
   // connected and always return 1 on APIs < 23.
-  if (starboard::android::shared::SbMicrophoneImpl::
-          IsMicrophoneDisconnected()) {
+  if (starboard::SbMicrophoneImpl::IsMicrophoneDisconnected()) {
     SB_DLOG(WARNING) << "No microphone connected.";
     return 0;
   }
-  if (starboard::android::shared::SbMicrophoneImpl::IsMicrophoneMute()) {
+  if (starboard::SbMicrophoneImpl::IsMicrophoneMute()) {
     SB_DLOG(WARNING) << "Microphone is muted.";
     return 0;
   }
@@ -499,10 +492,8 @@ int SbMicrophonePrivate::GetAvailableMicrophones(
     // Only support one microphone.
     out_info_array[0].id = reinterpret_cast<SbMicrophoneId>(1);
     out_info_array[0].type = kSbMicrophoneUnknown;
-    out_info_array[0].max_sample_rate_hz =
-        starboard::android::shared::kSampleRateInHz;
-    out_info_array[0].min_read_size =
-        starboard::android::shared::kSamplesPerBuffer;
+    out_info_array[0].max_sample_rate_hz = starboard::kSampleRateInHz;
+    out_info_array[0].min_read_size = starboard::kSamplesPerBuffer;
   }
 
   return 1;
@@ -515,7 +506,7 @@ bool SbMicrophonePrivate::IsMicrophoneSampleRateSupported(
     return false;
   }
 
-  return sample_rate_in_hz == starboard::android::shared::kSampleRateInHz;
+  return sample_rate_in_hz == starboard::kSampleRateInHz;
 }
 
 namespace {
@@ -538,7 +529,7 @@ SbMicrophone SbMicrophonePrivate::CreateMicrophone(SbMicrophoneId id,
     return kSbMicrophoneInvalid;
   }
 
-  s_microphone = new starboard::android::shared::SbMicrophoneImpl();
+  s_microphone = new starboard::SbMicrophoneImpl();
   return s_microphone;
 }
 
@@ -547,21 +538,9 @@ void SbMicrophonePrivate::DestroyMicrophone(SbMicrophone microphone) {
     return;
   }
 
-  SB_DCHECK(s_microphone == microphone);
+  SB_DCHECK_EQ(s_microphone, microphone);
   s_microphone->Close();
 
   delete s_microphone;
   s_microphone = kSbMicrophoneInvalid;
-}
-
-extern "C" SB_EXPORT_PLATFORM void
-Java_dev_cobalt_coat_AudioPermissionRequester_nativeHandlePermission(
-    JNIEnv* env,
-    jobject unused_this,
-    jlong nativeSbMicrophoneImpl,
-    jboolean is_granted) {
-  starboard::android::shared::SbMicrophoneImpl* native =
-      reinterpret_cast<starboard::android::shared::SbMicrophoneImpl*>(
-          nativeSbMicrophoneImpl);
-  native->SetPermission(is_granted);
 }

@@ -12,10 +12,10 @@ DEPS = [
   'recipe_engine/context',
   'recipe_engine/file',
   'recipe_engine/path',
-  'recipe_engine/python',
   'recipe_engine/step',
   'run',
   'vars',
+  'xcode',
 ]
 
 from recipe_engine.recipe_api import Property

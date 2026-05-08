@@ -1,4 +1,4 @@
-// Copyright 2023 The Cobalt Authors. All Rights Reserved.
+// Copyright 2025 The Cobalt Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,164 +15,186 @@
 #ifndef COBALT_BROWSER_METRICS_COBALT_METRICS_SERVICE_CLIENT_H_
 #define COBALT_BROWSER_METRICS_COBALT_METRICS_SERVICE_CLIENT_H_
 
-#include <stdint.h>
-
 #include <memory>
-#include <string>
+#include <string_view>
 
-#include "base/callback.h"
-#include "base/strings/string16.h"
+#include "base/memory/weak_ptr.h"
+#include "base/threading/sequence_bound.h"
 #include "base/time/time.h"
-#include "cobalt/base/event_dispatcher.h"
-#include "cobalt/browser/metrics/cobalt_enabled_state_provider.h"
+#include "cobalt/browser/metrics/cobalt_cpu_metrics_emitter.h"
+#include "cobalt/browser/metrics/cobalt_memory_metrics_emitter.h"
 #include "cobalt/browser/metrics/cobalt_metrics_log_uploader.h"
-#include "components/metrics/metrics_log_uploader.h"
-#include "components/metrics/metrics_reporting_default_state.h"
-#include "components/metrics/metrics_service.h"
+#include "cobalt/common/cobalt_thread_checker.h"
 #include "components/metrics/metrics_service_client.h"
-#include "components/metrics/metrics_state_manager.h"
-#include "third_party/metrics_proto/system_profile.pb.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
 
+class PrefService;
+namespace h5vcc_metrics {
+namespace mojom {
+class MetricsListener;
+}
+}  // namespace h5vcc_metrics
+
+namespace memory_instrumentation {
+class GlobalMemoryDump;
+}
+
+namespace metrics {
+class MetricsService;
+class MetricsStateManager;
+}  // namespace metrics
+
+namespace variations {
+class SyntheticTrialRegistry;
+}
 
 namespace cobalt {
-namespace browser {
-namespace metrics {
 
-class MetricsLogUploader;
-class MetricsService;
+constexpr auto kStandardUploadIntervalMinutes = base::Minutes(5);
 
-// A Cobalt-specific implementation of Metrics Service Client. This is the
-// primary interaction point to provide "embedder" specific implementations
-// to support the metric's service.
-class CobaltMetricsServiceClient : public ::metrics::MetricsServiceClient {
+// The minimum frequency in which we can mark the app as non idle for reporting
+// reasons.
+constexpr base::TimeDelta kMinIdleRefreshInterval = base::Seconds(30);
+
+// This class allows for necessary customizations of metrics::MetricsService,
+// the central metrics (e.g. UMA) collecting and reporting control. Threading:
+// this class is intended to be used on a single thread after construction.
+// Usually it's created in the early Browser times (e.g.
+// BrowserMainParts::PreCreateThreads, so in practice threading doesn't matter
+// much.
+class CobaltMetricsServiceClient : public metrics::MetricsServiceClient {
  public:
-  ~CobaltMetricsServiceClient() override{};
+  ~CobaltMetricsServiceClient() override;
 
-  // Set event dispatcher to be used to publish any metrics events (eg upload).
-  void SetEventDispatcher(const base::EventDispatcher* event_dispatcher);
+  CobaltMetricsServiceClient(const CobaltMetricsServiceClient&) = delete;
+  CobaltMetricsServiceClient& operator=(const CobaltMetricsServiceClient&) =
+      delete;
 
-  // Returns the MetricsService instance that this client is associated with.
-  // With the exception of testing contexts, the returned instance must be valid
-  // for the lifetime of this object (typically, the embedder's client
-  // implementation will own the MetricsService instance being returned).
+  // Factory function.
+  static std::unique_ptr<CobaltMetricsServiceClient> Create(
+      metrics::MetricsStateManager* state_manager,
+      std::unique_ptr<variations::SyntheticTrialRegistry>
+          synthetic_trial_registry,
+      PrefService* local_state);
+
+  // ::metrics::MetricsServiceClient:
+  variations::SyntheticTrialRegistry* GetSyntheticTrialRegistry() override;
   ::metrics::MetricsService* GetMetricsService() override;
-
-  // Returns the UkmService instance that this client is associated with.
-  ukm::UkmService* GetUkmService() override;
-
-  // Registers the client id with other services (e.g. crash reporting), called
-  // when metrics recording gets enabled.
   void SetMetricsClientId(const std::string& client_id) override;
-
-  // Returns the product value to use in uploaded reports, which will be used to
-  // set the ChromeUserMetricsExtension.product field. See comments on that
-  // field on why it's an int32_t rather than an enum.
   int32_t GetProduct() override;
-
-  // Returns the current application locale (e.g. "en-US").
   std::string GetApplicationLocale() override;
-
-  // Retrieves the brand code string associated with the install, returning
-  // false if no brand code is available.
+  const network_time::NetworkTimeTracker* GetNetworkTimeTracker() override;
   bool GetBrand(std::string* brand_code) override;
-
-  // Returns the release channel (e.g. stable, beta, etc) of the application.
   ::metrics::SystemProfileProto::Channel GetChannel() override;
-
-  // Returns the version of the application as a string.
+  bool IsExtendedStableChannel() override;
   std::string GetVersionString() override;
-
-  // Called by the metrics service when a new environment has been recorded.
-  // Takes the serialized environment as a parameter. The contents of
-  // |serialized_environment| are consumed by the call, but the caller maintains
-  // ownership.
-  void OnEnvironmentUpdate(std::string* serialized_environment) override;
-
-  // Called by the metrics service to record a clean shutdown.
-  void OnLogCleanShutdown() override {}
-
-  // Called prior to a metrics log being closed, allowing the client to
-  // collect extra histograms that will go in that log. Asynchronous API -
-  // the client implementation should call |done_callback| when complete.
-  void CollectFinalMetricsForLog(const base::Closure& done_callback) override;
-
-  // Get the URL of the metrics server.
-  std::string GetMetricsServerUrl() override;
-
-  // Get the fallback HTTP URL of the metrics server.
-  std::string GetInsecureMetricsServerUrl() override;
-
-  // Creates a MetricsLogUploader with the specified parameters (see comments on
-  // MetricsLogUploader for details).
+  void CollectFinalMetricsForLog(base::OnceClosure done_callback) override;
+  GURL GetMetricsServerUrl() override;
+  GURL GetInsecureMetricsServerUrl() override;
   std::unique_ptr<::metrics::MetricsLogUploader> CreateUploader(
-      base::StringPiece server_url, base::StringPiece insecure_server_url,
-      base::StringPiece mime_type,
+      const GURL& server_url,
+      const GURL& insecure_server_url,
+      std::string_view mime_type,
       ::metrics::MetricsLogUploader::MetricServiceType service_type,
       const ::metrics::MetricsLogUploader::UploadCallback& on_upload_complete)
       override;
-
-  // Returns the standard interval between upload attempts.
   base::TimeDelta GetStandardUploadInterval() override;
+  // Of note: GetStorageLimits() can also be overridden.
 
-  // Called on plugin loading errors.
-  void OnPluginLoadingError(const base::FilePath& plugin_path) override {}
+  void SetUploadInterval(base::TimeDelta interval);
+  void SetMinIdleRefreshIntervalForTesting(base::TimeDelta interval) {
+    min_idle_refresh_interval_ = interval;
+  }
+  void SetMetricsListener(
+      ::mojo::PendingRemote<::h5vcc_metrics::mojom::MetricsListener> listener);
 
-  // Called on renderer crashes in some embedders (e.g., those that do not use
-  // //content and thus do not have //content's notification system available
-  // as a mechanism for observing renderer crashes).
-  void OnRendererProcessCrash() override {}
+  // Forces a metrics record for testing.
+  void ScheduleMemoryRecordForTesting(base::OnceClosure done_callback);
+  void ScheduleCpuRecordForTesting(base::OnceClosure done_callback);
 
-  // Returns whether metrics reporting is managed by policy.
-  bool IsReportingPolicyManaged() override;
-
-  // Gets information about the default value for the metrics reporting checkbox
-  // shown during first-run.
-  ::metrics::EnableMetricsDefault GetMetricsReportingDefaultState() override;
-
-  // Returns whether cellular logic is enabled for metrics reporting.
-  bool IsUMACellularUploadLogicEnabled() override;
-
-  // Returns true iff sync is in a state that allows UKM to be enabled.
-  // See //components/ukm/observers/sync_disable_observer.h for details.
-  bool SyncStateAllowsUkm() override;
-
-  // Returns true iff sync is in a state that allows UKM to capture extensions.
-  // See //components/ukm/observers/sync_disable_observer.h for details.
-  bool SyncStateAllowsExtensionUkm() override;
-
-  // Returns whether UKM notification listeners were attached to all profiles.
-  bool AreNotificationListenersEnabledOnAllProfiles() override;
-
-  // Gets the Chrome package name for Android. Returns empty string for other
-  // platforms.
-  std::string GetAppPackageName() override;
-
-  // Setter to override the upload interval default
-  // (kStandardUploadIntervalSeconds).
-  void SetUploadInterval(uint32_t interval_seconds);
-
+ protected:
   explicit CobaltMetricsServiceClient(
-      ::metrics::MetricsStateManager* state_manager, PrefService* local_state);
+      metrics::MetricsStateManager* state_manager,
+      std::unique_ptr<variations::SyntheticTrialRegistry>
+          synthetic_trial_registry,
+      PrefService* local_state);
+
+  // Completes the two-phase initialization of CobaltMetricsServiceClient.
+  void Initialize();
+
+  base::RepeatingTimer idle_refresh_timer_;
 
  private:
-  // The MetricsStateManager, must outlive the Metrics Service.
-  ::metrics::MetricsStateManager* metrics_state_manager_;
+  class MemoryPollingState;
+  class CpuPollingState;
 
-  // The MetricsService that |this| is a client of.
-  std::unique_ptr<::metrics::MetricsService> metrics_service_;
+  // Starts the periodic memory metrics logger.
+  void StartMemoryMetricsLogger();
 
-  CobaltMetricsLogUploader* log_uploader_ = nullptr;
+  // Starts the periodic CPU metrics logger.
+  void StartCpuMetricsLogger();
 
-  uint32_t custom_upload_interval_ = UINT32_MAX;
+  template <typename T>
+  void ScheduleRecordForTestingInternal(base::SequenceBound<T>& state,
+                                        base::OnceClosure done_callback);
 
-  const base::EventDispatcher* event_dispatcher_ = nullptr;
+  // Virtual to be overridden in tests.
+  virtual std::unique_ptr<metrics::MetricsService> CreateMetricsServiceInternal(
+      metrics::MetricsStateManager* state_manager,
+      metrics::MetricsServiceClient* client,
+      PrefService* local_state);
 
-  DISALLOW_COPY_AND_ASSIGN(CobaltMetricsServiceClient);
+  // Virtual to be overridden in tests.
+  virtual std::unique_ptr<CobaltMetricsLogUploader> CreateLogUploaderInternal();
+
+  // Virtual to be overridden in tests.
+  virtual scoped_refptr<CobaltMemoryMetricsEmitter>
+  CreateMemoryMetricsEmitter();
+
+  // Virtual to be overridden in tests.
+  virtual scoped_refptr<CobaltCpuMetricsEmitter> CreateCpuMetricsEmitter();
+
+  // Virtual to be overridden in tests.
+  virtual void OnApplicationNotIdleInternal();
+
+  // Periodically tells UMA the app is not idle so that metrics payloads
+  // continue to be uploaded.
+  // TODO(cobalt, b/417477183): Consider removing this when user actions work in
+  // Kabuki.
+  void StartIdleRefreshTimer();
+
+  const std::unique_ptr<variations::SyntheticTrialRegistry>
+      synthetic_trial_registry_;
+
+  const raw_ptr<PrefService> local_state_;
+
+  const raw_ptr<metrics::MetricsStateManager> metrics_state_manager_;
+
+  std::unique_ptr<metrics::MetricsService> metrics_service_;
+
+  base::TimeDelta upload_interval_ = kStandardUploadIntervalMinutes;
+
+  base::TimeDelta min_idle_refresh_interval_ = kMinIdleRefreshInterval;
+
+  // State objects for background metrics collection.
+  base::SequenceBound<MemoryPollingState> memory_state_;
+  base::SequenceBound<CpuPollingState> cpu_state_;
+
+  // Usually `log_uploader_` would be created lazily in CreateUploader() (during
+  // first metrics upload), however there's a race condition of many seconds
+  // where JS may bind an upload listener before CobaltMetricsLogUploader has
+  // been created and the listener needs the log uploader. Therefore, we eagerly
+  // create CobaltMetricsLogUploader in the constructor to avoid this and pass
+  // ownership to the upstream clients (e.g., reporting_service.cc).
+  std::unique_ptr<CobaltMetricsLogUploader> log_uploader_;
+  base::WeakPtr<CobaltMetricsLogUploader> log_uploader_weak_ptr_;
+
+  // For DCHECK()s.
+  bool IsInitialized() const { return !!metrics_service_; }
+
+  COBALT_THREAD_CHECKER(thread_checker_);
 };
 
-
-}  // namespace metrics
-}  // namespace browser
 }  // namespace cobalt
 
 #endif  // COBALT_BROWSER_METRICS_COBALT_METRICS_SERVICE_CLIENT_H_

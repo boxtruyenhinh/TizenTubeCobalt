@@ -5,11 +5,13 @@
 #ifndef V8_WASM_WASM_SERIALIZATION_H_
 #define V8_WASM_WASM_SERIALIZATION_H_
 
-#include "src/wasm/wasm-objects.h"
+#if !V8_ENABLE_WEBASSEMBLY
+#error This header should only be included if WebAssembly is enabled.
+#endif  // !V8_ENABLE_WEBASSEMBLY
 
-namespace v8 {
-namespace internal {
-namespace wasm {
+#include "src/wasm/wasm-code-manager.h"
+
+namespace v8::internal::wasm {
 
 // Support for serializing WebAssembly {NativeModule} objects. This class takes
 // a snapshot of the module state at instantiation, and other code that modifies
@@ -23,13 +25,14 @@ class V8_EXPORT_PRIVATE WasmSerializer {
 
   // Serialize the {NativeModule} into the provided {buffer}. Returns true on
   // success and false if the given buffer it too small for serialization.
-  bool SerializeNativeModule(Vector<byte> buffer) const;
+  bool SerializeNativeModule(base::Vector<uint8_t> buffer) const;
 
   // The data header consists of uint32_t-sized entries (see {WriteVersion}):
   // [0] magic number
   // [1] version hash
   // [2] supported CPU features
   // [3] flag hash
+  // [4] enabled features (via flags and OT)
   // ...  number of functions
   // ... serialized functions
   static constexpr size_t kMagicNumberOffset = 0;
@@ -38,24 +41,28 @@ class V8_EXPORT_PRIVATE WasmSerializer {
       kVersionHashOffset + kUInt32Size;
   static constexpr size_t kFlagHashOffset =
       kSupportedCPUFeaturesOffset + kUInt32Size;
-  static constexpr size_t kHeaderSize = 4 * kUInt32Size;
+  static constexpr size_t kHeaderSize = 5 * kUInt32Size;
 
  private:
   NativeModule* native_module_;
+  // The {WasmCodeRefScope} keeps the pointers in {code_table_} alive.
+  WasmCodeRefScope code_ref_scope_;
   std::vector<WasmCode*> code_table_;
+  std::vector<WellKnownImport> import_statuses_;
 };
 
 // Support for deserializing WebAssembly {NativeModule} objects.
 // Checks the version header of the data against the current version.
-bool IsSupportedVersion(Vector<const byte> data);
+bool IsSupportedVersion(base::Vector<const uint8_t> data,
+                        WasmEnabledFeatures enabled_features);
 
 // Deserializes the given data to create a Wasm module object.
-V8_EXPORT_PRIVATE MaybeHandle<WasmModuleObject> DeserializeNativeModule(
-    Isolate*, Vector<const byte> data, Vector<const byte> wire_bytes,
-    Vector<const char> source_url);
+V8_EXPORT_PRIVATE MaybeDirectHandle<WasmModuleObject> DeserializeNativeModule(
+    Isolate*, base::Vector<const uint8_t> data,
+    base::Vector<const uint8_t> wire_bytes,
+    const CompileTimeImports& compile_imports,
+    base::Vector<const char> source_url);
 
-}  // namespace wasm
-}  // namespace internal
-}  // namespace v8
+}  // namespace v8::internal::wasm
 
 #endif  // V8_WASM_WASM_SERIALIZATION_H_

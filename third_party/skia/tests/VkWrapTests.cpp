@@ -5,25 +5,36 @@
  * found in the LICENSE file.
  */
 
-// This is a GPU-backend specific test. It relies on static intializers to work
+// This is a GPU-backend specific test. It relies on static initializers to work
 
 #include "include/core/SkTypes.h"
 
 #if defined(SK_VULKAN)
 
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/vk/GrVkTypes.h"
-#include "include/gpu/vk/GrVkVulkan.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrRenderTarget.h"
-#include "src/gpu/GrTexture.h"
-#include "src/gpu/vk/GrVkCaps.h"
-#include "src/gpu/vk/GrVkGpu.h"
-#include "src/gpu/vk/GrVkMemory.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkRefCnt.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
+#include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
+#include "include/gpu/ganesh/vk/GrVkTypes.h"
+#include "include/gpu/vk/VulkanTypes.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrRenderTarget.h"
+#include "src/gpu/ganesh/GrTexture.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
-#include "tools/gpu/GrContextFactory.h"
 #include "tools/gpu/ManagedBackendTexture.h"
+
+#include <vulkan/vulkan_core.h>
+#include <initializer_list>
+
+struct GrContextOptions;
 
 using sk_gpu_test::GrContextFactory;
 
@@ -32,10 +43,15 @@ const int kH = 1024;
 const SkColorType kColorType = SkColorType::kRGBA_8888_SkColorType;
 
 void wrap_tex_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
+    using namespace skgpu;
+
     GrGpu* gpu = dContext->priv().getGpu();
 
+    Protected isProtected = Protected(dContext->priv().caps()->supportsProtectedContent());
+
     auto mbet = sk_gpu_test::ManagedBackendTexture::MakeWithoutData(
-            dContext, kW, kH, kRGBA_8888_SkColorType, GrMipmapped::kNo, GrRenderable::kNo);
+            dContext, kW, kH, kRGBA_8888_SkColorType, skgpu::Mipmapped::kNo, GrRenderable::kNo,
+            isProtected);
     if (!mbet) {
         ERRORF(reporter, "Could not create backend texture.");
         return;
@@ -44,7 +60,7 @@ void wrap_tex_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
     GrBackendTexture origBackendTex = mbet->texture();
 
     GrVkImageInfo imageInfo;
-    SkAssertResult(origBackendTex.getVkImageInfo(&imageInfo));
+    SkAssertResult(GrBackendTextures::GetVkImageInfo(origBackendTex, &imageInfo));
 
     {
         sk_sp<GrTexture> tex = gpu->wrapBackendTexture(origBackendTex, kBorrow_GrWrapOwnership,
@@ -56,7 +72,7 @@ void wrap_tex_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
     {
         GrVkImageInfo backendCopy = imageInfo;
         backendCopy.fImage = VK_NULL_HANDLE;
-        GrBackendTexture backendTex = GrBackendTexture(kW, kH, backendCopy);
+        GrBackendTexture backendTex = GrBackendTextures::MakeVk(kW, kH, backendCopy);
         sk_sp<GrTexture> tex = gpu->wrapBackendTexture(
                 backendTex, kBorrow_GrWrapOwnership, GrWrapCacheable::kNo, kRead_GrIOType);
         REPORTER_ASSERT(reporter, !tex);
@@ -68,8 +84,8 @@ void wrap_tex_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
     // alloc is null
     {
         GrVkImageInfo backendCopy = imageInfo;
-        backendCopy.fAlloc = GrVkAlloc();
-        GrBackendTexture backendTex = GrBackendTexture(kW, kH, backendCopy);
+        backendCopy.fAlloc = skgpu::VulkanAlloc();
+        GrBackendTexture backendTex = GrBackendTextures::MakeVk(kW, kH, backendCopy);
         sk_sp<GrTexture> tex = gpu->wrapBackendTexture(
                 backendTex, kBorrow_GrWrapOwnership, GrWrapCacheable::kNo, kRead_GrIOType);
         REPORTER_ASSERT(reporter, tex);
@@ -81,7 +97,7 @@ void wrap_tex_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
     // check adopt creation
     {
         GrVkImageInfo backendCopy = imageInfo;
-        GrBackendTexture backendTex = GrBackendTexture(kW, kH, backendCopy);
+        GrBackendTexture backendTex = GrBackendTextures::MakeVk(kW, kH, backendCopy);
         sk_sp<GrTexture> tex = gpu->wrapBackendTexture(
                 backendTex, kAdopt_GrWrapOwnership, GrWrapCacheable::kNo, kRead_GrIOType);
 
@@ -93,8 +109,12 @@ void wrap_tex_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
 }
 
 void wrap_rt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
+    using namespace skgpu;
+
     GrGpu* gpu = dContext->priv().getGpu();
     GrColorType ct = SkColorTypeToGrColorType(kColorType);
+
+    Protected isProtected = Protected(dContext->priv().caps()->supportsProtectedContent());
 
     for (int sampleCnt : {1, 4}) {
         GrBackendFormat format = gpu->caps()->getDefaultBackendFormat(ct, GrRenderable::kYes);
@@ -103,13 +123,14 @@ void wrap_rt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
         }
 
         GrBackendRenderTarget origBackendRT =
-                gpu->createTestingOnlyBackendRenderTarget({kW, kH}, ct, sampleCnt);
+                gpu->createTestingOnlyBackendRenderTarget({kW, kH}, ct, sampleCnt, isProtected);
         if (!origBackendRT.isValid()) {
             ERRORF(reporter, "Could not create backend render target.");
         }
 
         GrVkImageInfo imageInfo;
-        REPORTER_ASSERT(reporter, origBackendRT.getVkImageInfo(&imageInfo));
+        REPORTER_ASSERT(reporter,
+                        GrBackendRenderTargets::GetVkImageInfo(origBackendRT, &imageInfo));
 
         sk_sp<GrRenderTarget> rt = gpu->wrapBackendRenderTarget(origBackendRT);
         REPORTER_ASSERT(reporter, rt);
@@ -118,7 +139,7 @@ void wrap_rt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
         {
             GrVkImageInfo backendCopy = imageInfo;
             backendCopy.fImage = VK_NULL_HANDLE;
-            GrBackendRenderTarget backendRT(kW, kH, 1, backendCopy);
+            GrBackendRenderTarget backendRT = GrBackendRenderTargets::MakeVk(kW, kH, backendCopy);
             rt = gpu->wrapBackendRenderTarget(backendRT);
             REPORTER_ASSERT(reporter, !rt);
         }
@@ -126,9 +147,9 @@ void wrap_rt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
         // alloc is null
         {
             GrVkImageInfo backendCopy = imageInfo;
-            backendCopy.fAlloc = GrVkAlloc();
+            backendCopy.fAlloc = VulkanAlloc();
             // can wrap null alloc
-            GrBackendRenderTarget backendRT(kW, kH, 1, backendCopy);
+            GrBackendRenderTarget backendRT = GrBackendRenderTargets::MakeVk(kW, kH, backendCopy);
             rt = gpu->wrapBackendRenderTarget(backendRT);
             REPORTER_ASSERT(reporter, rt);
         }
@@ -138,10 +159,15 @@ void wrap_rt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
 }
 
 void wrap_trt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
+    using namespace skgpu;
+
     GrGpu* gpu = dContext->priv().getGpu();
 
+    Protected isProtected = Protected(dContext->priv().caps()->supportsProtectedContent());
+
     auto mbet = sk_gpu_test::ManagedBackendTexture::MakeWithoutData(
-            dContext, kW, kH, kRGBA_8888_SkColorType, GrMipmapped::kNo, GrRenderable::kYes);
+            dContext, kW, kH, kRGBA_8888_SkColorType, Mipmapped::kNo, GrRenderable::kYes,
+            isProtected);
     if (!mbet) {
         ERRORF(reporter, "Could not create renderable backend texture.");
         return;
@@ -149,7 +175,7 @@ void wrap_trt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
     GrBackendTexture origBackendTex = mbet->texture();
 
     GrVkImageInfo imageInfo;
-    SkAssertResult(origBackendTex.getVkImageInfo(&imageInfo));
+    SkAssertResult(GrBackendTextures::GetVkImageInfo(origBackendTex, &imageInfo));
 
     sk_sp<GrTexture> tex = gpu->wrapRenderableBackendTexture(
             origBackendTex, 1, kBorrow_GrWrapOwnership, GrWrapCacheable::kNo);
@@ -159,7 +185,7 @@ void wrap_trt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
     {
         GrVkImageInfo backendCopy = imageInfo;
         backendCopy.fImage = VK_NULL_HANDLE;
-        GrBackendTexture backendTex = GrBackendTexture(kW, kH, backendCopy);
+        GrBackendTexture backendTex = GrBackendTextures::MakeVk(kW, kH, backendCopy);
         tex = gpu->wrapRenderableBackendTexture(backendTex, 1, kBorrow_GrWrapOwnership,
                                                 GrWrapCacheable::kNo);
         REPORTER_ASSERT(reporter, !tex);
@@ -171,8 +197,8 @@ void wrap_trt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
     // alloc is null
     {
         GrVkImageInfo backendCopy = imageInfo;
-        backendCopy.fAlloc = GrVkAlloc();
-        GrBackendTexture backendTex = GrBackendTexture(kW, kH, backendCopy);
+        backendCopy.fAlloc = VulkanAlloc();
+        GrBackendTexture backendTex = GrBackendTextures::MakeVk(kW, kH, backendCopy);
         tex = gpu->wrapRenderableBackendTexture(backendTex, 1, kBorrow_GrWrapOwnership,
                                                 GrWrapCacheable::kNo);
         REPORTER_ASSERT(reporter, tex);
@@ -194,7 +220,7 @@ void wrap_trt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
     // check adopt creation
     {
         GrVkImageInfo backendCopy = imageInfo;
-        GrBackendTexture backendTex = GrBackendTexture(kW, kH, backendCopy);
+        GrBackendTexture backendTex = GrBackendTextures::MakeVk(kW, kH, backendCopy);
         tex = gpu->wrapRenderableBackendTexture(backendTex, 1, kAdopt_GrWrapOwnership,
                                                 GrWrapCacheable::kNo);
         REPORTER_ASSERT(reporter, tex);
@@ -204,7 +230,7 @@ void wrap_trt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
     }
 }
 
-DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkWrapTests, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkWrapTests, reporter, ctxInfo, CtsEnforcement::kNever) {
     auto dContext = ctxInfo.directContext();
 
     wrap_tex_test(reporter, dContext);

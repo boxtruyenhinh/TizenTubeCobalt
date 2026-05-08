@@ -15,7 +15,9 @@
 #ifndef STARBOARD_SHARED_STARBOARD_AUDIO_SINK_AUDIO_SINK_INTERNAL_H_
 #define STARBOARD_SHARED_STARBOARD_AUDIO_SINK_AUDIO_SINK_INTERNAL_H_
 
+// clang-format off
 #include "starboard/audio_sink.h"
+// clang-format on
 
 #include <functional>
 #include <string>
@@ -56,12 +58,16 @@ struct SbAudioSinkPrivate {
   };
 
   virtual ~SbAudioSinkPrivate() {}
+
   virtual void SetPlaybackRate(double playback_rate) = 0;
-
   virtual void SetVolume(double volume) = 0;
-
   virtual bool IsType(Type* type) = 0;
+};
 
+namespace starboard {
+
+class SbAudioSinkImpl : public SbAudioSinkPrivate {
+ public:
   // The following two functions will be called during application startup and
   // termination.
   static void Initialize();
@@ -111,5 +117,7 @@ struct SbAudioSinkPrivate {
   static void PlatformInitialize();
   static void PlatformTearDown();
 };
+
+}  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_AUDIO_SINK_AUDIO_SINK_INTERNAL_H_

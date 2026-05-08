@@ -4,7 +4,7 @@
 // found in the LICENSE file.
 //
 // RenderTargetCache:
-// The RenderTargetCache pattern is used in the D3D9, D3D11 and Vulkan back-ends. It is a
+// The RenderTargetCache pattern is used in the D3D9, D3D11, Vulkan, and WebGPU back-ends. It is a
 // cache of the various back-end objects (RenderTargets) associated with each Framebuffer
 // attachment, be they Textures, Renderbuffers, or Surfaces. The cache is updated in Framebuffer's
 // syncState method.
@@ -53,20 +53,17 @@ class RenderTargetCache final : angle::NonCopyable
                                            const gl::FramebufferAttachment *attachment,
                                            RenderTargetT **cachedRenderTarget);
 
-    RenderTargetT *mReadRenderTarget;
-    gl::AttachmentArray<RenderTargetT *> mColorRenderTargets;
+    RenderTargetT *mReadRenderTarget                         = nullptr;
+    gl::AttachmentArray<RenderTargetT *> mColorRenderTargets = {};
     // We only support a single Depth/Stencil RenderTarget currently.
-    RenderTargetT *mDepthStencilRenderTarget;
+    RenderTargetT *mDepthStencilRenderTarget = nullptr;
 };
 
 template <typename RenderTargetT>
-RenderTargetCache<RenderTargetT>::RenderTargetCache()
-    : mReadRenderTarget{nullptr}, mColorRenderTargets{{nullptr}}, mDepthStencilRenderTarget(nullptr)
-{}
+RenderTargetCache<RenderTargetT>::RenderTargetCache() = default;
 
 template <typename RenderTargetT>
-RenderTargetCache<RenderTargetT>::~RenderTargetCache()
-{}
+RenderTargetCache<RenderTargetT>::~RenderTargetCache() = default;
 
 template <typename RenderTargetT>
 angle::Result RenderTargetCache<RenderTargetT>::update(const gl::Context *context,
@@ -133,15 +130,24 @@ angle::Result RenderTargetCache<RenderTargetT>::updateColorRenderTarget(
     const gl::FramebufferState &state,
     size_t colorIndex)
 {
+    const gl::FramebufferAttachment *colorAttachment = state.getColorAttachment(colorIndex);
+    ANGLE_TRY(updateCachedRenderTarget(context, colorAttachment, &mColorRenderTargets[colorIndex]));
+
     // If the color render target we're updating is also the read buffer, make sure we update the
     // read render target also so it's not stale.
-    if (state.getReadIndex() == colorIndex)
+    if (state.getReadBufferState() != GL_NONE && state.getReadIndex() == colorIndex)
     {
-        ANGLE_TRY(updateReadColorRenderTarget(context, state));
+        if (colorAttachment == state.getReadAttachment())
+        {
+            mReadRenderTarget = mColorRenderTargets[colorIndex];
+        }
+        else
+        {
+            ANGLE_TRY(updateReadColorRenderTarget(context, state));
+        }
     }
 
-    return updateCachedRenderTarget(context, state.getColorAttachment(colorIndex),
-                                    &mColorRenderTargets[colorIndex]);
+    return angle::Result::Continue;
 }
 
 template <typename RenderTargetT>

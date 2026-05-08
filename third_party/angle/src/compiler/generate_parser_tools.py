@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # Copyright 2019 The ANGLE Project Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -13,6 +13,7 @@ import subprocess
 import sys
 
 is_linux = platform.system() == 'Linux'
+is_mac = platform.system() == 'Darwin'
 is_windows = platform.system() == 'Windows'
 
 
@@ -25,6 +26,9 @@ def get_tool_path_platform(tool_name, platform):
 def get_tool_path(tool_name):
     if is_linux:
         platform = 'linux'
+        ext = ''
+    elif is_mac:
+        platform = 'mac'
         ext = ''
     else:
         assert (is_windows)
@@ -40,7 +44,9 @@ def get_tool_file_sha1s():
         get_tool_path_platform('bison', 'linux'),
         get_tool_path_platform('flex.exe', 'windows'),
         get_tool_path_platform('bison.exe', 'windows'),
-        get_tool_path_platform('m4.exe', 'windows')
+        get_tool_path_platform('m4.exe', 'windows'),
+        get_tool_path_platform('flex', 'mac'),
+        get_tool_path_platform('bison', 'mac'),
     ]
 
     files += [
@@ -72,14 +78,12 @@ def run_flex(basename):
     # can vary based on flex version, and the string substitution will find the correct place
     # automatically.
 
-    patch_in = """
-		YY_INPUT( (&YY_CURRENT_BUFFER_LVALUE->yy_ch_buf[number_to_move]),
-			yyg->yy_n_chars, num_to_read );"""
+    patch_in = """\n\t\tYY_INPUT( (&YY_CURRENT_BUFFER_LVALUE->yy_ch_buf[number_to_move]),\n\t\t\tyyg->yy_n_chars, num_to_read );"""
     patch_out = """
-		yy_size_t ret = 0;
-		YY_INPUT( (&YY_CURRENT_BUFFER_LVALUE->yy_ch_buf[number_to_move]),
-			ret, num_to_read );
-		yyg->yy_n_chars = static_cast<int>(ret);"""
+        yy_size_t ret = 0;
+        YY_INPUT( (&YY_CURRENT_BUFFER_LVALUE->yy_ch_buf[number_to_move]),
+            ret, num_to_read );
+        yyg->yy_n_chars = static_cast<int>(ret);"""
 
     with open(output_source, 'r') as flex_output:
         output = flex_output.read()
@@ -89,6 +93,10 @@ def run_flex(basename):
         assert (output.find(patch_in) != -1)
 
         patched = output.replace(patch_in, patch_out)
+
+    # Remove all tab characters from output. WebKit does not allow any tab characters in source
+    # files.
+    patched = patched.replace('\t', '    ')
 
     with open(output_source, 'w') as flex_output_patched:
         flex_output_patched.write(patched)
@@ -134,6 +142,10 @@ def generate_parser(basename, generate_header):
         if sys.argv[1] == 'inputs':
             inputs = get_tool_file_sha1s()
             inputs += get_input_files(basename)
+            current_file = __file__
+            if current_file.endswith('.pyc'):
+                current_file = current_file[:-1]
+            inputs += [current_file]
             print(','.join(inputs))
         if sys.argv[1] == 'outputs':
             print(','.join(get_output_files(basename, generate_header)))
@@ -142,12 +154,12 @@ def generate_parser(basename, generate_header):
     # Call flex and bison to generate the lexer and parser.
     flex_result = run_flex(basename)
     if flex_result != 0:
-        print 'Failed to run flex. Error ' + str(flex_result)
+        print('Failed to run flex. Error %s' % str(flex_result))
         return 1
 
     bison_result = run_bison(basename, generate_header)
     if bison_result != 0:
-        print 'Failed to run bison. Error ' + str(bison_result)
+        print('Failed to run bison. Error %s' % str(bison_result))
         return 2
 
     return 0

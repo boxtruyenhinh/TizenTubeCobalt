@@ -1,4 +1,4 @@
-// Copyright 2020 The Cobalt Authors. All Rights Reserved.
+// Copyright 2025 The Cobalt Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 #ifndef COBALT_CONFIGURATION_CONFIGURATION_H_
 #define COBALT_CONFIGURATION_CONFIGURATION_H_
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "starboard/extension/configuration.h"
 
 namespace base {
@@ -32,48 +32,24 @@ namespace configuration {
 // will otherwise use default configurations.
 class Configuration {
  public:
-  // The Configuration is a singleton initialized on the first call of
-  // GetInstance(). Calls to this function will return a pointer to the same
-  // instance as was previously initialized.
+  enum class UserOnExitStrategy {
+    kClose,
+    kMinimize,
+    kNoExit,
+  };
+
   static Configuration* GetInstance();
 
-  const char* CobaltUserOnExitStrategy();
-  bool CobaltRenderDirtyRegionOnly();
-  int CobaltEglSwapInterval();
-  const char* CobaltFallbackSplashScreenUrl();
-  int CobaltSkiaCacheSizeInBytes();
-  bool CobaltEnableQuic();
-  int CobaltOffscreenTargetCacheSizeInBytes();
-  int CobaltEncodedImageCacheSizeInBytes();
-  int CobaltImageCacheSizeInBytes();
+  UserOnExitStrategy CobaltUserOnExitStrategy();
   int CobaltLocalTypefaceCacheSizeInBytes();
-  int CobaltRemoteTypefaceCacheSizeInBytes();
-  int CobaltMeshCacheSizeInBytes();
-  int CobaltSoftwareSurfaceCacheSizeInBytes();
-  float CobaltImageCacheCapacityMultiplierWhenPlayingVideo();
-  int CobaltSkiaGlyphAtlasWidth();
-  int CobaltSkiaGlyphAtlasHeight();
-  int CobaltReduceCpuMemoryBy();
-  int CobaltReduceGpuMemoryBy();
-  bool CobaltGcZeal();
-  const char* CobaltRasterizerType();
-  bool CobaltEnableJit();
-  const char* CobaltFallbackSplashScreenTopics();
-  bool CobaltCanStoreCompiledJavascript();
-
-  static const char kSkiaRasterizer[];
-  static const char kGlesRasterizer[];
-  static const char kEnableSkiaRasterizerPersistentSettingKey[];
-  static const char kPersistentSettingsJson[];
 
  private:
   Configuration();
+  Configuration(const Configuration&) = delete;
+  Configuration& operator=(const Configuration&) = delete;
 
   friend struct base::DefaultSingletonTraits<Configuration>;
-  const CobaltExtensionConfigurationApi* configuration_api_;
-  static Configuration* configuration_;
-
-  DISALLOW_COPY_AND_ASSIGN(Configuration);
+  raw_ptr<const CobaltExtensionConfigurationApi> configuration_api_;
 };
 
 }  // namespace configuration

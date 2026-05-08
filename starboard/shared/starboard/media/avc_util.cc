@@ -15,14 +15,12 @@
 #include "starboard/shared/starboard/media/avc_util.h"
 
 #include <string.h>
+
 #include <type_traits>
 
-#include "starboard/memory.h"
+#include "starboard/common/check_op.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace media {
 
 namespace {
 
@@ -89,7 +87,7 @@ AvcParameterSets::AvcParameterSets(Format format,
                                    const uint8_t* data,
                                    size_t size)
     : format_(format) {
-  SB_DCHECK(format == kAnnexB);
+  SB_DCHECK_EQ(format, kAnnexB);
 
   is_valid_ =
       format == kAnnexB && (size == 0 || StartsWithAnnexBHeader(data, size));
@@ -120,7 +118,7 @@ AvcParameterSets::AvcParameterSets(Format format,
     } else if (nalu[kAnnexBHeaderSizeInBytes] == kIdrStartCode) {
       break;
     } else if (nalu[kAnnexBHeaderSizeInBytes] == kAudStartCode) {
-      optional_combined_size_in_bytes_ += nalu.size();
+      combined_size_with_optionals_in_bytes_ += nalu.size();
     }
   }
   SB_LOG_IF(ERROR, first_sps_index_ == -1 || first_pps_index_ == -1)
@@ -152,8 +150,8 @@ AvcParameterSets AvcParameterSets::ConvertTo(Format new_format) const {
     return *this;
   }
 
-  SB_DCHECK(format_ == kAnnexB);
-  SB_DCHECK(new_format == kHeadless);
+  SB_DCHECK_EQ(format_, kAnnexB);
+  SB_DCHECK_EQ(new_format, kHeadless);
 
   AvcParameterSets new_parameter_sets(*this);
   new_parameter_sets.format_ = new_format;
@@ -161,7 +159,7 @@ AvcParameterSets AvcParameterSets::ConvertTo(Format new_format) const {
     return new_parameter_sets;
   }
   for (auto& parameter_set : new_parameter_sets.parameter_sets_) {
-    SB_DCHECK(parameter_set.size() >= kAnnexBHeaderSizeInBytes);
+    SB_DCHECK_GE(parameter_set.size(), kAnnexBHeaderSizeInBytes);
     parameter_set.erase(parameter_set.begin(),
                         parameter_set.begin() + kAnnexBHeaderSizeInBytes);
     new_parameter_sets.combined_size_in_bytes_ -= kAnnexBHeaderSizeInBytes;
@@ -178,11 +176,11 @@ bool AvcParameterSets::operator==(const AvcParameterSets& that) const {
     return true;
   }
 
-  SB_DCHECK(format() == that.format());
+  SB_DCHECK_EQ(format(), that.format());
 
   if (parameter_sets_ == that.parameter_sets_) {
-    SB_DCHECK(first_sps_index_ == that.first_sps_index_);
-    SB_DCHECK(first_pps_index_ == that.first_pps_index_);
+    SB_DCHECK_EQ(first_sps_index_, that.first_sps_index_);
+    SB_DCHECK_EQ(first_pps_index_, that.first_pps_index_);
     return true;
   }
   return false;
@@ -208,15 +206,16 @@ bool ConvertAnnexBToAvcc(const uint8_t* annex_b_source,
 
   auto annex_b_source_size = size;
   // |avcc_destination_end| exists only for the purpose of validation.
-  const auto avcc_destination_end = avcc_destination + size;
+  [[maybe_unused]] const auto avcc_destination_end = avcc_destination + size;
 
   const uint8_t* last_source = annex_b_source;
 
   const auto kAvccLengthInBytes = kAnnexBHeaderSizeInBytes;
 
   while (AdvanceToNextAnnexBHeader(&annex_b_source, &annex_b_source_size)) {
-    SB_DCHECK(annex_b_source - last_source >= kAnnexBHeaderSizeInBytes);
-    SB_DCHECK(avcc_destination < avcc_destination_end);
+    SB_DCHECK_GE(static_cast<size_t>(annex_b_source - last_source),
+                 kAnnexBHeaderSizeInBytes);
+    SB_DCHECK_LT(avcc_destination, avcc_destination_end);
 
     size_t payload_size =
         annex_b_source - last_source - kAnnexBHeaderSizeInBytes;
@@ -231,13 +230,10 @@ bool ConvertAnnexBToAvcc(const uint8_t* annex_b_source,
     last_source = annex_b_source;
   }
 
-  SB_DCHECK(annex_b_source_size == 0);
-  SB_DCHECK(avcc_destination == avcc_destination_end);
+  SB_DCHECK_EQ(annex_b_source_size, 0U);
+  SB_DCHECK_EQ(avcc_destination, avcc_destination_end);
 
   return true;
 }
 
-}  // namespace media
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

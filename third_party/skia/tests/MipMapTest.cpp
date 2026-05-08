@@ -5,11 +5,27 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
-#include "include/utils/SkRandom.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPixmap.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkSurface.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkMalloc.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkMipmap.h"
+#include "src/core/SkMipmapBuilder.h"
 #include "tests/Test.h"
-#include "tools/Resources.h"
+#include "tools/DecodeUtils.h"
 
 static void make_bitmap(SkBitmap* bm, int width, int height) {
     bm->allocN32Pixels(width, height);
@@ -25,6 +41,10 @@ DEF_TEST(MipMap, reporter) {
         int height = 1 + rand.nextU() % 1000;
         make_bitmap(&bm, width, height);
         sk_sp<SkMipmap> mm(SkMipmap::Build(bm, nullptr));
+        REPORTER_ASSERT(reporter, mm);
+        if (!mm) {
+            return;
+        }
 
         REPORTER_ASSERT(reporter, mm->countLevels() == SkMipmap::ComputeLevelCount(width, height));
         REPORTER_ASSERT(reporter, !mm->extractLevel(SkSize::Make(SK_Scalar1, SK_Scalar1),
@@ -62,6 +82,10 @@ static void test_mipmap_generation(int width, int height, int expectedMipLevelCo
     bm.allocN32Pixels(width, height);
     bm.eraseColor(SK_ColorWHITE);
     sk_sp<SkMipmap> mm(SkMipmap::Build(bm, nullptr));
+    REPORTER_ASSERT(reporter, mm);
+    if (!mm) {
+        return;
+    }
 
     const int mipLevelCount = mm->countLevels();
     REPORTER_ASSERT(reporter, mipLevelCount == expectedMipLevelCount);
@@ -211,15 +235,11 @@ DEF_TEST(MipMap_F16, reporter) {
     sk_sp<SkMipmap> mipmap(SkMipmap::Build(bmp, nullptr));
 }
 
-#include "include/core/SkCanvas.h"
-#include "include/core/SkSurface.h"
-#include "src/core/SkMipmapBuilder.h"
-
 static void fill_in_mips(SkMipmapBuilder* builder, sk_sp<SkImage> img) {
     int count = builder->countLevels();
     for (int i = 0; i < count; ++i) {
         SkPixmap pm = builder->level(i);
-        auto surf = SkSurface::MakeRasterDirect(pm);
+        auto surf = SkSurfaces::WrapPixels(pm);
         surf->getCanvas()->drawImageRect(img, SkRect::MakeIWH(pm.width(), pm.height()),
                                          SkSamplingOptions());
     }
@@ -227,7 +247,7 @@ static void fill_in_mips(SkMipmapBuilder* builder, sk_sp<SkImage> img) {
 
 DEF_TEST(image_mip_factory, reporter) {
     // TODO: what do to about lazy images and mipmaps?
-    auto img = GetResourceAsImage("images/mandrill_128.png")->makeRasterImage();
+    auto img = ToolUtils::GetResourceAsImage("images/mandrill_128.png")->makeRasterImage();
 
     REPORTER_ASSERT(reporter, !img->hasMipmaps());
     auto img1 = img->withDefaultMipmaps();
@@ -254,7 +274,7 @@ DEF_TEST(image_mip_mismatch, reporter) {
         REPORTER_ASSERT(reporter, img.get() == img2.get());
     };
 
-    auto img = GetResourceAsImage("images/mandrill_128.png")->makeRasterImage();
+    auto img = ToolUtils::GetResourceAsImage("images/mandrill_128.png")->makeRasterImage();
 
     // check size, colortype, and alphatype
 

@@ -39,18 +39,18 @@
 #include "cstring.h"
 
 static icu::EraRules * gJapaneseEraRules = nullptr;
-static icu::UInitOnce gJapaneseEraRulesInitOnce = U_INITONCE_INITIALIZER;
+static icu::UInitOnce gJapaneseEraRulesInitOnce {};
 static int32_t gCurrentEra = 0;
 
 U_CDECL_BEGIN
-static UBool japanese_calendar_cleanup(void) {
+static UBool japanese_calendar_cleanup() {
     if (gJapaneseEraRules) {
         delete gJapaneseEraRules;
         gJapaneseEraRules = nullptr;
     }
     gCurrentEra = 0;
     gJapaneseEraRulesInitOnce.reset();
-    return TRUE;
+    return true;
 }
 U_CDECL_END
 
@@ -71,27 +71,23 @@ UBool JapaneseCalendar::enableTentativeEra() {
 
     // 1. Environment variable ICU_ENABLE_TENTATIVE_ERA=true or false
 
-    UBool includeTentativeEra = FALSE;
+    UBool includeTentativeEra = false;
 
-#if !defined(STARBOARD)
-    // Historically Starboard has relied on a stub implementation of getenv(),
-    // so the logic below is not necessary.
 #if U_PLATFORM_HAS_WINUWP_API == 1
     // UWP doesn't allow access to getenv(), but we can call GetEnvironmentVariableW to do the same thing.
-    UChar varName[26] = {};
+    char16_t varName[26] = {};
     u_charsToUChars(TENTATIVE_ERA_VAR_NAME, varName, static_cast<int32_t>(uprv_strlen(TENTATIVE_ERA_VAR_NAME)));
     WCHAR varValue[5] = {};
     DWORD ret = GetEnvironmentVariableW(reinterpret_cast<WCHAR*>(varName), varValue, UPRV_LENGTHOF(varValue));
     if ((ret == 4) && (_wcsicmp(varValue, L"true") == 0)) {
-        includeTentativeEra = TRUE;
+        includeTentativeEra = true;
     }
 #else
     char *envVarVal = getenv(TENTATIVE_ERA_VAR_NAME);
-    if (envVarVal != NULL && uprv_stricmp(envVarVal, "true") == 0) {
-        includeTentativeEra = TRUE;
+    if (envVarVal != nullptr && uprv_stricmp(envVarVal, "true") == 0) {
+        includeTentativeEra = true;
     }
 #endif
-#endif  // !defined(STARBOARD)
     return includeTentativeEra;
 }
 
@@ -223,10 +219,18 @@ void JapaneseCalendar::handleComputeFields(int32_t julianDay, UErrorCode& status
     //Calendar::timeToFields(theTime, quick, status);
     GregorianCalendar::handleComputeFields(julianDay, status);
     int32_t year = internalGet(UCAL_EXTENDED_YEAR); // Gregorian year
-    int32_t eraIdx = gJapaneseEraRules->getEraIndex(year, internalGet(UCAL_MONTH) + 1, internalGet(UCAL_DAY_OF_MONTH), status);
+    int32_t eraIdx = gJapaneseEraRules->getEraIndex(year, internalGetMonth() + 1, internalGet(UCAL_DAY_OF_MONTH), status);
 
+    int32_t startYear = gJapaneseEraRules->getStartYear(eraIdx, status) - 1;
+    if (U_FAILURE(status)) {
+        return;
+    }
+    if (uprv_add32_overflow(year, -startYear,  &year)) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+        return;
+    }
     internalSet(UCAL_ERA, eraIdx);
-    internalSet(UCAL_YEAR, year - gJapaneseEraRules->getStartYear(eraIdx, status) + 1);
+    internalSet(UCAL_YEAR, year);
 }
 
 /*
@@ -234,7 +238,7 @@ Disable pivoting
 */
 UBool JapaneseCalendar::haveDefaultCentury() const
 {
-    return FALSE;
+    return false;
 }
 
 UDate JapaneseCalendar::defaultCenturyStart() const

@@ -28,7 +28,7 @@
 // Tests the Object.seal and Object.isSealed methods - ES 19.1.2.17 and
 // ES 19.1.2.13
 
-// Flags: --allow-natives-syntax --opt --noalways-opt
+// Flags: --allow-natives-syntax --turbofan --noalways-turbofan
 
 // Test that we return obj if non-object is passed as argument
 var non_objects = new Array(undefined, null, 1, -1, 0, 42.43, Symbol("test"));
@@ -391,10 +391,6 @@ assertDoesNotThrow(function() { return new Sealed(); });
 Sealed.prototype.prototypeExists = true;
 assertTrue((new Sealed()).prototypeExists);
 
-obj = new Int32Array(10);
-Object.seal(obj);
-assertTrue(Object.isSealed(obj));
-
 // Test packed element array built-in functions with seal.
 function testPackedSealedArray1(obj) {
   assertTrue(Object.isSealed(obj));
@@ -411,7 +407,10 @@ function testPackedSealedArray1(obj) {
 
   // Verify search, filter, iterator
   obj = new Array(undefined, null, 1, -1, 'a', Symbol("test"));
-  assertTrue(%HasPackedElements(obj));
+  if(!%IsExperimentalUndefinedDoubleEnabled()) {
+    // TODO(385155404): Consider reenabling when we can transition back to packed.
+    assertTrue(%HasPackedElements(obj));
+  }
   Object.seal(obj);
   assertTrue(Object.isSealed(obj));
   assertFalse(Object.isFrozen(obj));
@@ -457,13 +456,19 @@ function testPackedSealedArray1(obj) {
   }
 };
 obj = new Array(undefined, null, 1, -1, 'a', Symbol("test"));
-assertTrue(%HasPackedElements(obj));
+if(!%IsExperimentalUndefinedDoubleEnabled()) {
+  // TODO(385155404): Consider reenabling when we can transition back to packed.
+  assertTrue(%HasPackedElements(obj));
+}
 Object.seal(obj);
 testPackedSealedArray1(obj);
 
 // Verify after transition from preventExtensions
 obj = new Array(undefined, null, 1, -1, 'a', Symbol("test"));
-assertTrue(%HasPackedElements(obj));
+if(!%IsExperimentalUndefinedDoubleEnabled()) {
+  // TODO(385155404): Consider reenabling when we can transition back to packed.
+  assertTrue(%HasPackedElements(obj));
+}
 Object.preventExtensions(obj);
 Object.seal(obj);
 testPackedSealedArray1(obj);
@@ -520,7 +525,7 @@ assertDoesNotThrow(function() {
   });
 });
 obj.propertyA = 42;
-assertEquals(obj.propertyA, 42);
+assertEquals(obj, obj.propertyA);
 assertThrows(function() {
   Object.defineProperty(obj, 'abc', {
     value: obj,
@@ -683,7 +688,7 @@ assertDoesNotThrow(function() {
   });
 });
 obj.propertyA = 42;
-assertEquals(obj.propertyA, 42);
+assertEquals(obj, obj.propertyA);
 assertThrows(function() {
   Object.defineProperty(obj, 'abc', {
     value: obj,
@@ -967,7 +972,7 @@ assertDoesNotThrow(function() {
   });
 });
 obj.propertyA = 42;
-assertEquals(obj.propertyA, 42);
+assertEquals(obj, obj.propertyA);
 assertThrows(function() {
   Object.defineProperty(obj, 'abc', {
     value: obj,
@@ -1121,7 +1126,7 @@ assertDoesNotThrow(function() {
   });
 });
 obj.propertyA = 42;
-assertEquals(obj.propertyA, 42);
+assertEquals(obj, obj.propertyA);
 assertThrows(function() {
   Object.defineProperty(obj, 'abc', {
     value: obj,

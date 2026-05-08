@@ -15,10 +15,11 @@
 // Here we are not trying to do anything fancy, just to really sanity check that
 // this is hooked up to something.
 
-#include "starboard/common/string.h"
+#include <stdarg.h>
+
+#include "starboard/configuration.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -36,7 +37,7 @@ TEST(PosixFormatTest, SunnyDay) {
   int result = Format(destination, SB_ARRAY_SIZE(destination), "a%db%dc%d%s", 1,
                       2, 3, "test");
   size_t expected_length = strlen(kExpected);
-  EXPECT_EQ(expected_length, result);
+  EXPECT_EQ(expected_length, static_cast<size_t>(result));
   for (size_t i = 0; i <= expected_length; ++i) {
     EXPECT_EQ(kExpected[i], destination[i]);
   }
@@ -44,4 +45,3 @@ TEST(PosixFormatTest, SunnyDay) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

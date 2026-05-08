@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/system.h"
+// clang-format on
 
 #include "starboard/shared/starboard/application.h"
 
 void SbSystemRequestFocus() {
-  starboard::shared::starboard::Application::Get()->Focus(NULL, NULL);
+  starboard::Application::Get()->Focus(NULL, NULL);
 }

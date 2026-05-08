@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,6 @@ class FilePath;
 namespace crx_file {
 
 enum class VerifierFormat {
-  CRX2_OR_CRX3,                    // Accept Crx2 or Crx3.
   CRX3,                            // Accept only Crx3.
   CRX3_WITH_TEST_PUBLISHER_PROOF,  // Accept only Crx3 with a test or production
                                    // publisher proof.
@@ -42,14 +41,17 @@ enum class VerifierResult {
 // If and only if this function returns OK_FULL or OK_DELTA, and only if
 // |public_key| / |crx_id| are non-null, they will be updated to contain the
 // public key (PEM format, without the header/footer) and crx id (encoded in
-// base16 using the characters [a-p]).
+// base16 using the characters [a-p]). |compressed_verified_contents| will be
+// updated if it is non-null and if the verified contents are present in the
+// unsigned section of the header.
 VerifierResult Verify(
     const base::FilePath& crx_path,
     const VerifierFormat& format,
     const std::vector<std::vector<uint8_t>>& required_key_hashes,
     const std::vector<uint8_t>& required_file_hash,
     std::string* public_key,
-    std::string* crx_id);
+    std::string* crx_id,
+    std::vector<uint8_t>* compressed_verified_contents);
 
 #if defined(IN_MEMORY_UPDATES)
 // An overload that instead verifies |crx_str| as a valid Crx.
@@ -59,7 +61,8 @@ VerifierResult Verify(
     const std::vector<std::vector<uint8_t>>& required_key_hashes,
     const std::vector<uint8_t>& required_file_hash,
     std::string* public_key,
-    std::string* crx_id);
+    std::string* crx_id,
+    std::vector<uint8_t>* compressed_verified_contents);
 #endif
 
 }  // namespace crx_file

@@ -1,10 +1,10 @@
 Project: /youtube/cobalt/_project.yaml
 Book: /youtube/cobalt/_book.yaml
 
-# Porting Cobalt to your Platform with Starboard
+# Porting Cobalt 27 to your Platform with Starboard 18
 
-This document provides step-by-step instructions for porting Cobalt to run
-on your platform. To do so, you'll use Starboard, which is Cobalt's porting
+This document provides step-by-step instructions for porting Cobalt 27 to run
+on your platform. To do so, you'll use Starboard 18, which is Cobalt's porting
 layer and OS abstraction. Starboard encapsulates only the platform-specific
 functionality that Cobalt uses.
 
@@ -29,13 +29,15 @@ If you prefer, you can instead complete the instructions for
 [setting up a Cobalt development environment on Linux](../development/setup-linux.md).
 Checking out the Cobalt source code is one step in that process.
 
+Additionally, you should identify your target architecture (e.g., x86_64, ARMv7, ARMv8) and check if a valid Starboard ABI (SABI) file exists for it in [starboard/sabi](starboard/sabi). If not, you may need to create one based on the schema provided there. See [starboard/doc/starboard_abi.md](starboard/doc/starboard_abi.md) for details.
+
 ## Porting steps
 
 ### 1. Enumerate and name your platform configurations
 
 Your first step is to define canonical names for your set of platform
 configurations. You will later use these names to organize the code
-for your platforms.
+for your platforms and to specify the target when building.
 
 A platform configuration has a one-to-one mapping to a production binary.
 As such, you will need to create a new platform configuration any time you
@@ -64,42 +66,34 @@ of BobCo's platform configurations. The `binary-variant` for devices with
 big-endian ARM chips is `armeb`. For devices with little-endian ARM chips,
 the `binary-variant` is `armel`.
 
-
 ### 2. Add Source Tree Directories for your Starboard Port
 
 Add the following directories to the source tree for the `<family-name>`
-that you selected in step 1:
+that you selected in step 1. While internal platforms are located
+in the `starboard/` directory (e.g., `starboard/linux/`), custom and external
+ports should be placed in `third_party/starboard/`:
 
 *   `third_party/starboard/<family-name>/`
 
 *   `third_party/starboard/<family-name>/shared/`
 
     This subdirectory contains code that is shared between architectures
-    within a product family. For example, if BobBox devices run on many
-    different platforms, then BobCo needs to define a different configuration
-    for each platform. However, if all of the configurations can use the same
-    Starboard function implementation, BobCo can put that function in the
-    `shared` directory to make it accessible in every binary variant.
+    within a product family. If all of the configurations can use the same
+    Starboard function implementation, you can put that function here to make
+    it accessible in every binary variant.
 
 *   `third_party/starboard/<family-name>/<binary-variant>/`
 
-    You should create one directory for _each_ `<binary-variant>`. So, for
-    example, BobCo could create the following directories:
-
-    *   `third_party/starboard/bobbox/shared/`
-    *   `third_party/starboard/bobbox/armeb/`
-    *   `third_party/starboard/bobbox/armel/`
-    *   `third_party/starboard/bobbox/armel/gles/`
+    You should create one directory for _each_ `<binary-variant>`.
 
 Again, functions that work for all of the configurations would go in the
-`shared` directory. Functions that work for all little-endian devices would go
-in the `armel` directory. And functions specific to little-endian devices
-that use OpenGL ES would go in the `armel/gles` directory.
+`shared` directory. Functions specific to little-endian devices would go
+in the `armel` directory.
 
-### 3. Add required `binary-variant` files
+### 3. Add required `binary-variant` files and select a baseline
 
 Each `binary-variant` directory that you created in step 2 must contain
-the following files:
+the following configuration and build files:
 
 *   `atomic_public.h`
 *   `BUILD.gn`
@@ -107,27 +101,23 @@ the following files:
 *   `platform_configuration/BUILD.gn`
 *   `platform_configuration/configuration.gni`
 *   `toolchain/BUILD.gn`
+*   `starboard_abi.json` (or a reference to an existing one in [starboard/sabi](starboard/sabi))
 
-We recommend that you copy the files from the Stub reference implementation,
-located at `starboard/stub/` to your `binary-variant` directories.
-In this approach, you will essentially start with a clean slate of stub
-interfaces that need to be modified to work with your platform.
+To populate these files, you should select a baseline that best matches your platform instead of starting from scratch:
 
-An alternate approach is to copy either the Desktop Linux or Raspberry Pi
-ports and then work backward to fix the things that don't compile or work
-on your platform.
+*   **Stub Baseline**: Copy files from [starboard/stub](starboard/stub) to your `binary-variant` directory. This provides a clean slate of stub interfaces that need to be modified. This is the most generalized starting point.
+*   **Reference Baseline (Linux)**: If your platform is POSIX-compliant, you can reference or copy from [starboard/linux/x64x11](starboard/linux/x64x11) or [starboard/linux/shared](starboard/linux/shared).
+*   **Shared Modules**: Regardless of the baseline, strongly consider reusing common implementations located in [starboard/shared](starboard/shared) (e.g., `posix`, `pthread`, `egl`, `gles`) by referencing them in your `BUILD.gn` file, as seen in `starboard/linux/shared/BUILD.gn`.
 
 If you are copying the Stub implementation, you would run the following
 command for each `binary-variant` directory:
 
 ```sh
-cp -R starboard/stub
-      third_party/starboard/<family-name>/<binary-variant>
+cp -R starboard/stub/* third_party/starboard/<family-name>/<binary-variant>/
 ```
 
 After copying these files, you should be able to compile Cobalt and link it
 with your toolchain even though the code itself will not yet work.
-
 
 #### 3a. Additional files in the stub implementation
 
@@ -163,12 +153,14 @@ base class along with variant-specific subclasses.
 To port your code, you must add your platform to `starboard/build/platforms.py`
 then make the following modifications to the files that you copied in step 3:
 
+Note that [cobalt/build/gn.py](cobalt/build/gn.py) is the main entry point for configuring your build. You will use it to specify your platform configuration name when running GN.
+
+Porters should also be aware of [cobalt/app/cobalt_switch_defaults_starboard.cc](cobalt/app/cobalt_switch_defaults_starboard.cc), which sets default command-line switches for Starboard platforms. You may need to review or override these for your platform.
 
 1.  **`atomic_public.h`** - Ensure that this file points at the appropriate
     shared or custom implementation.
 
-1.  **`configuration_public.h`** - Adjust all of the [configuration values](
-    ../../reference/starboard/configuration-public.html) as appropriate for
+1.  **`configuration_public.h`** - Adjust all of the configuration values as appropriate for
     your platform.
 
 1.  **`platform_configuration/BUILD.gn`**
@@ -193,6 +185,7 @@ then make the following modifications to the files that you copied in step 3:
             *   Set this value to `true` if you want Cobalt to run a DIAL
                 server whenever it is running. That server could only be used
                 to connect with the current Cobalt application (e.g. YouTube).
+        *   `sabi_path` - Set this to the path of your Starboard ABI file (e.g., `"//starboard/sabi/x64/sabi.json"`). This is required for ABI verification.
 
 1.  **`toolchain/BUILD.gn`**
     1.  If your platform uses a simple clang toolchain, simply pass the path to
@@ -231,6 +224,8 @@ For example, the `SbSystemBreakIntoDebugger()` function is defined in the
 `starboard/shared/stub/` directory represents an authoritative list of
 supported functions.
 
+**Recommendation:** When porting modules, strongly prefer reusing existing implementations in [starboard/shared](starboard/shared) (such as `starboard/shared/posix` and `starboard/shared/pthread`) to minimize the burden on the porter and maintain consistency.
+
 Function-by-function and module-by-module, you can now replace stub
 implementations with either custom implementations or with other ported
 implementations from the `starboard/shared/` directory until you have
@@ -267,3 +262,13 @@ modules in the following order to account for such dependencies:
 1.  TimeZone
 1.  User
 1.  Storage
+
+## Verification and Testing
+
+Once you have implemented the modules, you need to verify your port.
+
+### Running Tests
+Cobalt provides a script to build and run tests. You can use [cobalt/tools/build_and_run_tests.sh](cobalt/tools/build_and_run_tests.sh) to execute the test suite (including NPLB) on your platform.
+
+### Test Filters
+It is common for some tests to fail on new platforms or to be inapplicable. You can manage test expectations by adding filters in the [cobalt/testing/filters](cobalt/testing/filters) directory for your platform. This allows you to track known issues and ignore failures that are not critical for your port.

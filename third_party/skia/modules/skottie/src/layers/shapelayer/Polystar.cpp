@@ -5,14 +5,30 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkM44.h"
 #include "include/core/SkPathBuilder.h"
-#include "include/private/SkTPin.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTo.h"
+#include "modules/jsonreader/SkJSONReader.h"
+#include "modules/skottie/include/Skottie.h"
 #include "modules/skottie/src/Adapter.h"
 #include "modules/skottie/src/SkottieJson.h"
 #include "modules/skottie/src/SkottiePriv.h"
 #include "modules/skottie/src/SkottieValue.h"
 #include "modules/skottie/src/layers/shapelayer/ShapeLayer.h"
 #include "modules/sksg/include/SkSGPath.h"
+
+#include <array>
+#include <cmath>
+#include <cstddef>
+
+namespace sksg {
+class GeometryNode;
+}
 
 namespace skottie {
 namespace internal {
@@ -90,7 +106,7 @@ sk_sp<sksg::GeometryNode> ShapeBuilder::AttachPolystarGeometry(const skjson::Obj
     };
 
     const auto type = ParseDefault<size_t>(jstar["sy"], 0) - 1;
-    if (type >= SK_ARRAY_COUNT(gTypes)) {
+    if (type >= std::size(gTypes)) {
         abuilder->log(Logger::Level::kError, &jstar, "Unknown polystar type.");
         return nullptr;
     }

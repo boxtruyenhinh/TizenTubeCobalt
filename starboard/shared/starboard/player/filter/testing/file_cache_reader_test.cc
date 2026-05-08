@@ -18,18 +18,13 @@
 #include <string>
 #include <vector>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/file.h"
 #include "starboard/configuration_constants.h"
-#include "starboard/memory.h"
 #include "starboard/shared/starboard/player/filter/testing/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
-namespace testing {
 namespace {
 
 const char kTestFilename[] = "beneath_the_canopy_aac_stereo.dmp";
@@ -52,7 +47,7 @@ TEST_F(FileCacheReaderTest, FileCacheReader) {
     ScopedFile file(file_cache_reader_.GetAbsolutePathName().c_str(), 0);
     true_contents.resize(kTestSize);
     int bytes_read = file.ReadAll(true_contents.data(), kTestSize);
-    SB_CHECK(bytes_read == kTestSize);
+    SB_CHECK_EQ(bytes_read, kTestSize);
   }
 
   // Output buffer for file reading, when it is read in chunks.
@@ -82,9 +77,5 @@ TEST_F(FileCacheReaderTest, FileCacheReader) {
 }
 
 }  // namespace
-}  // namespace testing
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
+
 }  // namespace starboard

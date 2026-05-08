@@ -16,6 +16,8 @@
 
 #include <sys/stat.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -24,15 +26,14 @@
 #include "starboard/common/string.h"
 #include "starboard/common/time.h"
 #include "starboard/configuration_constants.h"
-#include "starboard/directory.h"
 #include "starboard/loader_app/drain_file_helper.h"
 #include "starboard/system.h"
-#include "starboard/types.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace loader_app {
 namespace {
+using ::starboard::CurrentPosixTime;
+using ::starboard::ScopedFile;
 
 const char kAppKeyOne[] = "b25lDQo=";
 const char kAppKeyTwo[] = "dHdvDQo=";
@@ -90,8 +91,9 @@ TEST_F(DrainFileTest, SunnyDayIgnoreExpired) {
 
 // Previously created drain file should be reused if it has not expired.
 TEST_F(DrainFileTest, SunnyDayTryDrainReusePreviousDrainFile) {
-  for (int i = 0; i < 2; ++i)
+  for (int i = 0; i < 2; ++i) {
     EXPECT_TRUE(DrainFileTryDrain(GetTempDir(), kAppKeyOne));
+  }
 }
 
 // Draining status should return whether or not the file exists and has not yet
@@ -244,7 +246,9 @@ TEST_F(DrainFileTest, SunnyDayPrepareDirectory) {
   path.append(kSbFileSepString);
   path.append(kAppKeyOne);
 
-  { ScopedFile file(path.c_str(), O_CREAT | O_WRONLY); }
+  {
+    ScopedFile file(path.c_str(), O_CREAT | O_WRONLY);
+  }
 
   EXPECT_TRUE(FileExists(path.c_str()));
 
@@ -268,4 +272,3 @@ TEST_F(DrainFileTest, RainyDayDrainFileAlreadyExists) {
 
 }  // namespace
 }  // namespace loader_app
-}  // namespace starboard

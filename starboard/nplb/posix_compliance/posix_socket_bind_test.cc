@@ -15,14 +15,14 @@
 // Here we are not trying to do anything fancy, just to really sanity check that
 // this is hooked up to something.
 
+#include "starboard/common/string.h"
 #include "starboard/nplb/posix_compliance/posix_socket_helpers.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
 TEST(PosixSocketBindTest, RainyDayNullSocket) {
-  int port = htons(GetPortNumberForTests());
   sockaddr_in address = {};
   address.sin_family = AF_INET;
   int invalid_socket_fd = -1;
@@ -44,7 +44,6 @@ TEST(PosixSocketBindTest, RainyDayNullNull) {
   EXPECT_FALSE(bind(invalid_socket_fd, NULL, 0) == 0);
 }
 
-#if SB_HAS(IPV6)
 TEST(PosixSocketBindTest, RainyDayWrongAddressType) {
   int socket_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   ASSERT_TRUE(socket_fd > 0);
@@ -52,7 +51,7 @@ TEST(PosixSocketBindTest, RainyDayWrongAddressType) {
   // Binding with the wrong address type should fail.
   sockaddr_in client_address = {};
   client_address.sin_family = AF_INET6;
-  client_address.sin_port = htons(GetPortNumberForTests());
+  client_address.sin_port = htons(PosixGetPortNumberForTests());
   EXPECT_FALSE(bind(socket_fd, reinterpret_cast<sockaddr*>(&client_address),
                     sizeof(sockaddr_in)) == 0);
 
@@ -60,12 +59,11 @@ TEST(PosixSocketBindTest, RainyDayWrongAddressType) {
   // address type should work.
   sockaddr_in server_address = {};
   server_address.sin_family = AF_INET;
-  server_address.sin_port = htons(GetPortNumberForTests());
+  server_address.sin_port = htons(PosixGetPortNumberForTests());
   EXPECT_TRUE(bind(socket_fd, reinterpret_cast<sockaddr*>(&server_address),
                    sizeof(sockaddr_in)) == 0);
   EXPECT_TRUE(close(socket_fd) == 0);
 }
-#endif
 
 TEST(PosixSocketBindTest, RainyDayBadInterface) {
   int socket_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -82,18 +80,11 @@ TEST(PosixSocketBindTest, RainyDayBadInterface) {
 }
 
 TEST(PosixSocketBindTest, SunnyDayLocalInterface) {
-#if SB_HAS(IPV6)
   sockaddr_in6 address = {};
   EXPECT_TRUE(
       PosixGetLocalAddressIPv4(reinterpret_cast<sockaddr*>(&address)) == 0 ||
       PosixGetLocalAddressIPv6(reinterpret_cast<sockaddr*>(&address)) == 0);
-  address.sin6_port = htons(GetPortNumberForTests());
-#else
-  sockaddr address = {0};
-  EXPECT_TRUE(PosixGetLocalAddressIPv4(&address) == 0);
-  sockaddr_in* address_ptr = reinterpret_cast<sockaddr_in*>(&address);
-  address_ptr->sin_port = htons(GetPortNumberForTests());
-#endif
+  address.sin6_port = htons(PosixGetPortNumberForTests());
 
   int socket_domain = AF_INET;
   int socket_type = SOCK_STREAM;
@@ -112,7 +103,7 @@ TEST(PosixSocketBindTest, SunnyDayAnyAddr) {
   // should work.
   sockaddr_in address = {};
   address.sin_family = AF_INET;
-  address.sin_port = htons(GetPortNumberForTests());
+  address.sin_port = htons(PosixGetPortNumberForTests());
   address.sin_addr.s_addr = INADDR_ANY;
 
   int socket_domain = AF_INET;
@@ -128,7 +119,8 @@ TEST(PosixSocketBindTest, SunnyDayAnyAddr) {
 // Pair data input test
 std::string GetPosixSocketAddressTypeFilterPairName(
     ::testing::TestParamInfo<std::pair<int, int>> info) {
-  return FormatString("type_%d_filter_%d", info.param.first, info.param.second);
+  return starboard::FormatString("type_%d_filter_%d", info.param.first,
+                                 info.param.second);
 }
 
 class PosixSocketBindPairFilterTest
@@ -138,19 +130,17 @@ class PosixSocketBindPairFilterTest
   int GetFilterType() { return GetParam().second; }
 };
 
-#if SB_HAS(IPV6)
 class PosixSocketBindPairCSTest
     : public ::testing::TestWithParam<std::pair<int, int>> {
  public:
   int GetServerAddressType() { return GetParam().first; }
   int GetClientAddressType() { return GetParam().second; }
 };
-#endif
 
 TEST_P(PosixSocketBindPairFilterTest, RainyDayNullSocketPair) {
   sockaddr_in address = {};
   address.sin_family = GetAddressType();
-  address.sin_port = htons(GetPortNumberForTests());
+  address.sin_port = htons(PosixGetPortNumberForTests());
 
   int invalid_socket_fd = -1;
 
@@ -170,7 +160,7 @@ TEST_P(PosixSocketBindPairFilterTest, RainyDayNullAddressPair) {
   // should work.
   sockaddr_in address = {};
   address.sin_family = GetAddressType();
-  address.sin_port = htons(GetPortNumberForTests());
+  address.sin_port = htons(PosixGetPortNumberForTests());
 
   EXPECT_TRUE(bind(socket_fd, reinterpret_cast<sockaddr*>(&address),
                    sizeof(sockaddr_in)) == 0);
@@ -225,7 +215,6 @@ TEST_P(PosixSocketBindPairFilterTest, RainyDayBadInterfacePair) {
   EXPECT_TRUE(close(socket_fd) == 0);
 }
 
-#if SB_HAS(IPV6)
 TEST_P(PosixSocketBindPairCSTest, RainyDayWrongAddressTypePair) {
   return;
   int socket_fd = socket(GetServerAddressType(), SOCK_STREAM, IPPROTO_TCP);
@@ -234,7 +223,7 @@ TEST_P(PosixSocketBindPairCSTest, RainyDayWrongAddressTypePair) {
   // Binding with the wrong address type should fail.
   sockaddr_in client_address = {};
   client_address.sin_family = GetClientAddressType();
-  client_address.sin_port = htons(GetPortNumberForTests());
+  client_address.sin_port = htons(PosixGetPortNumberForTests());
   EXPECT_FALSE(bind(socket_fd, reinterpret_cast<sockaddr*>(&client_address),
                     sizeof(sockaddr_in)) == 0);
 
@@ -242,14 +231,12 @@ TEST_P(PosixSocketBindPairCSTest, RainyDayWrongAddressTypePair) {
   // address type should work.
   sockaddr_in server_address = {};
   server_address.sin_family = GetServerAddressType();
-  server_address.sin_port = htons(GetPortNumberForTests());
+  server_address.sin_port = htons(PosixGetPortNumberForTests());
   EXPECT_TRUE(bind(socket_fd, reinterpret_cast<sockaddr*>(&server_address),
                    sizeof(sockaddr_in)) == 0);
   EXPECT_TRUE(close(socket_fd) == 0);
 }
-#endif
 
-#if SB_HAS(IPV6)
 INSTANTIATE_TEST_SUITE_P(PosixSocketBindTest,
                          PosixSocketBindPairFilterTest,
                          ::testing::Values(std::make_pair(AF_INET, AF_INET),
@@ -260,13 +247,6 @@ INSTANTIATE_TEST_SUITE_P(PosixSocketBindTest,
                          ::testing::Values(std::make_pair(AF_INET, AF_INET6),
                                            std::make_pair(AF_INET6, AF_INET)),
                          GetPosixSocketAddressTypeFilterPairName);
-#else
-INSTANTIATE_TEST_SUITE_P(PosixSocketBindTest,
-                         PosixSocketBindPairFilterTest,
-                         ::testing::Values(std::make_pair(AF_INET, AF_INET)),
-                         GetPosixSocketAddressTypeFilterPairName);
-#endif
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

@@ -127,7 +127,6 @@ gcc_toolchain("target") {
 gcc_toolchain("native_target") {
   ...
   is_starboard = false
-  is_native_target_build = true
 }
 ```
 
@@ -551,7 +550,7 @@ On Raspberry Pi the Cobalt fonts are configured the following way:
 
 `empty` set of fonts under:
 ```
-<kSbSystemPathContentDirectory>/app/cobalt/content/fonts
+<kSbSystemPathContentDirectory>/app/starboard/content/fonts
 ```
 
 `standard` or `limited` set of fonts under:

@@ -11,6 +11,20 @@
 
 #include "libANGLE/renderer/d3d/d3d11/winrt/InspectableNativeWindow.h"
 
+#if defined(ANGLE_ENABLE_WINDOWS_APP_SDK)
+using ISwapChainPanel          = ABI::Microsoft::UI::Xaml::Controls::ISwapChainPanel;
+using ISizeChangedEventHandler = ABI::Microsoft::UI::Xaml::ISizeChangedEventHandler;
+using ISizeChangedEventArgs    = ABI::Microsoft::UI::Xaml::ISizeChangedEventArgs;
+using ICoreDispatcher          = ABI::Microsoft::UI::Dispatching::IDispatcherQueue;
+using IDispatchedHandler       = ABI::Microsoft::UI::Dispatching::IDispatcherQueueHandler;
+#else
+using ISwapChainPanel          = ABI::Windows::UI::Xaml::Controls::ISwapChainPanel;
+using ISizeChangedEventHandler = ABI::Windows::UI::Xaml::ISizeChangedEventHandler;
+using ISizeChangedEventArgs    = ABI::Windows::UI::Xaml::ISizeChangedEventArgs;
+using ICoreDispatcher          = ABI::Windows::UI::Core::ICoreDispatcher;
+using IDispatchedHandler       = ABI::Windows::UI::Core::IDispatchedHandler;
+#endif
+
 #include <memory>
 
 namespace rx
@@ -37,25 +51,17 @@ class SwapChainPanelNativeWindow : public InspectableNativeWindow,
     void unregisterForSizeChangeEvents();
 
   private:
-    ComPtr<ABI::Windows::UI::Xaml::Controls::ISwapChainPanel> mSwapChainPanel;
-    ComPtr<ABI::Windows::UI::Core::ICoreDispatcher> mSwapChainPanelDispatcher;
+    ComPtr<ISwapChainPanel> mSwapChainPanel;
+    ComPtr<ICoreDispatcher> mSwapChainPanelDispatcher;
     ComPtr<IMap<HSTRING, IInspectable *>> mPropertyMap;
     ComPtr<IDXGISwapChain1> mSwapChain;
 };
 
-// clang format would break the uuid below
-// clang-format off
-#if defined(STARBOARD)
-class SwapChainPanelSizeChangedHandler
-#else
-[uuid(8ACBD974-8187-4508-AD80-AEC77F93CF36)] class SwapChainPanelSizeChangedHandler
-#endif
+__declspec(uuid("8ACBD974-8187-4508-AD80-AEC77F93CF36")) class SwapChainPanelSizeChangedHandler
     : public Microsoft::WRL::RuntimeClass<
           Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
-          ABI::Windows::UI::Xaml::ISizeChangedEventHandler>
+          ISizeChangedEventHandler>
 {
-    // clang-format on
-
   public:
     SwapChainPanelSizeChangedHandler() {}
     HRESULT RuntimeClassInitialize(std::shared_ptr<InspectableNativeWindow> host)
@@ -71,7 +77,7 @@ class SwapChainPanelSizeChangedHandler
 
     // ISizeChangedEventHandler
     IFACEMETHOD(Invoke)
-    (IInspectable *sender, ABI::Windows::UI::Xaml::ISizeChangedEventArgs *sizeChangedEventArgs)
+    (IInspectable *sender, ISizeChangedEventArgs *sizeChangedEventArgs)
     {
         std::shared_ptr<InspectableNativeWindow> host = mHost.lock();
         if (host)
@@ -96,9 +102,8 @@ class SwapChainPanelSizeChangedHandler
     std::weak_ptr<InspectableNativeWindow> mHost;
 };
 
-HRESULT GetSwapChainPanelSize(
-    const ComPtr<ABI::Windows::UI::Xaml::Controls::ISwapChainPanel> &swapChainPanel,
-    const ComPtr<ABI::Windows::UI::Core::ICoreDispatcher> &dispatcher,
-    Size *windowSize);
-}
+HRESULT GetSwapChainPanelSize(const ComPtr<ISwapChainPanel> &swapChainPanel,
+                              const ComPtr<ICoreDispatcher> &dispatcher,
+                              Size *windowSize);
+}  // namespace rx
 #endif  // LIBANGLE_RENDERER_D3D_D3D11_WINRT_SWAPCHAINPANELNATIVEWINDOW_H_

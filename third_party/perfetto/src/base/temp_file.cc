@@ -35,29 +35,23 @@
 #include "perfetto/ext/base/file_utils.h"
 #include "perfetto/ext/base/string_utils.h"
 
-#if defined(STARBOARD)
-#include "starboard/common/log.h"
-#endif
+namespace perfetto {
+namespace base {
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
 namespace {
-std::string GetTempName() {
-  char name[] = "perfetto-XXXXXX";
-  PERFETTO_CHECK(_mktemp_s(name, sizeof(name)) == 0);
-  return name;
+std::string GetTempFilePathWin() {
+  std::string tmplt = GetSysTempDir() + "\\perfetto-XXXXXX";
+  StackString<255> name("%s\\perfetto-XXXXXX", GetSysTempDir().c_str());
+  PERFETTO_CHECK(_mktemp_s(name.mutable_data(), name.len() + 1) == 0);
+  return name.ToStdString();
 }
 }  // namespace
 #endif
 
-namespace perfetto {
-namespace base {
-
 std::string GetSysTempDir() {
   const char* tmpdir = nullptr;
-#if defined(STARBOARD)
-  SB_NOTIMPLEMENTED();
-  return "";
-#elif PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
   if ((tmpdir = getenv("TMP")))
     return tmpdir;
   if ((tmpdir = getenv("TEMP")))
@@ -77,11 +71,8 @@ std::string GetSysTempDir() {
 // static
 TempFile TempFile::Create() {
   TempFile temp_file;
-#if defined(STARBOARD)
-  SB_NOTIMPLEMENTED();
-#else
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
-  temp_file.path_ = GetSysTempDir() + "\\" + GetTempName();
+  temp_file.path_ = GetTempFilePathWin();
   // Several tests want to read-back the temp file while still open. On Windows,
   // that requires FILE_SHARE_READ. FILE_SHARE_READ is NOT settable when using
   // the POSIX-compat equivalent function _open(). Hence the CreateFileA +
@@ -98,7 +89,6 @@ TempFile TempFile::Create() {
 #else
   temp_file.path_ = GetSysTempDir() + "/perfetto-XXXXXXXX";
   temp_file.fd_.reset(mkstemp(&temp_file.path_[0]));
-#endif
 #endif
   if (PERFETTO_UNLIKELY(!temp_file.fd_)) {
     PERFETTO_FATAL("Could not create temp file %s", temp_file.path_.c_str());
@@ -143,14 +133,12 @@ TempFile& TempFile::operator=(TempFile&&) = default;
 // static
 TempDir TempDir::Create() {
   TempDir temp_dir;
-#if !defined(STARBOARD)
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
-  temp_dir.path_ = GetSysTempDir() + "\\" + GetTempName();
+  temp_dir.path_ = GetTempFilePathWin();
   PERFETTO_CHECK(_mkdir(temp_dir.path_.c_str()) == 0);
 #else
   temp_dir.path_ = GetSysTempDir() + "/perfetto-XXXXXXXX";
   PERFETTO_CHECK(mkdtemp(&temp_dir.path_[0]));
-#endif
 #endif
   return temp_dir;
 }

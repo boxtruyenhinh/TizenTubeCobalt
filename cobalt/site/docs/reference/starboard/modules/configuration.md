@@ -56,7 +56,8 @@ clients, but not deprecated for starboard.
 ### SB_EXPORT_PLATFORM
 
 SB_C_FORCE_INLINE annotation for forcing a C function to be inlined.
-SB_EXPORT_PLATFORM annotates symbols as exported from shared libraries.
+SB_EXPORT_PLATFORM annotates symbols as exported from shared libraries. //
+SB_API_VERSION >= 16
 
 ### SB_FUNCTION
 
@@ -78,7 +79,8 @@ Determines at compile-time whether this platform has a quirk.
 
 ### SB_IMPORT_PLATFORM
 
-SB_IMPORT_PLATFORM annotates symbols as imported from shared libraries.
+SB_IMPORT_PLATFORM annotates symbols as imported from shared libraries. //
+SB_API_VERSION >= 16
 
 ### SB_INT64_C(x)
 

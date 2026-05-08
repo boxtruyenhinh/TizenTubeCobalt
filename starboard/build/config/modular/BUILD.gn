@@ -12,42 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import("//starboard/build/config/sanitizers.gni")
+
 config("modular") {
-  ldflags = []
+  ldflags = [ "-nostdlib" ]
   cflags = [
     "-ffunction-sections",
     "-fdata-sections",
-    "-nostdlibinc",
-    "-isystem" + rebase_path("//third_party/llvm-project/libcxxabi/include",
-                             root_build_dir),
-    "-isystem" + rebase_path("//third_party/llvm-project/libunwind/include",
-                             root_build_dir),
-    "-isystem" + rebase_path("//third_party/llvm-project/libcxx/include",
-                             root_build_dir),
-    "-isystem" + rebase_path("//third_party/musl/include", root_build_dir),
-    "-isystem" + rebase_path("//third_party/musl/arch/generic", root_build_dir),
   ]
 
-  if (host_os != "win") {
-    # Causes error on windows. clang++: error: unsupported option '-fPIC' for target 'x86_64-pc-windows-msvc'
-    cflags += [ "-fPIC" ]
-  }
-
-  cflags_cc = [ "-nostdinc++" ]
+  cflags += [ "-fPIC" ]
 
   defines = [
-    # Ensure that the Starboardized __external_threading file is included.
-    "_LIBCPP_HAS_THREAD_API_EXTERNAL",
-
-    # Ensure that only the forward declarations and type definitions are included
-    # in __external_threading.
-    "_LIBCPP_HAS_THREAD_LIBRARY_EXTERNAL",
-
     # Enable GNU extensions to get prototypes like ffsl.
     "_GNU_SOURCE=1",
 
-    "_LIBCPP_HAS_MUSL_LIBC",
-    "__STDC_FORMAT_MACROS",  # so that we get PRI*
+    "_LIBCPP_HAS_MUSL_LIBC=1",
 
     # File format of the shared object we will generate.
     "__ELF__",
@@ -59,30 +39,31 @@ config("modular") {
     # By default, <EGL/eglplatform.h> pulls in some X11 headers that have some
     # nasty macros (|Status|, for example) that conflict with Chromium base.
     "EGL_NO_X11",
+
+    # Disable weak symbols in zstd.
+    "ZSTD_HAVE_WEAK_SYMBOLS=0",
   ]
 
-  if (is_debug) {
+  if (is_debug || cobalt_debugging_enabled) {
     cflags += [
       "-O0",
       "-frtti",
     ]
-    if (!cobalt_fastbuild) {
-      cflags += [
-        # This flag causes an increase in binary size on certain platforms. Refer b/297357707
-        "-g",
-      ]
-    }
+
+    cflags += [
+      # This flag causes an increase in binary size on certain platforms. Refer b/297357707
+      "-g",
+    ]
   } else if (is_devel) {
     cflags += [
       "-O2",
       "-frtti",
     ]
-    if (!cobalt_fastbuild) {
-      cflags += [
-        # Use -gline-tables-only to ease the impact of increased size. Refer b/307760111
-        "-gline-tables-only",
-      ]
-    }
+
+    cflags += [
+      # Use -gline-tables-only to ease the impact of increased size. Refer b/307760111
+      "-gline-tables-only",
+    ]
   } else {
     cflags += [
       "-fno-rtti",
@@ -96,56 +77,20 @@ config("modular") {
 
       # Default visibility to hidden, to enable dead stripping.
       "-fvisibility=hidden",
-
-      # Warns on switches on enums that cover all enum values but
-      # also contain a default: branch. Chrome is full of that.
-      "-Wno-covered-switch-default",
-
-      # protobuf uses hash_map.
-      "-Wno-deprecated",
-
       "-fno-exceptions",
-
-      # Enable unwind tables used by libunwind for stack traces.
-      "-funwind-tables",
 
       # Disable usage of frame pointers.
       "-fomit-frame-pointer",
-
-      # Don"t warn about the "struct foo f = {0};" initialization pattern.
-      "-Wno-missing-field-initializers",
-
-      # Do not warn for implicit sign conversions.
-      "-Wno-sign-conversion",
-
       "-fno-strict-aliasing",  # See http://crbug.com/32204
-
-      "-Wno-unnamed-type-template-args",
-
-      # Triggered by the COMPILE_ASSERT macro.
-      "-Wno-unused-local-typedef",
-
-      # Do not warn if a function or variable cannot be implicitly
-      # instantiated.
-      "-Wno-undefined-var-template",
-
-      # Do not warn about an implicit exception spec mismatch.
-      "-Wno-implicit-exception-spec-mismatch",
-
-      # It's OK not to use some input parameters.
-      "-Wno-unused-parameter",
-      "-Wno-conversion",
-      "-Wno-bitwise-op-parentheses",
-      "-Wno-shift-op-parentheses",
-      "-Wno-shorten-64-to-32",
       "-fno-use-cxa-atexit",
-    ]
-  }
 
-  if (is_clang_16 || host_os == "win") {
-    cflags += [
       # Do not remove null pointer checks.
       "-fno-delete-null-pointer-checks",
+
+      # ../../third_party/perfetto/src/base/unix_socket.cc:555:17: error: comparison of integers of different signs: 'unsigned long' and 'long' [-Werror,-Wsign-compare]
+      #  cmsg = CMSG_NXTHDR(&msg_hdr, cmsg)) {
+      #         ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+      "-Wno-sign-compare",
     ]
   }
 
@@ -158,7 +103,8 @@ config("modular") {
     defines += [ "ADDRESS_SANITIZER" ]
 
     if (asan_symbolizer_path != "") {
-      defines += [ "ASAN_SYMBOLIZER_PATH=\"${asan_symbolizer_path}\"" ]
+      defines += [ "ASAN_SYMBOLIZER_PATH=\"" +
+                   rebase_path(asan_symbolizer_path, "") + "\"" ]
     }
   } else if (use_tsan) {
     cflags += [
@@ -168,41 +114,4 @@ config("modular") {
 
     defines += [ "THREAD_SANITIZER" ]
   }
-}
-
-config("speed") {
-  cflags = [ "-O2" ]
-}
-
-config("size") {
-  cflags = [ "-Os" ]
-}
-
-config("pedantic_warnings") {
-  cflags = [
-    "-Wall",
-    "-Wextra",
-    "-Wunreachable-code",
-  ]
-}
-
-config("no_pedantic_warnings") {
-  cflags = [
-    # 'this' pointer cannot be NULL...pointer may be assumed
-    # to always convert to true.
-    "-Wno-undefined-bool-conversion",
-
-    # Skia doesn't use overrides.
-    "-Wno-inconsistent-missing-override",
-
-    # Do not warn for implicit type conversions that may change a value.
-    "-Wno-conversion",
-
-    # shifting a negative signed value is undefined
-    "-Wno-shift-negative-value",
-
-    # Width of bit-field exceeds width of its type- value will be truncated
-    "-Wno-bitfield-width",
-    "-Wno-undefined-var-template",
-  ]
 }

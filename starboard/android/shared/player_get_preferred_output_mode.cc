@@ -12,35 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/player.h"
+// clang-format on
 
 #include <algorithm>
 
 #include "starboard/configuration.h"
 #include "starboard/shared/starboard/media/media_util.h"
 #include "starboard/shared/starboard/player/filter/player_components.h"
-#include "starboard/string.h"
 
 SbPlayerOutputMode SbPlayerGetPreferredOutputMode(
     const SbPlayerCreationParam* creation_param) {
-  using starboard::shared::starboard::player::filter::PlayerComponents;
+  using ::starboard::PlayerComponents;
 
   if (!creation_param) {
     SB_LOG(ERROR) << "creation_param cannot be NULL";
     return kSbPlayerOutputModeInvalid;
   }
 
-#if SB_API_VERSION >= 15
   const SbMediaAudioStreamInfo& audio_stream_info =
       creation_param->audio_stream_info;
   const SbMediaVideoStreamInfo& video_stream_info =
       creation_param->video_stream_info;
-#else   // SB_API_VERSION >= 15
-  const SbMediaAudioSampleInfo& audio_stream_info =
-      creation_param->audio_sample_info;
-  const SbMediaVideoSampleInfo& video_stream_info =
-      creation_param->video_sample_info;
-#endif  // SB_API_VERSION >= 15
 
   if (audio_stream_info.codec != kSbMediaAudioCodecNone &&
       !audio_stream_info.mime) {
@@ -68,7 +62,7 @@ SbPlayerOutputMode SbPlayerGetPreferredOutputMode(
   bool is_sdr = true;
   if (codec != kSbMediaVideoCodecNone) {
     const auto& color_metadata = video_stream_info.color_metadata;
-    is_sdr = starboard::shared::starboard::media::IsSDRVideo(
+    is_sdr = starboard::IsSDRVideo(
         color_metadata.bits_per_channel, color_metadata.primaries,
         color_metadata.transfer, color_metadata.matrix);
   }

@@ -32,16 +32,17 @@
 
 #include <cstring>
 
-#include "starboard/common/log.h"
+
 #include "starboard/common/string.h"
+#include "starboard/common/log.h"
 #include "starboard/extension/configuration.h"
 #include "starboard/extension/crash_handler.h"
-#include "starboard/extension/graphics.h"
 #include "starboard/extension/loader_app_metrics.h"
+#include "starboard/extension/graphics.h"
+#include "third_party/starboard/rdk/shared/graphics.h"
 #include "starboard/extension/platform_service.h"
 #include "third_party/starboard/rdk/shared/accessibility_extension.h"
 #include "third_party/starboard/rdk/shared/configuration.h"
-#include "third_party/starboard/rdk/shared/graphics.h"
 #include "third_party/starboard/rdk/shared/platform_service.h"
 #if SB_IS(EVERGREEN_COMPATIBLE)
 #include "starboard/elf_loader/evergreen_config.h"
@@ -51,8 +52,8 @@
 
 const void* SbSystemGetExtension(const char* name) {
 #if SB_IS(EVERGREEN_COMPATIBLE)
-  const starboard::elf_loader::EvergreenConfig* evergreen_config =
-      starboard::elf_loader::EvergreenConfig::GetInstance();
+  const elf_loader::EvergreenConfig* evergreen_config =
+      elf_loader::EvergreenConfig::GetInstance();
   if (evergreen_config != NULL &&
       evergreen_config->custom_get_extension_ != NULL) {
     const void* ext = evergreen_config->custom_get_extension_(name);
@@ -61,17 +62,19 @@ const void* SbSystemGetExtension(const char* name) {
     }
   }
   if (strcmp(name, kCobaltExtensionCrashHandlerName) == 0) {
-    return starboard::common::GetCrashHandlerApi();
+    return starboard::GetCrashHandlerApi();
   }
   if (strcmp(name, kStarboardExtensionLoaderAppMetricsName) == 0) {
-    return starboard::shared::starboard::GetLoaderAppMetricsApi();
+    return starboard::GetLoaderAppMetricsApi();
   }
 #endif
   if (strcmp(name, kCobaltExtensionConfigurationName) == 0) {
     return third_party::starboard::rdk::shared::GetConfigurationApi();
-  } else if (strcmp(name, kCobaltExtensionGraphicsName) == 0) {
+  }
+  else if (strcmp(name, kCobaltExtensionGraphicsName) == 0) {
     return starboard::rdk::shared::GetGraphicsApi();
-  } else if (strcmp(name, kCobaltExtensionPlatformServiceName) == 0) {
+  }
+  else if (strcmp(name, kCobaltExtensionPlatformServiceName) == 0) {
     return third_party::starboard::rdk::shared::GetPlatformServiceApi();
   }
   if (strcmp(name, kStarboardExtensionAccessibilityName) == 0) {
@@ -79,3 +82,4 @@ const void* SbSystemGetExtension(const char* name) {
   }
   return NULL;
 }
+

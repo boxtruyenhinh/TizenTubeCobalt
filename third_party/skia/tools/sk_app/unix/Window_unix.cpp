@@ -2,23 +2,16 @@
 * Copyright 2016 Google Inc.
 *
 * Use of this source code is governed by a BSD-style license that can be
-* f 49
-* Prev
-* Up
-*
-*
 * found in the LICENSE file.
 */
 
-//#include <tchar.h>
-
-#include "tools/sk_app/unix/WindowContextFactory_unix.h"
-
-#include "src/utils/SkUTF.h"
-#include "tools/sk_app/GLWindowContext.h"
+#include "src/base/SkUTF.h"
 #include "tools/sk_app/unix/Window_unix.h"
 #include "tools/skui/ModifierKey.h"
 #include "tools/timer/Timer.h"
+#include "tools/window/WindowContext.h"
+#include "tools/window/unix/RasterWindowContext_unix.h"
+#include "tools/window/unix/XlibWindowInfo.h"
 
 extern "C" {
     #include "tools/sk_app/unix/keysym2ucs.h"
@@ -27,11 +20,29 @@ extern "C" {
 #include <X11/Xutil.h>
 #include <X11/XKBlib.h>
 
+#if defined(SK_GANESH) && defined(SK_GL)
+#include "tools/window/unix/GaneshGLWindowContext_unix.h"
+#endif
+
+#if defined(SK_GANESH) && defined(SK_VULKAN)
+#include "tools/window/unix/GaneshVulkanWindowContext_unix.h"
+#endif
+
+#if defined(SK_GRAPHITE) && defined(SK_VULKAN)
+#include "tools/window/unix/GraphiteNativeVulkanWindowContext_unix.h"
+#endif
+
+#if defined(SK_GRAPHITE) && defined(SK_DAWN)
+#include "tools/window/unix/GraphiteDawnVulkanWindowContext_unix.h"
+#endif
+
+using skwindow::DisplayParams;
+
 namespace sk_app {
 
 SkTDynamicHash<Window_unix, XWindow> Window_unix::gWindowMap;
 
-Window* Window::CreateNativeWindow(void* platformData) {
+Window* Windows::CreateNativeWindow(void* platformData) {
     Display* display = (Display*)platformData;
     SkASSERT(display);
 
@@ -49,7 +60,8 @@ const long kEventMask = ExposureMask | StructureNotifyMask |
                         PointerMotionMask | ButtonPressMask | ButtonReleaseMask;
 
 bool Window_unix::initWindow(Display* display) {
-    if (fRequestedDisplayParams.fMSAASampleCount != fMSAASampleCount) {
+    SkASSERT(fRequestedDisplayParams);
+    if (fRequestedDisplayParams->msaaSampleCount() != fMSAASampleCount) {
         this->closeWindow();
     }
     // we already have a window
@@ -61,6 +73,7 @@ bool Window_unix::initWindow(Display* display) {
     constexpr int initialWidth = 1280;
     constexpr int initialHeight = 960;
 
+#ifdef SK_GL
     // Attempt to create a window that supports GL
 
     // We prefer the more recent glXChooseFBConfig but fall back to glXChooseVisual. They have
@@ -79,22 +92,23 @@ bool Window_unix::initWindow(Display* display) {
         None
     };
     SkASSERT(nullptr == fVisualInfo);
-    if (fRequestedDisplayParams.fMSAASampleCount > 1) {
-        static const GLint kChooseFBConifgAttCnt = SK_ARRAY_COUNT(kChooseFBConfigAtt);
+    if (fRequestedDisplayParams->msaaSampleCount() > 1) {
+        static const GLint kChooseFBConifgAttCnt = std::size(kChooseFBConfigAtt);
         GLint msaaChooseFBConfigAtt[kChooseFBConifgAttCnt + 4];
         memcpy(msaaChooseFBConfigAtt, kChooseFBConfigAtt, sizeof(kChooseFBConfigAtt));
         SkASSERT(None == msaaChooseFBConfigAtt[kChooseFBConifgAttCnt - 1]);
         msaaChooseFBConfigAtt[kChooseFBConifgAttCnt - 1] = GLX_SAMPLE_BUFFERS_ARB;
         msaaChooseFBConfigAtt[kChooseFBConifgAttCnt + 0] = 1;
         msaaChooseFBConfigAtt[kChooseFBConifgAttCnt + 1] = GLX_SAMPLES_ARB;
-        msaaChooseFBConfigAtt[kChooseFBConifgAttCnt + 2] = fRequestedDisplayParams.fMSAASampleCount;
+        msaaChooseFBConfigAtt[kChooseFBConifgAttCnt + 2] =
+                fRequestedDisplayParams->msaaSampleCount();
         msaaChooseFBConfigAtt[kChooseFBConifgAttCnt + 3] = None;
         int n;
         fFBConfig = glXChooseFBConfig(fDisplay, DefaultScreen(fDisplay), msaaChooseFBConfigAtt, &n);
         if (n > 0) {
             fVisualInfo = glXGetVisualFromFBConfig(fDisplay, *fFBConfig);
         } else {
-            static const GLint kChooseVisualAttCnt = SK_ARRAY_COUNT(chooseVisualAtt);
+            static const GLint kChooseVisualAttCnt = std::size(chooseVisualAtt);
             GLint msaaChooseVisualAtt[kChooseVisualAttCnt + 4];
             memcpy(msaaChooseVisualAtt, chooseVisualAtt, sizeof(chooseVisualAtt));
             SkASSERT(None == msaaChooseVisualAtt[kChooseVisualAttCnt - 1]);
@@ -102,7 +116,7 @@ bool Window_unix::initWindow(Display* display) {
             msaaChooseFBConfigAtt[kChooseVisualAttCnt + 0] = 1;
             msaaChooseFBConfigAtt[kChooseVisualAttCnt + 1] = GLX_SAMPLES_ARB;
             msaaChooseFBConfigAtt[kChooseVisualAttCnt + 2] =
-                    fRequestedDisplayParams.fMSAASampleCount;
+                    fRequestedDisplayParams->msaaSampleCount();
             msaaChooseFBConfigAtt[kChooseVisualAttCnt + 3] = None;
             fVisualInfo = glXChooseVisual(display, DefaultScreen(display), msaaChooseVisualAtt);
             fFBConfig = nullptr;
@@ -137,7 +151,9 @@ bool Window_unix::initWindow(Display* display) {
                                 fVisualInfo->visual,
                                 CWEventMask | CWColormap,
                                 &swa);
-    } else {
+    }
+#endif
+    if (!fWindow) {
         // Create a simple window instead.  We will not be able to show GL
         fWindow = XCreateSimpleWindow(display,
                                       DefaultRootWindow(display),
@@ -153,7 +169,7 @@ bool Window_unix::initWindow(Display* display) {
         return false;
     }
 
-    fMSAASampleCount = fRequestedDisplayParams.fMSAASampleCount;
+    fMSAASampleCount = fRequestedDisplayParams->msaaSampleCount();
 
     // set up to catch window delete message
     fWmDeleteMessage = XInternAtom(display, "WM_DELETE_WINDOW", False);
@@ -223,7 +239,7 @@ static skui::Key get_key(KeySym keysym) {
         { 'y',          skui::Key::kY        },
         { 'z',          skui::Key::kZ        },
     };
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gPair); i++) {
+    for (size_t i = 0; i < std::size(gPair); i++) {
         if (gPair[i].fXK == keysym) {
             return gPair[i].fKey;
         }
@@ -242,7 +258,7 @@ static skui::ModifierKey get_modifiers(const XEvent& event) {
     };
 
     skui::ModifierKey modifiers = skui::ModifierKey::kNone;
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gModifiers); ++i) {
+    for (size_t i = 0; i < std::size(gModifiers); ++i) {
         if (event.xkey.state & gModifiers[i].fXMask) {
             modifiers |= gModifiers[i].fSkMask;
         }
@@ -272,10 +288,10 @@ bool Window_unix::handleEvent(const XEvent& event) {
                                   skui::InputState::kDown, get_modifiers(event));
                     break;
                 case Button4:
-                    this->onMouseWheel(1.0f, get_modifiers(event));
+                    this->onMouseWheel(1.0f, 0, 0, get_modifiers(event));
                     break;
                 case Button5:
-                    this->onMouseWheel(-1.0f, get_modifiers(event));
+                    this->onMouseWheel(-1.0f, 0, 0, get_modifiers(event));
                     break;
             }
             break;
@@ -384,7 +400,7 @@ bool Window_unix::attach(BackendType attachType) {
 
     this->initWindow(fDisplay);
 
-    window_context_factory::XlibWindowInfo winInfo;
+    skwindow::XlibWindowInfo winInfo;
     winInfo.fDisplay = fDisplay;
     winInfo.fWindow = fWindow;
     winInfo.fFBConfig = fFBConfig;
@@ -399,28 +415,35 @@ bool Window_unix::attach(BackendType attachType) {
     }
 
     switch (attachType) {
-#ifdef SK_DAWN
-        case kDawn_BackendType:
-            fWindowContext =
-                    window_context_factory::MakeDawnVulkanForXlib(winInfo, fRequestedDisplayParams);
+#if defined(SK_GRAPHITE) && defined(SK_DAWN)
+        case kGraphiteDawn_BackendType:
+            fWindowContext = skwindow::MakeGraphiteDawnVulkanForXlib(
+                    winInfo, fRequestedDisplayParams->clone());
             break;
 #endif
-#ifdef SK_VULKAN
+#if defined(SK_GANESH) && defined(SK_VULKAN)
         case kVulkan_BackendType:
             fWindowContext =
-                    window_context_factory::MakeVulkanForXlib(winInfo, fRequestedDisplayParams);
+                    skwindow::MakeGaneshVulkanForXlib(winInfo, fRequestedDisplayParams->clone());
             break;
 #endif
-#ifdef SK_GL
+#if defined(SK_GRAPHITE) && defined(SK_VULKAN)
+        case kGraphiteVulkan_BackendType:
+            fWindowContext = skwindow::MakeGraphiteNativeVulkanForXlib(
+                    winInfo, fRequestedDisplayParams->clone());
+            break;
+#endif
+#if defined(SK_GANESH) && defined(SK_GL)
         case kNativeGL_BackendType:
             fWindowContext =
-                    window_context_factory::MakeGLForXlib(winInfo, fRequestedDisplayParams);
+                    skwindow::MakeGaneshGLForXlib(winInfo, fRequestedDisplayParams->clone());
             break;
 #endif
         case kRaster_BackendType:
-            fWindowContext =
-                    window_context_factory::MakeRasterForXlib(winInfo, fRequestedDisplayParams);
+            fWindowContext = skwindow::MakeRasterForXlib(winInfo, fRequestedDisplayParams->clone());
             break;
+        default:
+            SK_ABORT("Unknown backend");
     }
     this->onBackendCreated();
 
@@ -442,13 +465,14 @@ void Window_unix::onInval() {
     XSendEvent(fDisplay, fWindow, False, 0, &event);
 }
 
-void Window_unix::setRequestedDisplayParams(const DisplayParams& params, bool allowReattach) {
+void Window_unix::setRequestedDisplayParams(std::unique_ptr<const DisplayParams> params,
+                                            bool allowReattach) {
 #if defined(SK_VULKAN)
     // Vulkan on unix crashes if we try to reinitialize the vulkan context without remaking the
     // window.
     if (fBackend == kVulkan_BackendType && allowReattach) {
         // Need to change these early, so attach() creates the window context correctly
-        fRequestedDisplayParams = params;
+        fRequestedDisplayParams = std::move(params);
 
         this->detach();
         this->attach(fBackend);
@@ -456,7 +480,7 @@ void Window_unix::setRequestedDisplayParams(const DisplayParams& params, bool al
     }
 #endif
 
-    INHERITED::setRequestedDisplayParams(params, allowReattach);
+    Window::setRequestedDisplayParams(std::move(params), allowReattach);
 }
 
 const char* Window_unix::getClipboardText() {

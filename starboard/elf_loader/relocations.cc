@@ -17,7 +17,6 @@
 #include "starboard/common/log.h"
 #include "starboard/elf_loader/log.h"
 
-namespace starboard {
 namespace elf_loader {
 
 Relocations::Relocations(Addr base_memory_address,
@@ -123,10 +122,12 @@ bool Relocations::InitRelocations() {
         has_symbolic_ = true;
         break;
       case DT_FLAGS:
-        if (dyn_value & DF_TEXTREL)
+        if (dyn_value & DF_TEXTREL) {
           has_text_relocations_ = true;
-        if (dyn_value & DF_SYMBOLIC)
+        }
+        if (dyn_value & DF_SYMBOLIC) {
           has_symbolic_ = true;
+        }
 
         SB_DLOG(INFO) << "  DT_FLAGS has_text_relocations="
                       << has_text_relocations_
@@ -162,17 +163,19 @@ bool Relocations::ApplyRelocations(const rel_t* rel, size_t rel_count) {
   SB_DLOG(INFO) << "rel=" << std::hex << rel << std::dec
                 << " rel_count=" << rel_count;
 
-  if (!rel)
+  if (!rel) {
     return true;
+  }
 
+  bool could_resolve_all = true;
   for (size_t rel_n = 0; rel_n < rel_count; rel++, rel_n++) {
     SB_DLOG(INFO) << "  Relocation " << rel_n + 1 << " of " << rel_count;
 
-    if (!ApplyRelocation(rel))
-      return false;
+    if (!ApplyRelocation(rel)) {
+      could_resolve_all = false;
+    }
   }
-
-  return true;
+  return could_resolve_all;
 }
 
 bool Relocations::ApplyRelocation(const rel_t* rel) {
@@ -185,8 +188,9 @@ bool Relocations::ApplyRelocation(const rel_t* rel) {
                 << " type=" << std::dec << rel_type << " reloc=0x" << std::hex
                 << reloc << " symbol=" << rel_symbol;
 
-  if (rel_type == 0)
+  if (rel_type == 0) {
     return true;
+  }
 
   if (rel_symbol != 0) {
     if (!ResolveSymbol(rel_type, rel_symbol, reloc, &sym_addr)) {
@@ -475,4 +479,3 @@ bool Relocations::ResolveSymbol(Word rel_type,
   return false;
 }
 }  // namespace elf_loader
-}  // namespace starboard

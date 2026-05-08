@@ -15,20 +15,19 @@
 #ifndef STARBOARD_TESTING_FAKE_GRAPHICS_CONTEXT_PROVIDER_H_
 #define STARBOARD_TESTING_FAKE_GRAPHICS_CONTEXT_PROVIDER_H_
 
-#include <pthread.h>
-
+#include <atomic>
 #include <functional>
+#include <memory>
 
 #include "starboard/common/queue.h"
+#include "starboard/common/thread.h"
 #include "starboard/configuration.h"
 #include "starboard/decode_target.h"
-#include "starboard/window.h"
-
 #include "starboard/egl.h"
 #include "starboard/gles.h"
+#include "starboard/window.h"
 
 namespace starboard {
-namespace testing {
 
 // This class provides a SbDecodeTargetGraphicsContextProvider implementation
 // used by SbPlayer related tests.  It creates a thread and forwards decode
@@ -38,7 +37,7 @@ class FakeGraphicsContextProvider {
   FakeGraphicsContextProvider();
   ~FakeGraphicsContextProvider();
 
-  SbWindow window() { return window_; }
+  SbWindow window() { return kSbWindowInvalid; }
   SbDecodeTargetGraphicsContextProvider* decoder_target_provider() {
     return &decoder_target_provider_;
   }
@@ -49,10 +48,17 @@ class FakeGraphicsContextProvider {
   void Render();
 
  private:
-  static void* ThreadEntryPoint(void* context);
-  void RunLoop();
+  class GlesContextThread : public Thread {
+   public:
+    explicit GlesContextThread(FakeGraphicsContextProvider* provider)
+        : Thread("dt_context"), provider_(provider) {}
+    void Run() override { provider_->RunLoop(); }
 
-  void InitializeWindow();
+   private:
+    FakeGraphicsContextProvider* provider_;
+  };
+
+  void RunLoop();
 
   void InitializeEGL();
 
@@ -73,14 +79,13 @@ class FakeGraphicsContextProvider {
   SbEglSurface surface_;
   SbEglContext context_;
   Queue<std::function<void()>> functor_queue_;
-  pthread_t decode_target_context_thread_;
 
-  SbWindow window_;
+  std::unique_ptr<GlesContextThread> gles_context_thread_;
+  std::atomic<SbThreadId> gles_context_thread_id_{kSbThreadInvalidId};
 
   SbDecodeTargetGraphicsContextProvider decoder_target_provider_;
 };
 
-}  // namespace testing
 }  // namespace starboard
 
 #endif  // STARBOARD_TESTING_FAKE_GRAPHICS_CONTEXT_PROVIDER_H_

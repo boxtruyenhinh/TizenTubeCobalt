@@ -37,6 +37,10 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
+#if BUILDFLAG(USE_STARBOARD_MEDIA)
+#include "media/mojo/mojom/renderer_extensions.mojom.h"
+#endif  // BUILDFLAG(USE_STARBOARD_MEDIA)
+
 namespace media {
 
 namespace {
@@ -136,8 +140,22 @@ class MediaServiceTest : public testing::Test {
   void InitializeRenderer(const VideoDecoderConfig& video_config,
                           bool expected_result) {
     base::RunLoop run_loop;
+#if BUILDFLAG(USE_STARBOARD_MEDIA)
+  StarboardRendererConfig config(base::UnguessableToken::Create(),
+                                 base::Microseconds(0),
+                                 base::Microseconds(0),
+                                 "width=1920; height=1080; framerate=15;",
+                                 StarboardRendererConfig::ExperimentalFeatures{},
+                                 gfx::Size(1920, 1080));
+    interface_factory_->CreateStarboardRenderer(
+      media_log_.InitWithNewPipeAndPassRemote(),
+      config, renderer_.BindNewPipeAndPassReceiver(),
+      renderer_extension_.BindNewPipeAndPassReceiver(),
+      client_extension_.InitWithNewPipeAndPassRemote());
+#else  // BUILDFLAG(USE_STARBOARD_MEDIA)
     interface_factory_->CreateDefaultRenderer(
         std::string(), renderer_.BindNewPipeAndPassReceiver());
+#endif  // BUILDFLAG(USE_STARBOARD_MEDIA)
 
     video_stream_.set_video_decoder_config(video_config);
 
@@ -155,7 +173,7 @@ class MediaServiceTest : public testing::Test {
     EXPECT_CALL(*this, OnRendererInitialized(expected_result))
         .WillOnce(QuitLoop(&run_loop));
     renderer_->Initialize(
-        std::move(client_remote), std::move(streams), nullptr,
+        std::move(client_remote), std::move(streams),
         base::BindOnce(&MediaServiceTest::OnRendererInitialized,
                        base::Unretained(this)));
     run_loop.Run();
@@ -167,15 +185,15 @@ class MediaServiceTest : public testing::Test {
   void OnCdmCreated(bool expected_result,
                     mojo::PendingRemote<mojom::ContentDecryptionModule> remote,
                     mojom::CdmContextPtr cdm_context,
-                    const std::string& error_message) {
+                    CreateCdmStatus status) {
     if (!expected_result) {
       EXPECT_FALSE(remote);
       EXPECT_FALSE(cdm_context);
-      EXPECT_TRUE(!error_message.empty());
+      EXPECT_NE(status, CreateCdmStatus::kSuccess);
       return;
     }
     EXPECT_TRUE(remote);
-    EXPECT_TRUE(error_message.empty());
+    EXPECT_EQ(status, CreateCdmStatus::kSuccess);
     cdm_.Bind(std::move(remote));
     cdm_.set_disconnect_handler(base::BindOnce(
         &MediaServiceTest::OnCdmConnectionError, base::Unretained(this)));
@@ -186,6 +204,12 @@ class MediaServiceTest : public testing::Test {
   mojo::Remote<mojom::InterfaceFactory> interface_factory_;
   mojo::Remote<mojom::ContentDecryptionModule> cdm_;
   mojo::Remote<mojom::Renderer> renderer_;
+
+#if BUILDFLAG(USE_STARBOARD_MEDIA)
+  mojo::PendingReceiver<mojom::MediaLog> media_log_;
+  mojo::Remote<mojom::StarboardRendererExtension> renderer_extension_;
+  mojo::PendingReceiver<mojom::StarboardRendererClientExtension> client_extension_;
+#endif  // BUILDFLAG(USE_STARBOARD_MEDIA)
 
   std::unique_ptr<MediaService> media_service_impl_;
 
@@ -206,7 +230,7 @@ class MediaServiceTest : public testing::Test {
 // - If you expect a callback on an InterfacePtr call or connection error, use
 //   base::RunLoop::Run() and QuitLoop().
 
-// TODO(crbug.com/829233): Enable these tests on Android.
+// TODO(crbug.com/40570244): Enable these tests on Android.
 #if BUILDFLAG(ENABLE_MOJO_CDM) && !BUILDFLAG(IS_ANDROID)
 TEST_F(MediaServiceTest, InitializeCdm_Success) {
   InitializeCdm(kClearKeyKeySystem, true);

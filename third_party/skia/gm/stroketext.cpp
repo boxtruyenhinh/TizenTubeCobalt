@@ -10,18 +10,22 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkFont.h"
+#include "include/core/SkFontArguments.h"
+#include "include/core/SkFontMgr.h"
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPathEffect.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkStream.h"
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkDashPathEffect.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 static void test_nulldev(SkCanvas* canvas) {
     SkBitmap bm;
@@ -70,7 +74,7 @@ static void draw_text_set(SkCanvas* canvas, const SkPaint& paint, const SkFont& 
 
     canvas->translate(200, 0);
     SkPaint p(paint);
-    p.setPathEffect(SkDashPathEffect::Make(intervals, SK_ARRAY_COUNT(intervals), phase));
+    p.setPathEffect(SkDashPathEffect::Make(intervals, std::size(intervals), phase));
     draw_text_stroked(canvas, p, font, 10);
 }
 
@@ -87,7 +91,7 @@ DEF_SIMPLE_GM(stroketext, canvas, 1200, 480) {
     SkPaint paint;
     paint.setAntiAlias(true);
 
-    SkFont font(ToolUtils::create_portable_typeface(), kBelowThreshold_TextSize);
+    SkFont font(ToolUtils::DefaultPortableTypeface(), kBelowThreshold_TextSize);
     draw_text_set(canvas, paint, font);
 
     canvas->translate(600, 0);
@@ -95,10 +99,24 @@ DEF_SIMPLE_GM(stroketext, canvas, 1200, 480) {
     draw_text_set(canvas, paint, font);
 }
 
-DEF_SIMPLE_GM_CAN_FAIL(stroketext_native, canvas, msg, 650, 320) {
-    sk_sp<SkTypeface> ttf = MakeResourceAsTypeface("fonts/Stroking.ttf");
-    sk_sp<SkTypeface> otf = MakeResourceAsTypeface("fonts/Stroking.otf");
-    if (!ttf && !otf) {
+DEF_SIMPLE_GM_CAN_FAIL(stroketext_native, canvas, msg, 650, 420) {
+    sk_sp<SkTypeface> ttf = ToolUtils::CreateTypefaceFromResource("fonts/Stroking.ttf");
+    sk_sp<SkTypeface> otf = ToolUtils::CreateTypefaceFromResource("fonts/Stroking.otf");
+
+    sk_sp<SkTypeface> overlap = []() -> sk_sp<SkTypeface>{
+        std::unique_ptr<SkStreamAsset> variableStream(GetResourceAsStream("fonts/Variable.ttf"));
+        if (!variableStream) {
+            return nullptr;
+        }
+        const SkFontArguments::VariationPosition::Coordinate position[] = {
+            { SkSetFourByteTag('w','g','h','t'), 721.0f },
+        };
+        SkFontArguments params;
+        params.setVariationDesignPosition({position, std::size(position)});
+        return ToolUtils::TestFontMgr()->makeFromStream(std::move(variableStream), params);
+    }();
+
+    if (!ttf && !otf && !overlap) {
         msg->append("No support for ttf or otf.");
         return skiagm::DrawResult::kSkip;
     }
@@ -138,6 +156,16 @@ DEF_SIMPLE_GM_CAN_FAIL(stroketext_native, canvas, msg, 650, 320) {
         */
         SkFont font(otf, 100);
         canvas->drawString("○◉  ⁰¹³ᶠ", 10, 300, font, p);
+    }
+
+    if (overlap) {
+        /* Variable.ttf is structured like:
+            U+74 t (glyf outline has overlap flag)
+            U+167 ŧ (glyf outline does not have overlap flag)
+        */
+        SkFont font(overlap, 100);
+        p.setStrokeWidth(1);
+        canvas->drawString("tŧ", 10, 400, font, p);
     }
 
     return skiagm::DrawResult::kOk;

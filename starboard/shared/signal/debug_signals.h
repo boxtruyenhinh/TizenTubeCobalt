@@ -18,14 +18,10 @@
 #include "starboard/shared/internal_only.h"
 
 namespace starboard {
-namespace shared {
-namespace signal {
 
 void InstallDebugSignalHandlers();
 void UninstallDebugSignalHandlers();
 
-}  // namespace signal
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_SIGNAL_DEBUG_SIGNALS_H_

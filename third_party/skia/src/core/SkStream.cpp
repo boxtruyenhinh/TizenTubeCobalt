@@ -10,15 +10,22 @@
 #include "include/core/SkData.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkFixed.h"
-#include "include/private/SkTFitsIn.h"
-#include "include/private/SkTPin.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkAlign.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTFitsIn.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkSafeMath.h"
 #include "src/core/SkOSFile.h"
-#include "src/core/SkSafeMath.h"
 #include "src/core/SkStreamPriv.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstring>
 #include <limits>
+#include <new>
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -31,6 +38,10 @@ bool SkStream::readS16(int16_t* i) {
 }
 
 bool SkStream::readS32(int32_t* i) {
+    return this->read(i, sizeof(*i)) == sizeof(*i);
+}
+
+bool SkStream::readS64(int64_t* i) {
     return this->read(i, sizeof(*i)) == sizeof(*i);
 }
 
@@ -327,19 +338,15 @@ void SkMemoryStream::setData(sk_sp<SkData> data) {
     fOffset = 0;
 }
 
-void SkMemoryStream::skipToAlign4() {
-    // cast to remove unary-minus warning
-    fOffset += -(int)fOffset & 0x03;
-}
-
 size_t SkMemoryStream::read(void* buffer, size_t size) {
     size_t dataSize = fData->size();
 
+    SkASSERT(fOffset <= dataSize);
     if (size > dataSize - fOffset) {
         size = dataSize - fOffset;
     }
     if (buffer) {
-        memcpy(buffer, fData->bytes() + fOffset, size);
+        sk_careful_memcpy(buffer, fData->bytes() + fOffset, size);
     }
     fOffset += size;
     return size;
@@ -365,7 +372,7 @@ bool SkMemoryStream::rewind() {
 }
 
 SkMemoryStream* SkMemoryStream::onDuplicate() const {
-    return new SkMemoryStream(fData);
+    return new SkMemoryStream(fPath.c_str(), fData);
 }
 
 size_t SkMemoryStream::getPosition() const {
@@ -534,28 +541,29 @@ bool SkDynamicMemoryWStream::write(const void* buffer, size_t count) {
         SkASSERT(buffer);
         size_t size;
 
-        if (fTail) {
-            if (fTail->avail() > 0) {
-                size = std::min(fTail->avail(), count);
-                buffer = fTail->append(buffer, size);
-                SkASSERT(count >= size);
-                count -= size;
-                if (count == 0) {
-                    return true;
-                }
+        if (fTail && fTail->avail() > 0) {
+            size = std::min(fTail->avail(), count);
+            buffer = fTail->append(buffer, size);
+            SkASSERT(count >= size);
+            count -= size;
+            if (count == 0) {
+                return true;
             }
-            // If we get here, we've just exhausted fTail, so update our tracker
-            fBytesWrittenBeforeTail += fTail->written();
         }
 
         size = std::max<size_t>(count, SkDynamicMemoryWStream_MinBlockSize - sizeof(Block));
         size = SkAlign4(size);  // ensure we're always a multiple of 4 (see padToAlign4())
 
-        Block* block = (Block*)sk_malloc_throw(sizeof(Block) + size);
+        Block* block = (Block*)sk_malloc_canfail(sizeof(Block) + size);
+        if (!block) {
+            this->validate();
+            return false;
+        }
         block->init(size);
         block->append(buffer, count);
 
-        if (fTail != nullptr) {
+        if (fTail) {
+            fBytesWrittenBeforeTail += fTail->written();
             fTail->fNext = block;
         } else {
             fHead = fTail = block;
@@ -599,7 +607,6 @@ void SkDynamicMemoryWStream::prependToAndReset(SkDynamicMemoryWStream* dst) {
     dst->fBytesWrittenBeforeTail += fBytesWrittenBeforeTail + fTail->written();
     fHead = fTail = nullptr;
     fBytesWrittenBeforeTail = 0;
-    return;
 }
 
 
@@ -916,10 +923,83 @@ static sk_sp<SkData> mmap_filename(const char path[]) {
     return data;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// All code related to Font mmap cache are grouped below for easy maintenance.
+///////////////////////////////////////////////////////////////////////////////
+
+#include "include/private/base/SkMutex.h"
+#include "src/core/SkTHash.h"
+
+using PathToDataMap = skia_private::THashMap<SkString, sk_sp<SkData>>;
+
+static SkMutex& get_path_to_data_map_mutex() {
+    // It's Skia convention to intentionally leak static objects to ensure proper lifetime.
+    static SkMutex* mutex = new SkMutex;
+    return *mutex;
+}
+
+static PathToDataMap& get_path_to_data_map() {
+    // It's Skia convention to intentionally leak static objects to ensure proper lifetime.
+    static PathToDataMap* path_to_data_map = new PathToDataMap;
+    return *path_to_data_map;
+}
+
+static sk_sp<SkData> mmap_filename_with_cache(const char path[]) {
+    SkString pathString(path);
+    SkAutoMutexExclusive lock(get_path_to_data_map_mutex());
+    PathToDataMap& path_to_data_map = get_path_to_data_map();
+
+    if (sk_sp<SkData>* found = path_to_data_map.find(pathString)) {
+        SkDEBUGCODE(SkDebugf("Found font file %s in cache.\n", pathString.c_str()));
+        return *found;
+    }
+
+    if (auto data = mmap_filename(path)) {
+        SkDEBUGCODE(SkDebugf("Mapped font file %s and stores it in cache (size = %d).\n",
+                             pathString.c_str(), path_to_data_map.count()));
+        path_to_data_map.set(pathString, data);
+        return data;
+    }
+
+    return nullptr;
+}
+
+SkMemoryStream::SkMemoryStream(const char path[], sk_sp<SkData> data)
+        : fPath(path), fData(std::move(data)) {
+    if (nullptr == fData) {
+        fData = SkData::MakeEmpty();
+    }
+    fOffset = 0;
+}
+
+SkMemoryStream::~SkMemoryStream() {
+    if (!fPath.isEmpty() && fData) {
+        SkAutoMutexExclusive lock(get_path_to_data_map_mutex());
+        PathToDataMap& path_to_data_map = get_path_to_data_map();
+
+        if (sk_sp<SkData>* found = path_to_data_map.find(fPath)) {
+            SkASSERT(fData == *found);
+
+            // Reset fData before checking unique() so unique() returns true when this is the last reference.
+            fData.reset();
+
+            if ((*found)->unique()) {
+                SkDEBUGCODE(SkDebugf("Removing font file %s from the cache (size = %d).\n",
+                                     fPath.c_str(), path_to_data_map.count()));
+                path_to_data_map.remove(fPath);
+            }
+        }
+    }
+}
+
 std::unique_ptr<SkStreamAsset> SkStream::MakeFromFile(const char path[]) {
-    auto data(mmap_filename(path));
+    if (!path) {
+        return nullptr;
+    }
+
+    auto data(mmap_filename_with_cache(path));
     if (data) {
-        return std::make_unique<SkMemoryStream>(std::move(data));
+        return std::make_unique<SkMemoryStream>(path, std::move(data));
     }
 
     // If we get here, then our attempt at using mmap failed, so try normal file access.
@@ -927,7 +1007,7 @@ std::unique_ptr<SkStreamAsset> SkStream::MakeFromFile(const char path[]) {
     if (!stream->isValid()) {
         return nullptr;
     }
-    return std::move(stream);
+    return stream;
 }
 
 // Declared in SkStreamPriv.h:
@@ -968,4 +1048,18 @@ bool SkStreamCopy(SkWStream* out, SkStream* input) {
             return false;
         }
     }
+}
+
+bool StreamRemainingLengthIsBelow(SkStream* stream, size_t len) {
+    SkASSERT(stream);
+    if (stream->hasLength()) {
+        if (stream->hasPosition()) {
+            size_t remainingBytes = stream->getLength() - stream->getPosition();
+            return remainingBytes < len;
+        }
+        // We don't know the position, but we can still return true if the
+        // stream's entire length is shorter than the requested length.
+        return stream->getLength() < len;
+    }
+    return false;
 }

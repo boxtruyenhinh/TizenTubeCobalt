@@ -57,7 +57,7 @@ class SkiaStepApi(recipe_api.RecipeApi):
     If test_data is not specified, reads the property
     'test_<asset_name>_version' or if not present, uses
     TEST_DEFAULT_ASSET_VERSION."""
-    version_file = skia_dir.join(
+    version_file = skia_dir.joinpath(
         'infra', 'bots', 'assets', asset_name, 'VERSION')
     if not test_data:
       test_data = self.m.properties.get(
@@ -91,8 +91,7 @@ class SkiaStepApi(recipe_api.RecipeApi):
           del self._failed[-attempt:]
         return res
       except self.m.step.StepFailure:
-        if attempt == attempts - 1:
-          if abort_on_failure:
-            raise
-        elif between_attempts_fn:
+        if between_attempts_fn:
           between_attempts_fn(attempt+1)
+        if (attempt == attempts - 1) and abort_on_failure:
+            raise

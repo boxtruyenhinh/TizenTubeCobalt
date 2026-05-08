@@ -14,7 +14,11 @@ Socket::Socket() = default;
 
 Socket::~Socket() = default;
 
-#if defined(STARBOARD)
+#if BUILDFLAG(IS_COBALT)
+
+Socket::ReadPacketResults::ReadPacketResults() = default;
+Socket::ReadPacketResults::~ReadPacketResults() = default;
+
 int Socket::ReadMultiplePackets(ReadPacketResults* results,
                                 int read_buffer_size,
                                 CompletionOnceCallback callback) {

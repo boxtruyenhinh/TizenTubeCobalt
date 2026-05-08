@@ -4,9 +4,6 @@
 en_AU{
     %%Parent{"en_001"}
     zoneStrings{
-        "Pacific:Johnston"{
-            ec{"Johnston"}
-        }
         "meta:Africa_Eastern"{
             ls{"Eastern Africa Time"}
         }
@@ -54,6 +51,9 @@ en_AU{
             lg{"Cook Island Time"}
             ls{"Cook Island Standard Time"}
         }
+        "meta:Gulf"{
+            ss{"Gulf ST"}
+        }
         "meta:Japan"{
             ld{"Japan Summer Time"}
             lg{"Japan Time"}
@@ -89,6 +89,5 @@ en_AU{
             lg{"Taipei Time"}
             ls{"Taipei Standard Time"}
         }
-        gmtZeroFormat{"GMT"}
     }
 }

@@ -18,5 +18,20 @@ const char* CodeKindToString(CodeKind kind) {
   UNREACHABLE();
 }
 
+const char* CodeKindToMarker(CodeKind kind, bool context_specialized) {
+  switch (kind) {
+    case CodeKind::INTERPRETED_FUNCTION:
+      return "~";
+    case CodeKind::BASELINE:
+      return "^";
+    case CodeKind::MAGLEV:
+      return context_specialized ? "+'" : "+";
+    case CodeKind::TURBOFAN_JS:
+      return context_specialized ? "*'" : "*";
+    default:
+      return "";
+  }
+}
+
 }  // namespace internal
 }  // namespace v8

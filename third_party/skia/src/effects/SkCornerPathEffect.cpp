@@ -5,13 +5,23 @@
  * found in the LICENSE file.
  */
 
-
-#include "include/core/SkPath.h"
-#include "include/core/SkPoint.h"
 #include "include/effects/SkCornerPathEffect.h"
+
+#include "include/core/SkFlattenable.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPathEffect.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "src/core/SkPathEffectBase.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
+
+class SkMatrix;
+class SkStrokeRec;
+struct SkRect;
 
 static bool ComputeStep(const SkPoint& a, const SkPoint& b, SkScalar radius,
                         SkPoint* step) {
@@ -141,7 +151,6 @@ public:
             }
             prevVerb = verb;
         }
-        return true;
     }
 
     bool computeFastBounds(SkRect*) const override {
@@ -170,7 +179,7 @@ private:
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 sk_sp<SkPathEffect> SkCornerPathEffect::Make(SkScalar radius) {
-    return SkScalarIsFinite(radius) && (radius > 0) ?
+    return SkIsFinite(radius) && (radius > 0) ?
             sk_sp<SkPathEffect>(new SkCornerPathEffectImpl(radius)) : nullptr;
 }
 

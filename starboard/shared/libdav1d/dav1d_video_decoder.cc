@@ -17,62 +17,62 @@
 #include <string>
 #include <utility>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
 #include "starboard/common/string.h"
 #include "starboard/linux/shared/decode_target_internal.h"
-#include "starboard/memory.h"
 #include "starboard/shared/starboard/player/filter/cpu_video_frame.h"
 #include "starboard/shared/starboard/player/job_queue.h"
-#include "third_party/libdav1d/include/dav1d/common.h"
-#include "third_party/libdav1d/include/dav1d/data.h"
-#include "third_party/libdav1d/include/dav1d/headers.h"
-#include "third_party/libdav1d/include/dav1d/picture.h"
+#include "third_party/dav1d/libdav1d/include/dav1d/common.h"
+#include "third_party/dav1d/libdav1d/include/dav1d/data.h"
+#include "third_party/dav1d/libdav1d/include/dav1d/headers.h"
+#include "third_party/dav1d/libdav1d/include/dav1d/picture.h"
 
 namespace starboard {
-namespace shared {
-namespace libdav1d {
 
 namespace {
 
-using starboard::player::InputBuffer;
-using starboard::player::JobThread;
-using starboard::player::filter::CpuVideoFrame;
-
-constexpr int kMaxDecodedFrameWidth = 3840;
-constexpr int kMaxDecodedFrameHeight = 2160;
+// Set max resolutions to 8K.
+constexpr int kMaxDecodedFrameWidth = 7680;
+constexpr int kMaxDecodedFrameHeight = 4320;
 
 void ReleaseInputBuffer(const uint8_t* buf, void* context) {
   SB_DCHECK(context);
   SB_DCHECK(buf);
 
   InputBuffer* input_buffer = static_cast<InputBuffer*>(context);
-  SB_DCHECK(input_buffer->data() == buf);
+  SB_DCHECK_EQ(input_buffer->data(), buf);
 
   input_buffer->Release();
 }
 
 }  // namespace
 
-VideoDecoder::VideoDecoder(SbMediaVideoCodec video_codec,
-                           SbPlayerOutputMode output_mode,
-                           SbDecodeTargetGraphicsContextProvider*
-                               decode_target_graphics_context_provider)
-    : output_mode_(output_mode),
+Dav1dVideoDecoder::Dav1dVideoDecoder(
+    JobQueue* job_queue,
+    SbMediaVideoCodec video_codec,
+    SbPlayerOutputMode output_mode,
+    SbDecodeTargetGraphicsContextProvider*
+        decode_target_graphics_context_provider,
+    bool may_reduce_quality_for_speed)
+    : JobOwner(job_queue),
+      may_reduce_quality_for_speed_(may_reduce_quality_for_speed),
+      output_mode_(output_mode),
       decode_target_graphics_context_provider_(
           decode_target_graphics_context_provider),
       decode_target_(kSbDecodeTargetInvalid) {
-  SB_DCHECK(video_codec == kSbMediaVideoCodecAv1);
+  SB_DCHECK_EQ(video_codec, kSbMediaVideoCodecAv1);
 }
 
-VideoDecoder::~VideoDecoder() {
-  SB_DCHECK(BelongsToCurrentThread());
+Dav1dVideoDecoder::~Dav1dVideoDecoder() {
+  SB_CHECK(BelongsToCurrentThread());
 
   Reset();
 }
 
-void VideoDecoder::Initialize(const DecoderStatusCB& decoder_status_cb,
-                              const ErrorCB& error_cb) {
-  SB_DCHECK(BelongsToCurrentThread());
+void Dav1dVideoDecoder::Initialize(const DecoderStatusCB& decoder_status_cb,
+                                   const ErrorCB& error_cb) {
+  SB_CHECK(BelongsToCurrentThread());
   SB_DCHECK(decoder_status_cb);
   SB_DCHECK(!decoder_status_cb_);
   SB_DCHECK(error_cb);
@@ -82,9 +82,9 @@ void VideoDecoder::Initialize(const DecoderStatusCB& decoder_status_cb,
   error_cb_ = error_cb;
 }
 
-void VideoDecoder::WriteInputBuffers(const InputBuffers& input_buffers) {
-  SB_DCHECK(BelongsToCurrentThread());
-  SB_DCHECK(input_buffers.size() == 1);
+void Dav1dVideoDecoder::WriteInputBuffers(const InputBuffers& input_buffers) {
+  SB_CHECK(BelongsToCurrentThread());
+  SB_DCHECK_EQ(input_buffers.size(), 1);
   SB_DCHECK(input_buffers[0]);
   SB_DCHECK(decoder_status_cb_);
 
@@ -94,17 +94,17 @@ void VideoDecoder::WriteInputBuffers(const InputBuffers& input_buffers) {
   }
 
   if (!decoder_thread_) {
-    decoder_thread_.reset(new JobThread("dav1d_video_decoder"));
+    decoder_thread_ = JobThread::Create("dav1d_video_decoder");
     SB_DCHECK(decoder_thread_);
   }
 
   const auto& input_buffer = input_buffers[0];
-  decoder_thread_->job_queue()->Schedule(
-      std::bind(&VideoDecoder::DecodeOneBuffer, this, input_buffer));
+  decoder_thread_->Schedule(
+      std::bind(&Dav1dVideoDecoder::DecodeOneBuffer, this, input_buffer));
 }
 
-void VideoDecoder::WriteEndOfStream() {
-  SB_DCHECK(BelongsToCurrentThread());
+void Dav1dVideoDecoder::WriteEndOfStream() {
+  SB_CHECK(BelongsToCurrentThread());
   SB_DCHECK(decoder_status_cb_);
 
   // We have to flush the decoder to decode the rest frames and to ensure that
@@ -118,17 +118,19 @@ void VideoDecoder::WriteEndOfStream() {
     return;
   }
 
-  decoder_thread_->job_queue()->Schedule(
-      std::bind(&VideoDecoder::DecodeEndOfStream, this, 100'000));
+  decoder_thread_->Schedule(
+      std::bind(&Dav1dVideoDecoder::DecodeEndOfStream, this, 100'000));
 }
 
-void VideoDecoder::Reset() {
-  SB_DCHECK(BelongsToCurrentThread());
+void Dav1dVideoDecoder::Reset() {
+  SB_CHECK(BelongsToCurrentThread());
 
   if (decoder_thread_) {
-    decoder_thread_->job_queue()->Schedule(
-        std::bind(&VideoDecoder::TeardownCodec, this));
-    // Join the thread to ensure that all callbacks in process are finished.
+    // Wait to ensure all tasks are done before decoder_thread_ reset.
+    decoder_thread_->ScheduleAndWait(
+        std::bind(&Dav1dVideoDecoder::TeardownCodec, this));
+
+    decoder_thread_->Stop();
     decoder_thread_.reset();
   }
 
@@ -137,11 +139,11 @@ void VideoDecoder::Reset() {
   CancelPendingJobs();
   frames_being_decoded_ = 0;
 
-  ScopedLock lock(decode_target_mutex_);
+  std::lock_guard lock(decode_target_mutex_);
   frames_ = std::queue<scoped_refptr<CpuVideoFrame>>();
 }
 
-void VideoDecoder::UpdateDecodeTarget_Locked(
+void Dav1dVideoDecoder::UpdateDecodeTarget_Locked(
     const scoped_refptr<CpuVideoFrame>& frame) {
   SbDecodeTarget decode_target = DecodeTargetCreate(
       decode_target_graphics_context_provider_, frame, decode_target_);
@@ -154,7 +156,7 @@ void VideoDecoder::UpdateDecodeTarget_Locked(
   }
 }
 
-void VideoDecoder::ReportError(const std::string& error_message) {
+void Dav1dVideoDecoder::ReportError(const std::string& error_message) {
   SB_DCHECK(error_cb_);
 
   if (!BelongsToCurrentThread()) {
@@ -164,17 +166,21 @@ void VideoDecoder::ReportError(const std::string& error_message) {
   error_cb_(kSbPlayerErrorDecode, error_message);
 }
 
-void VideoDecoder::InitializeCodec() {
-  SB_DCHECK(decoder_thread_->job_queue()->BelongsToCurrentThread());
-  SB_DCHECK(dav1d_context_ == NULL);
+void Dav1dVideoDecoder::InitializeCodec() {
+  SB_DCHECK(decoder_thread_->BelongsToCurrentThread());
+  SB_DCHECK_EQ(dav1d_context_, nullptr);
 
   Dav1dSettings dav1d_settings{0};
   dav1d_default_settings(&dav1d_settings);
-  // TODO: Verify this setting is optimal.
-  dav1d_settings.n_threads = 8;
 
+  dav1d_settings.n_threads = 0;  // Use all logic cores
   dav1d_settings.frame_size_limit =
       kMaxDecodedFrameHeight * kMaxDecodedFrameWidth;
+
+  if (current_frame_size_.height > 1080 && may_reduce_quality_for_speed_) {
+    dav1d_settings.apply_grain = false;
+    dav1d_settings.inloop_filters = DAV1D_INLOOPFILTER_NONE;
+  }
 
   int result = dav1d_open(&dav1d_context_, &dav1d_settings);
   if (result != kDav1dSuccess) {
@@ -183,8 +189,8 @@ void VideoDecoder::InitializeCodec() {
   }
 }
 
-void VideoDecoder::TeardownCodec() {
-  SB_DCHECK(decoder_thread_->job_queue()->BelongsToCurrentThread());
+void Dav1dVideoDecoder::TeardownCodec() {
+  SB_DCHECK(decoder_thread_->BelongsToCurrentThread());
 
   if (dav1d_context_) {
     dav1d_close(&dav1d_context_);
@@ -194,7 +200,7 @@ void VideoDecoder::TeardownCodec() {
   if (output_mode_ == kSbPlayerOutputModeDecodeToTexture) {
     SbDecodeTarget decode_target_to_release;
     {
-      ScopedLock lock(decode_target_mutex_);
+      std::lock_guard lock(decode_target_mutex_);
       decode_target_to_release = decode_target_;
       decode_target_ = kSbDecodeTargetInvalid;
     }
@@ -206,16 +212,14 @@ void VideoDecoder::TeardownCodec() {
   }
 }
 
-void VideoDecoder::DecodeOneBuffer(
+void Dav1dVideoDecoder::DecodeOneBuffer(
     const scoped_refptr<InputBuffer>& input_buffer) {
-  SB_DCHECK(decoder_thread_->job_queue()->BelongsToCurrentThread());
+  SB_DCHECK(decoder_thread_->BelongsToCurrentThread());
   SB_DCHECK(input_buffer);
 
   const auto& stream_info = input_buffer->video_stream_info();
-  if (!dav1d_context_ || stream_info.frame_width != current_frame_width_ ||
-      stream_info.frame_height != current_frame_height_) {
-    current_frame_width_ = stream_info.frame_width;
-    current_frame_height_ = stream_info.frame_height;
+  if (!dav1d_context_ || stream_info.frame_size != current_frame_size_) {
+    current_frame_size_ = stream_info.frame_size;
     TeardownCodec();
     InitializeCodec();
   }
@@ -250,7 +254,7 @@ void VideoDecoder::DecodeOneBuffer(
       break;
     }
     if (result == kDav1dSuccess) {
-      SB_DCHECK(dav1d_data.sz == 0);  // Check if all data has been consumed.
+      SB_DCHECK_EQ(dav1d_data.sz, 0);  // Check if all data has been consumed.
       ++frames_being_decoded_;
     }
     if (!TryToOutputFrames()) {
@@ -266,18 +270,17 @@ void VideoDecoder::DecodeOneBuffer(
   ReportError(FormatString("|dav1d_send_data| failed with code %d.", result));
 }
 
-void VideoDecoder::DecodeEndOfStream(int64_t timeout) {
-  SB_DCHECK(decoder_thread_->job_queue()->BelongsToCurrentThread());
+void Dav1dVideoDecoder::DecodeEndOfStream(int64_t timeout) {
+  SB_DCHECK(decoder_thread_->BelongsToCurrentThread());
 
   if (!TryToOutputFrames()) {
     return;
   }
   if (frames_being_decoded_ > 0 && timeout > 0) {
     const int64_t delay_period_usec = 5'000;  // 5ms
-    decoder_thread_->job_queue()->Schedule(
-        std::bind(&VideoDecoder::DecodeEndOfStream, this,
-                  timeout - delay_period_usec),
-        delay_period_usec);
+    decoder_thread_->Schedule(std::bind(&Dav1dVideoDecoder::DecodeEndOfStream,
+                                        this, timeout - delay_period_usec),
+                              delay_period_usec);
     return;
   } else {
     SB_LOG_IF(WARNING, frames_being_decoded_ > 0)
@@ -288,8 +291,8 @@ void VideoDecoder::DecodeEndOfStream(int64_t timeout) {
       std::bind(decoder_status_cb_, kBufferFull, VideoFrame::CreateEOSFrame()));
 }
 
-bool VideoDecoder::TryToOutputFrames() {
-  SB_DCHECK(decoder_thread_->job_queue()->BelongsToCurrentThread());
+bool Dav1dVideoDecoder::TryToOutputFrames() {
+  SB_DCHECK(decoder_thread_->BelongsToCurrentThread());
 
   bool error_occurred = false;
 
@@ -348,10 +351,10 @@ bool VideoDecoder::TryToOutputFrames() {
 
   auto frame = get_frame_from_dav1d();
   while (frame && !error_occurred) {
-    SB_DCHECK(frames_being_decoded_ > 0);
+    SB_DCHECK_GT(frames_being_decoded_, 0);
     --frames_being_decoded_;
     if (output_mode_ == kSbPlayerOutputModeDecodeToTexture) {
-      ScopedLock lock(decode_target_mutex_);
+      std::lock_guard lock(decode_target_mutex_);
       frames_.push(frame);
     }
     Schedule(std::bind(decoder_status_cb_, kNeedMoreInput, frame));
@@ -361,12 +364,12 @@ bool VideoDecoder::TryToOutputFrames() {
 }
 
 // When in decode-to-texture mode, this returns the current decoded video frame.
-SbDecodeTarget VideoDecoder::GetCurrentDecodeTarget() {
-  SB_DCHECK(output_mode_ == kSbPlayerOutputModeDecodeToTexture);
+SbDecodeTarget Dav1dVideoDecoder::GetCurrentDecodeTarget() {
+  SB_DCHECK_EQ(output_mode_, kSbPlayerOutputModeDecodeToTexture);
 
   // We must take a lock here since this function can be called from a
   // separate thread.
-  ScopedLock lock(decode_target_mutex_);
+  std::lock_guard lock(decode_target_mutex_);
   while (frames_.size() > 1 && frames_.front()->HasOneRef()) {
     frames_.pop();
   }
@@ -382,6 +385,4 @@ SbDecodeTarget VideoDecoder::GetCurrentDecodeTarget() {
   }
 }
 
-}  // namespace libdav1d
-}  // namespace shared
 }  // namespace starboard

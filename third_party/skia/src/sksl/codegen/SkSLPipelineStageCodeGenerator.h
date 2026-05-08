@@ -8,9 +8,9 @@
 #ifndef SKSL_PIPELINESTAGECODEGENERATOR
 #define SKSL_PIPELINESTAGECODEGENERATOR
 
-#include "include/private/SkSLString.h"
+#include "include/core/SkTypes.h"
 
-#if defined(SKSL_STANDALONE) || SK_SUPPORT_GPU
+#include <string>
 
 namespace SkSL {
 
@@ -62,7 +62,5 @@ namespace PipelineStage {
 }  // namespace PipelineStage
 
 }  // namespace SkSL
-
-#endif
 
 #endif

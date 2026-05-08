@@ -1,47 +1,85 @@
-load("//bazel:macros.bzl", "generated_cc_atom")
+load("//bazel:skia_rules.bzl", "skia_filegroup")
 
-generated_cc_atom(
-    name = "SkAndroidCodec_hdr",
-    hdrs = ["SkAndroidCodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodec_hdr",
-        "//include/core:SkEncodedImageFormat_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/core:SkTypes_hdr",
+package(
+    default_applicable_licenses = ["//:license"],
+)
+
+licenses(["notice"])
+
+skia_filegroup(
+    name = "core_hdrs",
+    srcs = [
+        "SkEncodedOrigin.h",
     ],
+    visibility = ["//src/core:__pkg__"],
 )
 
-generated_cc_atom(
-    name = "SkCodecAnimation_hdr",
-    hdrs = ["SkCodecAnimation.h"],
-    visibility = ["//:__subpackages__"],
-)
-
-generated_cc_atom(
-    name = "SkCodec_hdr",
-    hdrs = ["SkCodec.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkCodecAnimation_hdr",
-        ":SkEncodedOrigin_hdr",
-        "//include/core:SkColor_hdr",
-        "//include/core:SkEncodedImageFormat_hdr",
-        "//include/core:SkImageInfo_hdr",
-        "//include/core:SkPixmap_hdr",
-        "//include/core:SkSize_hdr",
-        "//include/core:SkStream_hdr",
-        "//include/core:SkTypes_hdr",
-        "//include/core:SkYUVAPixmaps_hdr",
-        "//include/private:SkEncodedInfo_hdr",
-        "//include/private:SkNoncopyable_hdr",
-        "//include/private:SkTemplates_hdr",
+skia_filegroup(
+    name = "any_codec_hdrs",
+    srcs = [
+        "SkCodec.h",
+        "SkCodecAnimation.h",
+        "SkEncodedImageFormat.h",
+        "SkPixmapUtils.h",
     ],
+    visibility = ["//src/codec:__pkg__"],
 )
 
-generated_cc_atom(
-    name = "SkEncodedOrigin_hdr",
-    hdrs = ["SkEncodedOrigin.h"],
-    visibility = ["//:__subpackages__"],
-    deps = ["//include/core:SkMatrix_hdr"],
+skia_filegroup(
+    name = "android_public_hdrs",
+    srcs = [
+        "SkAndroidCodec.h",
+    ],
+    visibility = ["//src/codec:__pkg__"],
+)
+
+skia_filegroup(
+    name = "bmp_public_hdrs",
+    srcs = ["SkBmpDecoder.h"],
+    visibility = ["//src/codec:__pkg__"],
+)
+
+skia_filegroup(
+    name = "gif_public_hdrs",
+    srcs = ["SkGifDecoder.h"],
+    visibility = ["//src/codec:__pkg__"],
+)
+
+skia_filegroup(
+    name = "ico_public_hdrs",
+    srcs = ["SkIcoDecoder.h"],
+    visibility = ["//src/codec:__pkg__"],
+)
+
+skia_filegroup(
+    name = "jpeg_public_hdrs",
+    srcs = ["SkJpegDecoder.h"],
+    visibility = ["//src/codec:__pkg__"],
+)
+
+skia_filegroup(
+    name = "jpegxl_public_hdrs",
+    srcs = ["SkJpegxlDecoder.h"],
+    visibility = ["//src/codec:__pkg__"],
+)
+
+skia_filegroup(
+    name = "png_public_hdrs",
+    srcs = [
+        "SkPngChunkReader.h",
+        "SkPngDecoder.h",
+    ],
+    visibility = ["//src/codec:__pkg__"],
+)
+
+skia_filegroup(
+    name = "wbmp_public_hdrs",
+    srcs = ["SkWbmpDecoder.h"],
+    visibility = ["//src/codec:__pkg__"],
+)
+
+skia_filegroup(
+    name = "webp_public_hdrs",
+    srcs = ["SkWebpDecoder.h"],
+    visibility = ["//src/codec:__pkg__"],
 )

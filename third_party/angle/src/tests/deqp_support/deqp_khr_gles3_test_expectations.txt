@@ -2,180 +2,119 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// This file contains a list of defective dEQP conformance tests. The expected
-// format is:
-//  {BUG#} {MODIFIERS} : {TEST_NAME} = {PASS,FAIL,FLAKY,TIMEOUT,SKIP}
-//
-// MODIFIERS can be a combination of the below list, combined with a logical AND:
-//  WIN XP VISTA WIN7 WIN8 WIN10
-//  MAC LEOPARD SNOWLEOPARD LION MOUNTAINLION MAVERICKS YOSEMITE ELCAPITAN SIERRA HIGHSIERRA MOJAVE
-//  LINUX CHROMEOS ANDROID
-//  NVIDIA AMD INTEL
-//  DEBUG RELEASE
-//  D3D9 D3D11 OPENGL GLES VULKAN
-//  NEXUS5X PIXEL2ORXL
-//  QUADROP400
-//
-//
-// TEST_NAME can be a specific test name, or have a '*' in the end, which
-// indicates a prefix matching.
-//
-// Examples:
-// fails on both windows and mac (crash)
-//  91530 WIN : context_lost_restored = SKIP
-//  91530 MAC : context_lost_restored = SKIP
-// fails on windows using NVIDIA GPUs
-//  91533 WIN NVIDIA : gl_min_uniforms = FAIL
-// fails on Nexus5X with GLES backend (hangs)
-//  91531 NEXUS5X GLES : conformance_more_* = SKIP
+// See README.md for format.
 
 // For now we only log Vulkan test expectations. More back-ends can follow as we need them.
 
 // Depth/stencil related failures due to Vulkan driver bugs.
-3683 VULKAN ANDROID : KHR-GLES3.packed_depth_stencil.*.depth24_stencil8 = FAIL
-3683 VULKAN ANDROID : KHR-GLES3.packed_depth_stencil.*.depth32f_stencil8 = FAIL
+42262342 VULKAN PIXEL4ORXL : KHR-GLES3.packed_depth_stencil.clear_buffer.depth32f_stencil8 = FAIL
 
-// CopyTexImage conversion failing due to Vulkan validation error re: UINT/SINT-descriptor-set issue.
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture_array_texture2d = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture_array_cubemap_negx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture_array_cubemap_negy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture_array_cubemap_negz = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture_array_cubemap_posx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture_array_cubemap_posy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture_array_cubemap_posz = FAIL
+// Texture related failure on Pixel 4.
+42267050 VULKAN PIXEL4ORXL : KHR-GLES3.texture_lod_basic.lod_selection = FAIL
 
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture2d_texture2d = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture2d_cubemap_negx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture2d_cubemap_negy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture2d_cubemap_negz = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture2d_cubemap_posx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture2d_cubemap_posy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture2d_cubemap_posz = FAIL
+341780527 VULKAN PIXEL4ORXL : KHR-GLES3.clip_distance.coverage = FAIL
 
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negx_texture2d = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negx_cubemap_negx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negx_cubemap_negy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negx_cubemap_negz = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negx_cubemap_posx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negx_cubemap_posy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negx_cubemap_posz = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negy_texture2d = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negy_cubemap_negx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negy_cubemap_negy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negy_cubemap_negz = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negy_cubemap_posx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negy_cubemap_posy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negy_cubemap_posz = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negz_texture2d = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negz_cubemap_negx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negz_cubemap_negy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negz_cubemap_negz = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negz_cubemap_posx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negz_cubemap_posy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_negz_cubemap_posz = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posx_texture2d = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posx_cubemap_negx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posx_cubemap_negy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posx_cubemap_negz = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posx_cubemap_posx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posx_cubemap_posy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posx_cubemap_posz = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posy_texture2d = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posy_cubemap_negx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posy_cubemap_negy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posy_cubemap_negz = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posy_cubemap_posx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posy_cubemap_posy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posy_cubemap_posz = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posz_texture2d = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posz_cubemap_negx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posz_cubemap_negy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posz_cubemap_negz = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posz_cubemap_posx = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posz_cubemap_posy = FAIL
-3817 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.cubemap_posz_cubemap_posz = FAIL
+42264508 LINUX VULKAN NVIDIA : KHR-GLES3.shaders.indexing.tmp_array.vertexid = FAIL
 
-// glCopyTexImage from 3D textures is failing and getting the following Vulkan Validation errors:
-//
-//  ImageView must not be a 2D or 2DArray view of a 3D image. The Vulkan spec states:
-//  imageView must not be 2D or 2D array image view created from a 3D image
-//
-3836 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture3d_texture2d = FAIL
-3836 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture3d_cubemap_negx = FAIL
-3836 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture3d_cubemap_negy = FAIL
-3836 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture3d_cubemap_negz = FAIL
-3836 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture3d_cubemap_posx = FAIL
-3836 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture3d_cubemap_posy = FAIL
-3836 VULKAN : KHR-GLES3.copy_tex_image_conversions.required.texture3d_cubemap_posz = FAIL
-
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.r8 = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rg8 = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rg8i = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rg8ui = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgb8 = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgba8 = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgba8i = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgba8ui = FAIL
-
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rg16i = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rg16ui = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rg16f = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgb16f = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgba16i = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgba16ui = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgba16f = FAIL
-
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rg32i = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rg32ui = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rg32f = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgba32i = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgba32ui = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgba32f = FAIL
-
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgb = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgb565 = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgb5_a1 = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.srgb8_alpha8 = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgba = FAIL
-3836 VULKAN : KHR-GLES3.packed_pixels.varied_rectangle.rgba4 = FAIL
-
+341780527 LINUX VULKAN NVIDIA : KHR-GLES3.clip_distance.coverage = FAIL
+341780527 LINUX VULKAN AMD : KHR-GLES3.clip_distance.coverage = FAIL
+341780527 WIN VULKAN NVIDIA : KHR-GLES3.clip_distance.coverage = FAIL
+341780527 WIN VULKAN AMD : KHR-GLES3.clip_distance.coverage = FAIL
 
 // Fails only with SwiftShader:
 
 // These only fail on Android
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_dynamic_loop_write_static_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_dynamic_loop_write_static_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_dynamic_write_static_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_dynamic_write_static_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_loop_write_static_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_loop_write_static_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_write_dynamic_loop_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_write_dynamic_loop_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_write_dynamic_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_write_dynamic_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_write_static_loop_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_write_static_loop_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_dynamic_loop_write_static_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_dynamic_loop_write_static_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_dynamic_write_static_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_dynamic_write_static_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_loop_write_static_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_loop_write_static_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_write_dynamic_loop_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_write_dynamic_loop_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_write_dynamic_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_write_dynamic_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_write_static_loop_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_write_static_loop_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_dynamic_loop_write_static_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_dynamic_loop_write_static_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_dynamic_write_static_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_dynamic_write_static_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_loop_write_static_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_loop_write_static_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_write_dynamic_loop_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_write_dynamic_loop_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_write_dynamic_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_write_dynamic_read_vertex = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_write_static_loop_read_fragment = FAIL
-4019 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_write_static_loop_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_dynamic_loop_write_static_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_dynamic_loop_write_static_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_dynamic_write_static_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_dynamic_write_static_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_loop_write_static_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_loop_write_static_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_write_dynamic_loop_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_write_dynamic_loop_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_write_dynamic_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_write_dynamic_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_write_static_loop_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat2x4_static_write_static_loop_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_dynamic_loop_write_static_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_dynamic_loop_write_static_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_dynamic_write_static_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_dynamic_write_static_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_loop_write_static_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_loop_write_static_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_write_dynamic_loop_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_write_dynamic_loop_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_write_dynamic_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_write_dynamic_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_write_static_loop_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat3x4_static_write_static_loop_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_dynamic_loop_write_static_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_dynamic_loop_write_static_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_dynamic_write_static_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_dynamic_write_static_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_loop_write_static_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_loop_write_static_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_write_dynamic_loop_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_write_dynamic_loop_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_write_dynamic_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_write_dynamic_read_vertex = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_write_static_loop_read_fragment = FAIL
+42262656 SWIFTSHADER : KHR-GLES3.shaders.indexing.matrix_subscript.mat4_static_write_static_loop_read_vertex = FAIL
+341780527 SWIFTSHADER : KHR-GLES3.clip_distance.coverage = FAIL
+341780527 SWIFTSHADER : KHR-GLES3.clip_distance.functional = FAIL
+
+// https://gitlab.khronos.org/opengl/API/-/issues/180
+40096882 VULKAN NVIDIA : KHR-GLES3.packed_pixels.pbo_rectangle.r8_snorm = SKIP
+40096882 VULKAN NVIDIA : KHR-GLES3.packed_pixels.pbo_rectangle.rg8_snorm = SKIP
+40096882 VULKAN NVIDIA : KHR-GLES3.packed_pixels.pbo_rectangle.rgba8_snorm = SKIP
+40096882 VULKAN NVIDIA : KHR-GLES3.packed_pixels.rectangle.r8_snorm = SKIP
+40096882 VULKAN NVIDIA : KHR-GLES3.packed_pixels.rectangle.rg8_snorm = SKIP
+40096882 VULKAN NVIDIA : KHR-GLES3.packed_pixels.rectangle.rgba8_snorm = SKIP
+
+// New failures with latest dEQP roll (2020-04-28)
+42263198 SWIFTSHADER : KHR-GLES3.core.nearest_edge.offset_left = FAIL
+
+// Test is too slow
+42264814 SWIFTSHADER : KHR-GLES3.framebuffer_blit.scissor_blit = TIMEOUT
+
+42265173 UBSAN : KHR-GLES3.copy_tex_image_conversions.required.* = SKIP
+
+// Samsung Galaxy S22
+341780527 GALAXYS22 VULKAN : KHR-GLES3.clip_distance.coverage = FAIL
+b/267953710 GALAXYS22 VULKAN : KHR-GLES3.framebuffer_blit.scissor_blit = FAIL
+
+// Samsung Galaxy S23
+42266598 GALAXYS23 VULKAN : KHR-GLES3.shaders.function.global_variable_aliasing_fragment = SKIP
+341780527 GALAXYS23 VULKAN : KHR-GLES3.clip_distance.coverage = FAIL
+
+// Samsung Galaxy S24 (Xclipse)
+b/410630704 GALAXYS24EXYNOS VULKAN : KHR-GLES3.clip_distance.coverage = SKIP
+b/410630704 GALAXYS24EXYNOS VULKAN : KHR-GLES3.cull_distance.functional_test_item_8_primitive_mode_points_max_culldist_1 = SKIP
+b/410630704 GALAXYS24EXYNOS VULKAN : KHR-GLES3.cull_distance.functional_test_item_8_primitive_mode_points_max_culldist_2 = SKIP
+b/410630704 GALAXYS24EXYNOS VULKAN : KHR-GLES3.cull_distance.functional_test_item_8_primitive_mode_points_max_culldist_3 = SKIP
+b/410630704 GALAXYS24EXYNOS VULKAN : KHR-GLES3.cull_distance.functional_test_item_8_primitive_mode_points_max_culldist_5 = SKIP
+b/410630704 GALAXYS24EXYNOS VULKAN : KHR-GLES3.cull_distance.functional_test_item_8_primitive_mode_points_max_culldist_6 = SKIP
+b/410630704 GALAXYS24EXYNOS VULKAN : KHR-GLES3.cull_distance.functional_test_item_8_primitive_mode_points_max_culldist_7 = SKIP
+
+// Snapdragon 8 Gen3 Mobile Reference Device
+b/328156792 PINEAPPLE VULKAN : KHR-GLES3.copy_tex_image_conversions.required.* = SKIP
+b/328156792 PINEAPPLE VULKAN : KHR-GLES3.shaders.function.global_variable_aliasing_fragment = SKIP
+
+// Mali G710
+42266649 MALIG710 VULKAN : KHR-GLES3.number_parsing.* = FAIL
+
+// The newly added cases are failing
+b/332383430 PIXEL6 VULKAN : KHR-GLES3.texture_lod_bias.texture_lod_bias_all = FAIL
+
+// Flaky timeout
+332383430 SWIFTSHADER : KHR-GLES3.texture_lod_bias.texture_lod_bias_all = TIMEOUT
+
+353358652 VULKAN : KHR-GLES3.cull_distance.functional_test_item_5_primitive_mode_lines_max_culldist* = FAIL
+353358652 VULKAN : KHR-GLES3.cull_distance.functional_test_item_5_primitive_mode_points_max_culldist* = FAIL
+353358652 VULKAN : KHR-GLES3.cull_distance.functional_test_item_5_primitive_mode_triangles_max_culldist* = FAIL
+353358652 VULKAN : KHR-GLES3.cull_distance.functional_test_item_6_primitive_mode_lines_max_culldist* = FAIL
+353358652 VULKAN : KHR-GLES3.cull_distance.functional_test_item_6_primitive_mode_points_max_culldist* = FAIL
+353358652 VULKAN : KHR-GLES3.cull_distance.functional_test_item_6_primitive_mode_triangles_max_culldist* = FAIL
+353358652 SWIFTSHADER : KHR-GLES3.cull_distance.functional_test_item_*_primitive_mode_points_max_culldist_* = FAIL
+
+355292302 : KHR-GLES3.api.coverage* = FAIL

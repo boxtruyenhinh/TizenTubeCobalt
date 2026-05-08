@@ -15,7 +15,8 @@
 // 2. Any changes must be reviewed by someone from the crash reporting
 //    or security team. See OWNERS for suggested reviewers.
 //
-// For more information, see https://goo.gl/yMeyUY.
+// For more information, see:
+// https://docs.google.com/document/d/17y4kxuHFrVxAiuCP_FFtFA2HP5sNPsCD10KEx17Hz6M
 
 #include "src/trap-handler/trap-handler-internal.h"
 
@@ -23,35 +24,36 @@ namespace v8 {
 namespace internal {
 namespace trap_handler {
 
-#if !defined(STARBOARD)
 // We declare this as int rather than bool as a workaround for a glibc bug, in
 // which the dynamic loader cannot handle executables whose TLS area is only
 // 1 byte in size; see https://sourceware.org/bugzilla/show_bug.cgi?id=14898.
-THREAD_LOCAL int g_thread_in_wasm_code;
-#endif
+thread_local int g_thread_in_wasm_code;
 
-#if !defined(STARBOARD)
 static_assert(sizeof(g_thread_in_wasm_code) > 1,
               "sizeof(thread_local_var) must be > 1, see "
               "https://sourceware.org/bugzilla/show_bug.cgi?id=14898");
-#endif
 
 size_t gNumCodeObjects = 0;
 CodeProtectionInfoListEntry* gCodeObjects = nullptr;
+SandboxRecord* gSandboxRecordsHead = nullptr;
 std::atomic_size_t gRecoveredTrapCount = {0};
+std::atomic<uintptr_t> gLandingPad = {0};
 
+#if !defined(__cpp_lib_atomic_value_initialization) || \
+    __cpp_lib_atomic_value_initialization < 201911L
 std::atomic_flag MetadataLock::spinlock_ = ATOMIC_FLAG_INIT;
-
-#if defined(STARBOARD)
-MetadataLock::MetadataLock() { SB_NOTREACHED(); }
-MetadataLock::~MetadataLock() { SB_NOTREACHED(); }
+std::atomic_flag SandboxRecordsLock::spinlock_ = ATOMIC_FLAG_INIT;
 #else
+std::atomic_flag MetadataLock::spinlock_;
+std::atomic_flag SandboxRecordsLock::spinlock_;
+#endif
+
 MetadataLock::MetadataLock() {
   if (g_thread_in_wasm_code) {
     abort();
   }
 
-  while (spinlock_.test_and_set(std::memory_order::memory_order_acquire)) {
+  while (spinlock_.test_and_set(std::memory_order_acquire)) {
   }
 }
 
@@ -60,9 +62,17 @@ MetadataLock::~MetadataLock() {
     abort();
   }
 
-  spinlock_.clear(std::memory_order::memory_order_release);
+  spinlock_.clear(std::memory_order_release);
 }
-#endif
+
+SandboxRecordsLock::SandboxRecordsLock() {
+  while (spinlock_.test_and_set(std::memory_order_acquire)) {
+  }
+}
+
+SandboxRecordsLock::~SandboxRecordsLock() {
+  spinlock_.clear(std::memory_order_release);
+}
 
 }  // namespace trap_handler
 }  // namespace internal

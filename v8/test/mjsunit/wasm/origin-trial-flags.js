@@ -1,34 +1,27 @@
-// Copyright 2017 the V8 project authors. All rights reserved.
+// Copyright 2023 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --noexperimental-wasm-threads --allow-natives-syntax
+// Flags: --allow-natives-syntax
 
-load("test/mjsunit/wasm/wasm-module-builder.js");
+d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
-function instantiateModuleWithThreads() {
-  // Build a WebAssembly module which uses threads-features.
+function instantiateModuleWithStringRef() {
+  // Build a WebAssembly module which uses stringref features.
   const builder = new WasmModuleBuilder();
-  const shared = true;
-  builder.addMemory(2, 10, false, shared);
-  builder.addFunction('main', kSig_i_ii)
-      .addBody([
-        kExprLocalGet, 0, kExprLocalGet, 1, kAtomicPrefix, kExprI32AtomicAdd, 2,
-        0
-      ])
-      .exportFunc();
-
+  builder.addFunction("main",
+                      makeSig([kWasmStringRef], [kWasmStringRef]))
+  .addBody([kExprLocalGet, 0])
+  .exportFunc();
   return builder.instantiate();
 }
 
-// Disable WebAssembly threads initially.
-%SetWasmThreadsEnabled(false);
-assertThrows(instantiateModuleWithThreads, WebAssembly.CompileError);
-
-// Enable WebAssembly threads.
-%SetWasmThreadsEnabled(true);
-assertInstanceof(instantiateModuleWithThreads(), WebAssembly.Instance);
-
-// Disable WebAssembly threads.
-%SetWasmThreadsEnabled(false);
-assertThrows(instantiateModuleWithThreads, WebAssembly.CompileError);
+// Due to --noexperimental-wasm-stringref stringrefs are not supported.
+assertThrows(instantiateModuleWithStringRef, WebAssembly.CompileError);
+// Disable imported strings explicitly.
+%SetWasmImportedStringsEnabled(false);
+assertThrows(instantiateModuleWithStringRef, WebAssembly.CompileError);
+// Enable imported strings explicitly.
+%SetWasmImportedStringsEnabled(true);
+let str = "Hello World!";
+assertSame(str, instantiateModuleWithStringRef().exports.main(str));

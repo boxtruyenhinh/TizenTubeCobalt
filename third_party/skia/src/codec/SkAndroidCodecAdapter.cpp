@@ -8,12 +8,15 @@
 #include "src/codec/SkAndroidCodecAdapter.h"
 #include "src/codec/SkCodecPriv.h"
 
+struct SkIRect;
+struct SkImageInfo;
+
 SkAndroidCodecAdapter::SkAndroidCodecAdapter(SkCodec* codec)
     : INHERITED(codec)
 {}
 
 SkISize SkAndroidCodecAdapter::onGetSampledDimensions(int sampleSize) const {
-    float scale = get_scale_from_sample_size(sampleSize);
+    float scale = SkCodecPriv::GetScaleFromSampleSize(sampleSize);
     return this->codec()->getScaledDimensions(scale);
 }
 

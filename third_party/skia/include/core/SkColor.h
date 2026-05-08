@@ -8,11 +8,14 @@
 #ifndef SkColor_DEFINED
 #define SkColor_DEFINED
 
-#include "include/core/SkImageInfo.h"
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
+#include "include/private/base/SkCPUTypes.h"
+#include "include/private/base/SkTPin.h"
 
 #include <array>
+#include <cstdint>
 
 /** \file SkColor.h
 
@@ -77,7 +80,7 @@ static constexpr inline SkColor SkColorSetARGB(U8CPU a, U8CPU r, U8CPU g, U8CPU 
     @param a  alpha: transparent at zero, fully opaque at 255
     @return   color with transparency
 */
-static constexpr inline SkColor SK_WARN_UNUSED_RESULT SkColorSetA(SkColor c, U8CPU a) {
+[[nodiscard]] static constexpr inline SkColor SkColorSetA(SkColor c, U8CPU a) {
     return (c & 0x00FFFFFF) | (a << 24);
 }
 
@@ -405,8 +408,22 @@ struct SkRGBA4f {
     uint32_t toBytes_RGBA() const;
     static SkRGBA4f FromBytes_RGBA(uint32_t color);
 
+    /**
+      Returns a copy of the SkRGBA4f but with alpha component set to 1.0f.
+
+      @return         opaque color
+    */
     SkRGBA4f makeOpaque() const {
         return { fR, fG, fB, 1.0f };
+    }
+
+    /**
+     Returns a copy of the SkRGBA4f but with the alpha component pinned to [0, 1].
+
+     @return          color with pinned alpha
+    */
+    SkRGBA4f pinAlpha() const {
+        return { fR, fG, fB, SkTPin(fA, 0.f, 1.f) };
     }
 };
 
@@ -420,6 +437,8 @@ using SkColor4f = SkRGBA4f<kUnpremul_SkAlphaType>;
 
 template <> SK_API SkColor4f SkColor4f::FromColor(SkColor);
 template <> SK_API SkColor   SkColor4f::toSkColor() const;
+template <> SK_API uint32_t  SkColor4f::toBytes_RGBA() const;
+template <> SK_API SkColor4f SkColor4f::FromBytes_RGBA(uint32_t color);
 
 namespace SkColors {
 constexpr SkColor4f kTransparent = {0, 0, 0, 0};

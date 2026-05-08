@@ -16,11 +16,11 @@
 #define STARBOARD_SHARED_STARBOARD_PLAYER_PLAYER_INTERNAL_H_
 
 #include <memory>
+#include <mutex>
 #include <utility>
 #include <vector>
 
 #include "starboard/decode_target.h"
-#include "starboard/extension/enhanced_audio.h"
 #include "starboard/media.h"
 #include "starboard/player.h"
 #include "starboard/shared/internal_only.h"
@@ -29,15 +29,40 @@
 #include "starboard/window.h"
 
 #if SB_PLAYER_ENABLE_VIDEO_DUMPER
-#include SB_PLAYER_DMP_WRITER_INCLUDE_PATH
+#include "starboard/shared/starboard/player/video_dmp_writer.h"  // nogncheck
 #endif  // SB_PLAYER_ENABLE_VIDEO_DUMPER
 
 struct SbPlayerPrivate {
  public:
-  typedef starboard::shared::starboard::media::AudioSampleInfo AudioSampleInfo;
-  typedef starboard::shared::starboard::player::PlayerWorker PlayerWorker;
+  SbPlayerPrivate() = default;
 
-  static SbPlayerPrivate* CreateInstance(
+  SbPlayerPrivate(const SbPlayerPrivate&) = delete;
+  SbPlayerPrivate& operator=(const SbPlayerPrivate&) = delete;
+
+  virtual ~SbPlayerPrivate() = default;
+
+  virtual void Seek(int64_t seek_to_time, int ticket) = 0;
+  virtual void WriteSamples(const SbPlayerSampleInfo* sample_infos,
+                            int number_of_sample_infos) = 0;
+  virtual void WriteEndOfStream(SbMediaType stream_type) = 0;
+  virtual void SetBounds(int z_index, int x, int y, int width, int height) = 0;
+
+  virtual void GetInfo(SbPlayerInfo* out_player_info) = 0;
+  virtual void SetPause(bool pause) = 0;
+  virtual void SetPlaybackRate(double playback_rate) = 0;
+  virtual void SetVolume(double volume) = 0;
+
+  virtual SbDecodeTarget GetCurrentDecodeTarget() = 0;
+  virtual bool GetAudioConfiguration(
+      int index,
+      SbMediaAudioConfiguration* out_audio_configuration) = 0;
+};
+
+namespace starboard {
+
+class SbPlayerPrivateImpl final : public SbPlayerPrivate {
+ public:
+  SbPlayerPrivateImpl(
       SbMediaAudioCodec audio_codec,
       SbMediaVideoCodec video_codec,
       SbPlayerDeallocateSampleFunc sample_deallocate_func,
@@ -47,46 +72,28 @@ struct SbPlayerPrivate {
       void* context,
       std::unique_ptr<PlayerWorker::Handler> player_worker_handler);
 
-  void Seek(int64_t seek_to_time, int ticket);
-  template <typename PlayerSampleInfo>
-  void WriteSamples(const PlayerSampleInfo* sample_infos,
-                    int number_of_sample_infos);
-  void WriteEndOfStream(SbMediaType stream_type);
-  void SetBounds(int z_index, int x, int y, int width, int height);
+  void Seek(int64_t seek_to_time, int ticket) final;
+  void WriteSamples(const SbPlayerSampleInfo* sample_infos,
+                    int number_of_sample_infos) final;
+  void WriteEndOfStream(SbMediaType stream_type) final;
+  void SetBounds(int z_index, int x, int y, int width, int height) final;
+  void GetInfo(SbPlayerInfo* out_player_info) final;
 
-#if SB_API_VERSION >= 15
-  void GetInfo(SbPlayerInfo* out_player_info);
-#else   // SB_API_VERSION >= 15
-  void GetInfo(SbPlayerInfo2* out_player_info);
-#endif  // SB_API_VERSION >= 15
-  void SetPause(bool pause);
-  void SetPlaybackRate(double playback_rate);
-  void SetVolume(double volume);
+  // TODO (b/456786219): as SbPlayer doesn't support pause, we should remove
+  // unused pause related functions.
+  void SetPause(bool pause) final;
 
-  SbDecodeTarget GetCurrentDecodeTarget();
+  void SetPlaybackRate(double playback_rate) final;
+  void SetVolume(double volume) final;
+
+  SbDecodeTarget GetCurrentDecodeTarget() final;
   bool GetAudioConfiguration(
       int index,
-      SbMediaAudioConfiguration* out_audio_configuration);
+      SbMediaAudioConfiguration* out_audio_configuration) final;
 
-  ~SbPlayerPrivate() {
-    --number_of_players_;
-    SB_DLOG(INFO) << "Destroying SbPlayerPrivate. There are "
-                  << number_of_players_ << " players.";
-  }
+  ~SbPlayerPrivateImpl() final;
 
  private:
-  SbPlayerPrivate(SbMediaAudioCodec audio_codec,
-                  SbMediaVideoCodec video_codec,
-                  SbPlayerDeallocateSampleFunc sample_deallocate_func,
-                  SbPlayerDecoderStatusFunc decoder_status_func,
-                  SbPlayerStatusFunc player_status_func,
-                  SbPlayerErrorFunc player_error_func,
-                  void* context,
-                  std::unique_ptr<PlayerWorker::Handler> player_worker_handler);
-
-  SbPlayerPrivate(const SbPlayerPrivate&) = delete;
-  SbPlayerPrivate& operator=(const SbPlayerPrivate&) = delete;
-
   void UpdateMediaInfo(int64_t media_time,
                        int dropped_video_frames,
                        int ticket,
@@ -95,12 +102,11 @@ struct SbPlayerPrivate {
   SbPlayerDeallocateSampleFunc sample_deallocate_func_;
   void* context_;
 
-  starboard::Mutex mutex_;
+  std::mutex mutex_;
   int ticket_ = SB_PLAYER_INITIAL_TICKET;
   int64_t media_time_ = 0;         // microseconds
   int64_t media_time_updated_at_;  // microseconds
-  int frame_width_ = 0;
-  int frame_height_ = 0;
+  Size frame_size_;
   bool is_paused_ = false;
   double playback_rate_ = 1.0;
   double volume_ = 1.0;
@@ -110,42 +116,14 @@ struct SbPlayerPrivate {
   // we may extrapolate the media time in GetInfo().
   bool is_progressing_ = false;
 
-  std::unique_ptr<PlayerWorker> worker_;
+  const std::unique_ptr<PlayerWorker> worker_;
 
-  starboard::Mutex audio_configurations_mutex_;
+  std::mutex audio_configurations_mutex_;
   std::vector<SbMediaAudioConfiguration> audio_configurations_;
 
   static int number_of_players_;
 };
 
-template <typename SampleInfo>
-void SbPlayerPrivate::WriteSamples(const SampleInfo* sample_infos,
-                                   int number_of_sample_infos) {
-  using starboard::shared::starboard::player::InputBuffer;
-  using starboard::shared::starboard::player::InputBuffers;
-
-  SB_DCHECK(sample_infos);
-  SB_DCHECK(number_of_sample_infos > 0);
-
-  InputBuffers input_buffers;
-  input_buffers.reserve(number_of_sample_infos);
-  for (int i = 0; i < number_of_sample_infos; i++) {
-    input_buffers.push_back(new InputBuffer(sample_deallocate_func_, this,
-                                            context_, sample_infos[i]));
-#if SB_PLAYER_ENABLE_VIDEO_DUMPER
-    using ::starboard::shared::starboard::player::video_dmp::VideoDmpWriter;
-    VideoDmpWriter::OnPlayerWriteSample(this, input_buffers.back());
-#endif  // SB_PLAYER_ENABLE_VIDEO_DUMPER
-  }
-
-  const auto& last_input_buffer = input_buffers.back();
-  if (last_input_buffer->sample_type() == kSbMediaTypeVideo) {
-    total_video_frames_ += number_of_sample_infos;
-    frame_width_ = last_input_buffer->video_stream_info().frame_width;
-    frame_height_ = last_input_buffer->video_stream_info().frame_height;
-  }
-
-  worker_->WriteSamples(std::move(input_buffers));
-}
+}  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_PLAYER_INTERNAL_H_

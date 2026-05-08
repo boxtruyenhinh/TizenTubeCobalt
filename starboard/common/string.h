@@ -20,15 +20,17 @@
 #define STARBOARD_COMMON_STRING_H_
 
 #include <stdarg.h>
-#if SB_API_VERSION >= 16
 #include <stdio.h>
-#endif
+
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
 #include "starboard/configuration.h"
-#include "starboard/string.h"
 
 namespace starboard {
 
@@ -52,42 +54,56 @@ inline std::string FormatString(const char* format, ...) {
   return std::string(buffer.data(), expected_size);
 }
 
-inline std::string HexEncode(const void* data,
-                             int size,
-                             const char* delimiter = NULL) {
-  const char kDecToHex[] = "0123456789abcdef";
-
-  std::string result;
-  auto delimiter_size = delimiter ? std::strlen(delimiter) : 0;
-  result.reserve((delimiter_size + 2) * size);
-
-  const uint8_t* data_in_uint8 = static_cast<const uint8_t*>(data);
-
-  for (int i = 0; i < size; ++i) {
-    result += kDecToHex[data_in_uint8[i] / 16];
-    result += kDecToHex[data_in_uint8[i] % 16];
-    if (i != size - 1 && delimiter != nullptr) {
-      result += delimiter;
-    }
-  }
-
-  return result;
+template <typename T>
+std::string ToString(const T& val) {
+  std::stringstream ss;
+  ss << val;
+  return ss.str();
 }
+
+inline std::string ToString(const std::string& val) {
+  return val;
+}
+
+inline std::string ToString(bool val) {
+  return val ? "true" : "false";
+}
+
+template <typename T>
+std::string ToString(const std::optional<T>& val) {
+  if (!val) {
+    return "(nullopt)";
+  }
+  return ToString(*val);
+}
+
+std::string HexEncode(const void* data,
+                      int size,
+                      const char* delimiter = nullptr);
+
+// Formats a number as a string with single-quote thousands separators
+// (e.g., 1'234'567).
+// NOTE: This function is for logging and debugging purposes only. It should not
+// be used in any UI, as it does not handle internationalization (i18n).
+std::string FormatWithDigitSeparators(int64_t number);
 
 template <typename CHAR>
 static SB_C_FORCE_INLINE int strlcpy(CHAR* dst, const CHAR* src, int dst_size) {
   for (int i = 0; i < dst_size; ++i) {
-    if ((dst[i] = src[i]) == 0)  // We hit and copied the terminating NULL.
+    if ((dst[i] = src[i]) == 0) {  // We hit and copied the terminating NULL.
       return i;
+    }
   }
 
   // We were left off at dst_size.  We over copied 1 byte.  Null terminate.
-  if (dst_size != 0)
+  if (dst_size != 0) {
     dst[dst_size - 1] = 0;
+  }
 
   // Count the rest of the |src|, and return its length in characters.
-  while (src[dst_size])
+  while (src[dst_size]) {
     ++dst_size;
+  }
   return dst_size;
 }
 
@@ -95,8 +111,9 @@ template <typename CHAR>
 static SB_C_FORCE_INLINE int strlcat(CHAR* dst, const CHAR* src, int dst_size) {
   int dst_length = 0;
   for (; dst_length < dst_size; ++dst_length) {
-    if (dst[dst_length] == 0)
+    if (dst[dst_length] == 0) {
       break;
+    }
   }
 
   return strlcpy<CHAR>(dst + dst_length, src, dst_size - dst_length) +

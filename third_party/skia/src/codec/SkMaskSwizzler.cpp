@@ -5,16 +5,23 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkColorData.h"
-#include "src/codec/SkCodecPriv.h"
 #include "src/codec/SkMaskSwizzler.h"
+
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkRect.h"
+#include "src/codec/SkCodecPriv.h"
+#include "src/core/SkColorData.h"
+#include "src/core/SkMasks.h"
 
 static void swizzle_mask16_to_rgba_opaque(
         void* dstRow, const uint8_t* srcRow, int width, SkMasks* masks,
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
-    uint16_t* srcPtr = ((uint16_t*) srcRow) + startX;
+    const uint16_t* srcPtr = ((const uint16_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
     for (int i = 0; i < width; i++) {
         uint16_t p = srcPtr[0];
@@ -31,7 +38,7 @@ static void swizzle_mask16_to_bgra_opaque(
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
-    uint16_t* srcPtr = ((uint16_t*) srcRow) + startX;
+    const uint16_t* srcPtr = ((const uint16_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
     for (int i = 0; i < width; i++) {
         uint16_t p = srcPtr[0];
@@ -48,7 +55,7 @@ static void swizzle_mask16_to_rgba_unpremul(
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
-    uint16_t* srcPtr = ((uint16_t*) srcRow) + startX;
+    const uint16_t* srcPtr = ((const uint16_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
     for (int i = 0; i < width; i++) {
         uint16_t p = srcPtr[0];
@@ -66,7 +73,7 @@ static void swizzle_mask16_to_bgra_unpremul(
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
-    uint16_t* srcPtr = ((uint16_t*) srcRow) + startX;
+    const uint16_t* srcPtr = ((const uint16_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
     for (int i = 0; i < width; i++) {
         uint16_t p = srcPtr[0];
@@ -84,7 +91,7 @@ static void swizzle_mask16_to_rgba_premul(
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
-    uint16_t* srcPtr = ((uint16_t*) srcRow) + startX;
+    const uint16_t* srcPtr = ((const uint16_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
     for (int i = 0; i < width; i++) {
         uint16_t p = srcPtr[0];
@@ -92,7 +99,7 @@ static void swizzle_mask16_to_rgba_premul(
         uint8_t green = masks->getGreen(p);
         uint8_t blue = masks->getBlue(p);
         uint8_t alpha = masks->getAlpha(p);
-        dstPtr[i] = premultiply_argb_as_rgba(alpha, red, green, blue);
+        dstPtr[i] = SkCodecPriv::PremultiplyARGBasRGBA(alpha, red, green, blue);
         srcPtr += sampleX;
     }
 }
@@ -102,7 +109,7 @@ static void swizzle_mask16_to_bgra_premul(
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
-    uint16_t* srcPtr = ((uint16_t*) srcRow) + startX;
+    const uint16_t* srcPtr = ((const uint16_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
     for (int i = 0; i < width; i++) {
         uint16_t p = srcPtr[0];
@@ -110,7 +117,7 @@ static void swizzle_mask16_to_bgra_premul(
         uint8_t green = masks->getGreen(p);
         uint8_t blue = masks->getBlue(p);
         uint8_t alpha = masks->getAlpha(p);
-        dstPtr[i] = premultiply_argb_as_bgra(alpha, red, green, blue);
+        dstPtr[i] = SkCodecPriv::PremultiplyARGBasBGRA(alpha, red, green, blue);
         srcPtr += sampleX;
     }
 }
@@ -122,7 +129,7 @@ static void swizzle_mask16_to_565(
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
-    uint16_t* srcPtr = ((uint16_t*) srcRow) + startX;
+    const uint16_t* srcPtr = ((const uint16_t*) srcRow) + startX;
     uint16_t* dstPtr = (uint16_t*) dstRow;
     for (int i = 0; i < width; i++) {
         uint16_t p = srcPtr[0];
@@ -217,7 +224,7 @@ static void swizzle_mask24_to_rgba_premul(
         uint8_t green = masks->getGreen(p);
         uint8_t blue = masks->getBlue(p);
         uint8_t alpha = masks->getAlpha(p);
-        dstPtr[i] = premultiply_argb_as_rgba(alpha, red, green, blue);
+        dstPtr[i] = SkCodecPriv::PremultiplyARGBasRGBA(alpha, red, green, blue);
         srcRow += 3 * sampleX;
     }
 }
@@ -235,7 +242,7 @@ static void swizzle_mask24_to_bgra_premul(
         uint8_t green = masks->getGreen(p);
         uint8_t blue = masks->getBlue(p);
         uint8_t alpha = masks->getAlpha(p);
-        dstPtr[i] = premultiply_argb_as_bgra(alpha, red, green, blue);
+        dstPtr[i] = SkCodecPriv::PremultiplyARGBasBGRA(alpha, red, green, blue);
         srcRow += 3 * sampleX;
     }
 }
@@ -262,7 +269,7 @@ static void swizzle_mask32_to_rgba_opaque(
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
-    uint32_t* srcPtr = ((uint32_t*) srcRow) + startX;
+    const uint32_t* srcPtr = ((const uint32_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
     for (int i = 0; i < width; i++) {
         uint32_t p = srcPtr[0];
@@ -279,7 +286,7 @@ static void swizzle_mask32_to_bgra_opaque(
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
-    uint32_t* srcPtr = ((uint32_t*) srcRow) + startX;
+    const uint32_t* srcPtr = ((const uint32_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
     for (int i = 0; i < width; i++) {
         uint32_t p = srcPtr[0];
@@ -296,7 +303,7 @@ static void swizzle_mask32_to_rgba_unpremul(
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
-    uint32_t* srcPtr = ((uint32_t*) srcRow) + startX;
+    const uint32_t* srcPtr = ((const uint32_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
     for (int i = 0; i < width; i++) {
         uint32_t p = srcPtr[0];
@@ -314,7 +321,7 @@ static void swizzle_mask32_to_bgra_unpremul(
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
-    uint32_t* srcPtr = ((uint32_t*) srcRow) + startX;
+    const uint32_t* srcPtr = ((const uint32_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
     for (int i = 0; i < width; i++) {
         uint32_t p = srcPtr[0];
@@ -332,7 +339,7 @@ static void swizzle_mask32_to_rgba_premul(
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
-    uint32_t* srcPtr = ((uint32_t*) srcRow) + startX;
+    const uint32_t* srcPtr = ((const uint32_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
     for (int i = 0; i < width; i++) {
         uint32_t p = srcPtr[0];
@@ -340,7 +347,7 @@ static void swizzle_mask32_to_rgba_premul(
         uint8_t green = masks->getGreen(p);
         uint8_t blue = masks->getBlue(p);
         uint8_t alpha = masks->getAlpha(p);
-        dstPtr[i] = premultiply_argb_as_rgba(alpha, red, green, blue);
+        dstPtr[i] = SkCodecPriv::PremultiplyARGBasRGBA(alpha, red, green, blue);
         srcPtr += sampleX;
     }
 }
@@ -350,7 +357,7 @@ static void swizzle_mask32_to_bgra_premul(
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
-    uint32_t* srcPtr = ((uint32_t*) srcRow) + startX;
+    const uint32_t* srcPtr = ((const uint32_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
     for (int i = 0; i < width; i++) {
         uint32_t p = srcPtr[0];
@@ -358,7 +365,7 @@ static void swizzle_mask32_to_bgra_premul(
         uint8_t green = masks->getGreen(p);
         uint8_t blue = masks->getBlue(p);
         uint8_t alpha = masks->getAlpha(p);
-        dstPtr[i] = premultiply_argb_as_bgra(alpha, red, green, blue);
+        dstPtr[i] = SkCodecPriv::PremultiplyARGBasBGRA(alpha, red, green, blue);
         srcPtr += sampleX;
     }
 }
@@ -367,7 +374,7 @@ static void swizzle_mask32_to_565(
         void* dstRow, const uint8_t* srcRow, int width, SkMasks* masks,
         uint32_t startX, uint32_t sampleX) {
     // Use the masks to decode to the destination
-    uint32_t* srcPtr = ((uint32_t*) srcRow) + startX;
+    const uint32_t* srcPtr = ((const uint32_t*) srcRow) + startX;
     uint16_t* dstPtr = (uint16_t*) dstRow;
     for (int i = 0; i < width; i++) {
         uint32_t p = srcPtr[0];
@@ -549,8 +556,8 @@ int SkMaskSwizzler::onSetSampleX(int sampleX) {
     SkASSERT(sampleX > 0); // Surely there is an upper limit? Should there be
                            // way to report failure?
     fSampleX = sampleX;
-    fX0 = get_start_coord(sampleX) + fSrcOffset;
-    fDstWidth = get_scaled_dimension(fSubsetWidth, sampleX);
+    fX0 = SkCodecPriv::GetStartCoord(sampleX) + fSrcOffset;
+    fDstWidth = SkCodecPriv::GetSampledDimension(fSubsetWidth, sampleX);
 
     // check that fX0 is valid
     SkASSERT(fX0 >= 0);

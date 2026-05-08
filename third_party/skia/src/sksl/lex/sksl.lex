@@ -2,7 +2,7 @@
 // *** IMPORTANT ***
 // *****************
 //
-// 1. This file is only used when gn arg sksl_lex is set to true. It is used to regenerate the
+// 1. This file is only used when gn arg skia_lex is set to true. It is used to regenerate the
 //    SkSLLexer.h and SkSLLexer.cpp files.
 // 2. Since token IDs are used to identify operators and baked into the .dehydrated.sksl files,
 //    after modifying this file it is likely everything will break until you update the dehydrated
@@ -15,13 +15,11 @@ BAD_OCTAL      = (0[0-9]+)[uU]?
 TRUE_LITERAL   = "true"
 FALSE_LITERAL  = "false"
 IF             = "if"
-STATIC_IF      = "@if"
 ELSE           = "else"
 FOR            = "for"
 WHILE          = "while"
 DO             = "do"
 SWITCH         = "switch"
-STATIC_SWITCH  = "@switch"
 CASE           = "case"
 DEFAULT        = "default"
 BREAK          = "break"
@@ -37,15 +35,22 @@ FLAT           = "flat"
 NOPERSPECTIVE  = "noperspective"
 INLINE         = "inline"
 NOINLINE       = "noinline"
-HASSIDEEFFECTS = "sk_has_side_effects"
+PURE           = "$pure"
+READONLY       = "readonly"
+WRITEONLY      = "writeonly"
+BUFFER         = "buffer"
 STRUCT         = "struct"
 LAYOUT         = "layout"
 HIGHP          = "highp"
 MEDIUMP        = "mediump"
 LOWP           = "lowp"
 ES3            = "$es3"
-RESERVED       = attribute|varying|precision|invariant|asm|class|union|enum|typedef|template|this|packed|goto|volatile|public|static|extern|external|interface|long|double|fixed|unsigned|superp|input|output|hvec[234]|dvec[234]|fvec[234]|sampler[12]DShadow|sampler3DRect|sampler2DRectShadow|samplerCube|sizeof|cast|namespace|using|gl_[0-9a-zA-Z_]*
-IDENTIFIER     = [a-zA-Z_$][0-9a-zA-Z_]*
+EXPORT         = "$export"
+WORKGROUP      = "workgroup"
+PIXELLOCAL     = "pixel_local"
+RESERVED       = atomic|attribute|varying|precision|invariant|asm|class|union|enum|typedef|template|this|packed|goto|volatile|public|static|extern|external|interface|long|double|fixed|unsigned|superp|input|output|hvec[234]|dvec[234]|dmat[234]|dmat[234]x[234]|fvec[234]|(iimage|image|isampler|itexture|uimage|usampler|utexture)(1D|2D|3D|1DArray|2DArray|2DRect|2DMS|2DMSArray|Buffer|Cube|CubeArray)|(sampler|texture)(1D|1DArray|2DArray|2DMS|2DMSArray|3D|Buffer|Cube|CubeArray)|sampler(1DArrayShadow|1DShadow|2DArrayShadow|2DShadow|2DRectShadow|3DRect|CubeArrayShadow|CubeShadow|Shadow)|[iu]subpassInput(MS)?|sizeof|cast|namespace|using|gl_[0-9a-zA-Z_]*
+PRIVATE_IDENTIFIER = $[0-9a-zA-Z_]*
+IDENTIFIER     = [a-zA-Z_][0-9a-zA-Z_]*
 DIRECTIVE      = #[a-zA-Z_][0-9a-zA-Z_]*
 LPAREN         = "("
 RPAREN         = ")"

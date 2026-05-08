@@ -46,6 +46,12 @@ def main(argv):
 
   cobalt_documentation.copy_doc_locations(arguments.source, arguments.out)
 
+  if arguments.out:
+    site_path = environment.get_site_dir(arguments.out)
+  else:
+    site_path = environment.get_site_dir(arguments.source)
+  environment.verify_and_clean_newlines(site_path)
+
 
 if __name__ == '__main__':
   sys.exit(main(sys.argv[1:]))

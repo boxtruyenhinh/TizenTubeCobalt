@@ -1,4 +1,4 @@
-// Copyright 2023 The Cobalt Authors. All Rights Reserved.
+// Copyright 2025 The Cobalt Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,54 +17,50 @@
 #include <memory>
 
 #include "base/command_line.h"
-#include "base/functional/callback_forward.h"
-#include "base/metrics/field_trial.h"
+#include "base/path_service.h"
+#include "cobalt/browser/metrics/cobalt_enabled_state_provider.h"
 #include "cobalt/browser/metrics/cobalt_metrics_service_client.h"
 #include "components/metrics/client_info.h"
 #include "components/metrics/metrics_service.h"
 #include "components/metrics/metrics_service_client.h"
 #include "components/metrics/metrics_state_manager.h"
-#include "components/metrics/metrics_switches.h"
 #include "components/metrics_services_manager/metrics_services_manager_client.h"
-#include "components/prefs/in_memory_pref_store.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/pref_service_factory.h"
+#include "components/variations/service/variations_service.h"
+#include "components/variations/synthetic_trial_registry.h"
 
 namespace cobalt {
-namespace browser {
-namespace metrics {
+
+CobaltMetricsServicesManagerClient::CobaltMetricsServicesManagerClient(
+    PrefService* local_state)
+    : enabled_state_provider_(
+          std::make_unique<CobaltEnabledStateProvider>(local_state)),
+      local_state_(local_state) {
+  DCHECK(local_state_);
+}
 
 std::unique_ptr<::metrics::MetricsServiceClient>
-CobaltMetricsServicesManagerClient::CreateMetricsServiceClient() {
-  InitializeMetricsStateManagerAndLocalState();
-  return std::make_unique<CobaltMetricsServiceClient>(
-      metrics_state_manager_.get(), local_state_.get());
+CobaltMetricsServicesManagerClient::CreateMetricsServiceClient(
+    variations::SyntheticTrialRegistry* synthetic_trial_registry) {
+  auto metrics_service_client = CobaltMetricsServiceClient::Create(
+      GetMetricsStateManager(),
+      std::make_unique<variations::SyntheticTrialRegistry>(),
+      local_state_.get());
+  metrics_service_client_ = metrics_service_client.get();
+  return metrics_service_client;
 }
 
-std::unique_ptr<const base::FieldTrial::EntropyProvider>
-CobaltMetricsServicesManagerClient::CreateEntropyProvider() {
-  // Cobalt doesn't use FieldTrials, so this is a noop.
+std::unique_ptr<variations::VariationsService>
+CobaltMetricsServicesManagerClient::CreateVariationsService(
+    variations::SyntheticTrialRegistry* synthetic_trial_registry) {
+  // VariationsService is not needed for Finch support in Cobalt. We don't
+  // use things like the Finch seed or client-side Field Trials. Instead,
+  // we have our own custom implementation that is driven by the server via
+  // H5vccExperiments.
   NOTIMPLEMENTED();
   return nullptr;
-}
-
-// Returns whether metrics reporting is enabled.
-bool CobaltMetricsServicesManagerClient::IsMetricsReportingEnabled() {
-  return enabled_state_provider_->IsReportingEnabled();
-}
-
-// Returns whether metrics consent is given.
-bool CobaltMetricsServicesManagerClient::IsMetricsConsentGiven() {
-  return enabled_state_provider_->IsConsentGiven();
-}
-
-// If the user has forced metrics collection on via the override flag. This
-// switch being set trumps/overrides any other mechanism to enable telemetry
-// (e.g., through the h5vcc_metrics API).
-bool CobaltMetricsServicesManagerClient::IsMetricsReportingForceEnabled() {
-  return base::CommandLine::ForCurrentProcess()->HasSwitch(
-      ::metrics::switches::kForceEnableMetricsReporting);
 }
 
 void StoreMetricsClientInfo(const ::metrics::ClientInfo& client_info) {
@@ -79,37 +75,15 @@ std::unique_ptr<::metrics::ClientInfo> LoadMetricsClientInfo() {
 }
 
 ::metrics::MetricsStateManager*
-CobaltMetricsServicesManagerClient::GetMetricsStateManagerForTesting() {
-  return GetMetricsStateManager();
-}
-
-void CobaltMetricsServicesManagerClient::
-    InitializeMetricsStateManagerAndLocalState() {
+CobaltMetricsServicesManagerClient::GetMetricsStateManager() {
   if (!metrics_state_manager_) {
-    PrefServiceFactory pref_service_factory;
-    pref_service_factory.set_user_prefs(
-        base::MakeRefCounted<InMemoryPrefStore>());
-
-    auto pref_registry = base::MakeRefCounted<PrefRegistrySimple>();
-
-    // Note, we mainly create the Pref store here to appease metrics state
-    // manager. We don't really use it the same way Chromium does.
-    local_state_ = pref_service_factory.Create(pref_registry);
-    ::metrics::MetricsService::RegisterPrefs(pref_registry.get());
-
+    base::FilePath user_data_dir;
+    base::PathService::Get(base::DIR_CACHE, &user_data_dir);
     metrics_state_manager_ = ::metrics::MetricsStateManager::Create(
         local_state_.get(), enabled_state_provider_.get(), std::wstring(),
-        base::BindRepeating(&StoreMetricsClientInfo),
-        base::BindRepeating(&LoadMetricsClientInfo));
+        user_data_dir, metrics::StartupVisibility::kForeground);
   }
-}
-
-::metrics::MetricsStateManager*
-CobaltMetricsServicesManagerClient::GetMetricsStateManager() {
-  InitializeMetricsStateManagerAndLocalState();
   return metrics_state_manager_.get();
 }
 
-}  // namespace metrics
-}  // namespace browser
 }  // namespace cobalt

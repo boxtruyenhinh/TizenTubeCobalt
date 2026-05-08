@@ -15,7 +15,6 @@
 #ifndef STARBOARD_SHARED_STARBOARD_PLAYER_VIDEO_DMP_WRITER_H_
 #define STARBOARD_SHARED_STARBOARD_PLAYER_VIDEO_DMP_WRITER_H_
 
-#include "starboard/file.h"
 #include "starboard/media.h"
 #include "starboard/player.h"
 #include "starboard/shared/internal_only.h"
@@ -23,10 +22,6 @@
 #include "starboard/shared/starboard/player/video_dmp_common.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace video_dmp {
 
 // This class saves video data according to the format specified inside
 // video_dmp_common.h.
@@ -56,10 +51,6 @@ class VideoDmpWriter {
   WriteCB write_cb_;
 };
 
-}  // namespace video_dmp
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_VIDEO_DMP_WRITER_H_

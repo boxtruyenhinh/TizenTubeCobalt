@@ -124,7 +124,7 @@
  * @stable ICU 2.2
  */
 #ifndef U_OVERRIDE_CXX_ALLOCATION
-#define U_OVERRIDE_CXX_ALLOCATION 0
+#define U_OVERRIDE_CXX_ALLOCATION 1
 #endif
 
 /**
@@ -181,12 +181,6 @@
  * 1 if a custom library suffix is set.
  * @internal
  */
-#if defined(STARBOARD)
-#define U_LIB_SUFFIX_C_NAME
-#define U_LIB_SUFFIX_C_NAME_STRING ""
-#define U_HAVE_LIB_SUFFIX 0
-#endif
-
 #ifdef U_HAVE_LIB_SUFFIX
     /* Use the predefined value. */
 #elif defined(U_LIB_SUFFIX_C_NAME) || defined(U_IN_DOXYGEN)
@@ -327,6 +321,16 @@
  */
 #ifndef UCONFIG_NO_NORMALIZATION
 #   define UCONFIG_NO_NORMALIZATION 0
+#endif
+
+/**
+ * \def UCONFIG_USE_ML_PHRASE_BREAKING
+ * This switch turns on BudouX ML phrase-based line breaking, rather than using the dictionary.
+ *
+ * @internal
+ */
+#ifndef UCONFIG_USE_ML_PHRASE_BREAKING
+#   define UCONFIG_USE_ML_PHRASE_BREAKING 0
 #endif
 
 #if UCONFIG_NO_NORMALIZATION

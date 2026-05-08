@@ -1,4 +1,4 @@
-// Copyright 2014 The Cobalt Authors. All Rights Reserved.
+// Copyright 2025 The Cobalt Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,164 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <map>
 #include <string>
 
-#include "starboard/configuration.h"
+#include "base/command_line.h"
 
 #ifndef COBALT_BROWSER_SWITCHES_H_
 #define COBALT_BROWSER_SWITCHES_H_
 
 namespace cobalt {
-namespace browser {
 namespace switches {
 
-#if defined(ENABLE_DEBUG_COMMAND_LINE_SWITCHES)
-extern const char kDebugConsoleMode[];
-extern const char kDebugConsoleModeHelp[];
-extern const char kDevServersListenIp[];
-extern const char kDevServersListenIpHelp[];
+// Allow the user to override the default URL via a command line parameter.
+std::string GetInitialURL(const base::CommandLine& command_line);
 
-#if defined(ENABLE_DEBUGGER)
-extern const char kDisableWebDebugger[];
-extern const char kDisableWebDebuggerHelp[];
-extern const char kRemoteDebuggingPort[];
-extern const char kRemoteDebuggingPortHelp[];
-extern const char kWaitForWebDebugger[];
-extern const char kWaitForWebDebuggerHelp[];
-#endif  // ENABLE_DEBUGGER
+constexpr char kInitialURL[] = "url";
 
-extern const char kAllowAllCrossOrigin[];
-extern const char kAllowAllCrossOriginHelp[];
-extern const char kDisableImageAnimations[];
-extern const char kDisableImageAnimationsHelp[];
-extern const char kForceDeterministicRendering[];
-extern const char kDisableMediaCodecs[];
-extern const char kDisableMediaCodecsHelp[];
-extern const char kDisableMediaEncryptionSchemes[];
-extern const char kDisableMediaEncryptionSchemesHelp[];
-extern const char kDisableOnScreenKeyboard[];
-extern const char kDisableOnScreenKeyboardHelp[];
-extern const char kDisableRasterizerCaching[];
-extern const char kDisableSplashScreenOnReloads[];
-extern const char kDisableSplashScreenOnReloadsHelp[];
-extern const char kDisableWebDriver[];
-extern const char kDisableWebDriverHelp[];
-extern const char kExtraWebFileDir[];
-extern const char kExtraWebFileDirHelp[];
-extern const char kFakeMicrophone[];
-extern const char kFakeMicrophoneHelp[];
-extern const char kIgnoreCertificateErrors[];
-extern const char kIgnoreCertificateErrorsHelp[];
-extern const char kInputFuzzer[];
-extern const char kInputFuzzerHelp[];
-extern const char kMinCompatibilityVersion[];
-extern const char kMinCompatibilityVersionHelp[];
-extern const char kNullSavegame[];
-extern const char kNullSavegameHelp[];
-extern const char kProd[];
-extern const char kProdHelp[];
-extern const char kRequireCSP[];
-extern const char kRequireCSPHelp[];
-extern const char kRequireHTTPSLocation[];
-extern const char kRequireHTTPSLocationHelp[];
-extern const char kShutdownAfter[];
-extern const char kShutdownAfterHelp[];
-extern const char kStubImageDecoder[];
-extern const char kStubImageDecoderHelp[];
-extern const char kSuspendFuzzer[];
-extern const char kSuspendFuzzerHelp[];
-extern const char kTimedTrace[];
-extern const char kTimedTraceHelp[];
-extern const char kUserAgentClientHints[];
-extern const char kUserAgentClienthintsHelp[];
-extern const char kUserAgentOsNameVersion[];
-extern const char kUserAgentOsNameVersionHelp[];
-extern const char kUseTTS[];
-extern const char kUseTTSHelp[];
-extern const char kWatchdog[];
-extern const char kWatchdogHelp[];
-extern const char kWebDriverPort[];
-extern const char kWebDriverPortHelp[];
-#endif  // ENABLE_DEBUG_COMMAND_LINE_SWITCHES
+// By default, CSP headers and HTTPS are only enforced in release (gold)
+// builds. This allows users to disable enforcement via the command line.
+constexpr char kEnforceCSP[] = "csp-enforcement";
+constexpr char kEnforceHTTPS[] = "https-enforcement";
 
-extern const char kDisableJavaScriptJit[];
-extern const char kDisableJavaScriptJitHelp[];
-extern const char kDisableMapToMesh[];
-extern const char kDisableMapToMeshHelp[];
-extern const char kDisableTimerResolutionLimit[];
-extern const char kDisableTimerResolutionLimitHelp[];
-#if SB_API_VERSION < 16
-extern const char kDisableUpdaterModule[];
-extern const char kDisableUpdaterModuleHelp[];
-#endif
-extern const char kEnableSkiaRasterizer[];
-extern const char kEnableSkiaRasterizerHelp[];
-extern const char kEncodedImageCacheSizeInBytes[];
-extern const char kEncodedImageCacheSizeInBytesHelp[];
-extern const char kForceMigrationForStoragePartitioning[];
-extern const char kFPSPrint[];
-extern const char kFPSPrintHelp[];
-extern const char kFPSOverlay[];
-extern const char kFPSOverlayHelp[];
-extern const char kHelp[];
-extern const char kHelpHelp[];
-extern const char kImageCacheSizeInBytes[];
-extern const char kImageCacheSizeInBytesHelp[];
-extern const char kInitialURL[];
-extern const char kInitialURLHelp[];
-extern const char kLoaderUseMemoryMappedFile[];
-extern const char kLoaderUseMemoryMappedFileHelp[];
-extern const char kLocalStoragePartitionUrl[];
-extern const char kLocalStoragePartitionUrlHelp[];
-extern const char kMaxCobaltCpuUsage[];
-extern const char kMaxCobaltCpuUsageHelp[];
-extern const char kMaxCobaltGpuUsage[];
-extern const char kMaxCobaltGpuUsageHelp[];
-extern const char kMinLogLevel[];
-extern const char kMinLogLevelHelp[];
-extern const char kOffscreenTargetCacheSizeInBytes[];
-extern const char kOffscreenTargetCacheSizeInBytesHelp[];
-extern const char kOmitDeviceAuthenticationQueryParameters[];
-extern const char kOmitDeviceAuthenticationQueryParametersHelp[];
-extern const char kDisableProgressivePlayback[];
-extern const char kProxy[];
-extern const char kProxyHelp[];
-extern const char kQrCodeOverlay[];
-extern const char kQrCodeOverlayHelp[];
-extern const char kRemoteTypefaceCacheSizeInBytes[];
-extern const char kRemoteTypefaceCacheSizeInBytesHelp[];
-extern const char kRetainRemoteTypefaceCacheDuringSuspend[];
-extern const char kRetainRemoteTypefaceCacheDuringSuspendHelp[];
-extern const char kScratchSurfaceCacheSizeInBytes[];
-extern const char kScratchSurfaceCacheSizeInBytesHelp[];
-extern const char kSilenceInlineScriptWarnings[];
-extern const char kSilenceInlineScriptWarningsHelp[];
-extern const char kSkiaCacheSizeInBytes[];
-extern const char kSkiaCacheSizeInBytesHelp[];
-extern const char kSkiaTextureAtlasDimensions[];
-extern const char kSkiaTextureAtlasDimensionsHelp[];
-extern const char kFallbackSplashScreenURL[];
-extern const char kFallbackSplashScreenURLHelp[];
-extern const char kFallbackSplashScreenTopics[];
-extern const char kFallbackSplashScreenTopicsHelp[];
-extern const char kUpdateCheckDelaySeconds[];
-extern const char kUpdateCheckDelaySecondsHelp[];
-extern const char kUseQAUpdateServer[];
-extern const char kUseQAUpdateServerHelp[];
-extern const char kUseUncompressedUpdates[];
-extern const char kUseUncompressedUpdatesHelp[];
-extern const char kVersion[];
-extern const char kVersionHelp[];
-extern const char kViewport[];
-extern const char kViewportHelp[];
-extern const char kVideoPlaybackRateMultiplier[];
-extern const char kVideoPlaybackRateMultiplierHelp[];
+// Specify the initial window size: --window-size=w,h
+constexpr char kWindowSize[] = "window-size";
 
-std::map<std::string, const char*> HelpMap();
-std::string HelpMessage();
 }  // namespace switches
-}  // namespace browser
 }  // namespace cobalt
 
 #endif  // COBALT_BROWSER_SWITCHES_H_

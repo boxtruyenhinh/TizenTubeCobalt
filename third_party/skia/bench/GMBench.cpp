@@ -7,13 +7,13 @@
 
 #include "bench/GMBench.h"
 
-#include "include/gpu/GrRecordingContext.h"
-#include "src/gpu/GrRecordingContextPriv.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
 
 GMBench::GMBench(std::unique_ptr<skiagm::GM> gm) : fGM(std::move(gm)) {
     fGM->setMode(skiagm::GM::kBench_Mode);
 
-    fName.printf("GM_%s", fGM->getName());
+    fName.printf("GM_%s", fGM->getName().c_str());
 }
 
 const char* GMBench::onGetName() {
@@ -21,13 +21,12 @@ const char* GMBench::onGetName() {
 }
 
 bool GMBench::isSuitableFor(Backend backend) {
-    return kNonRendering_Backend != backend;
+    return Backend::kNonRendering != backend;
 }
 
 void GMBench::onPerCanvasPreDraw(SkCanvas* canvas) {
-    auto direct = GrAsDirectContext(canvas->recordingContext());
-
-    if (fGM->gpuSetup(direct, canvas) != skiagm::DrawResult::kOk) {
+    SkString msg;
+    if (fGM->gpuSetup(canvas, &msg) != skiagm::DrawResult::kOk) {
         fGpuSetupFailed = true;
     }
 
@@ -53,7 +52,6 @@ void GMBench::onDraw(int loops, SkCanvas* canvas) {
     }
 }
 
-SkIPoint GMBench::onGetSize() {
-    SkISize size = fGM->getISize();
-    return SkIPoint::Make(size.fWidth, size.fHeight);
+SkISize GMBench::onGetSize() {
+    return fGM->getISize();
 }

@@ -20,7 +20,6 @@
 #include "starboard/nplb/file_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -33,7 +32,7 @@ bool CompareFileContentsToString(const char* filename,
                                  int size) {
   char result[kTestContentsLength] = {'\0'};
 
-  int file = open(filename, O_RDONLY, S_IRUSR | S_IWUSR);
+  int file = open(filename, O_RDONLY);
 
   EXPECT_TRUE(starboard::IsValid(file));
 
@@ -44,11 +43,6 @@ bool CompareFileContentsToString(const char* filename,
   EXPECT_TRUE(!close(file));
 
   return strncmp(str, result, kTestContentsLength) == 0;
-}
-
-bool FileExists(const char* path) {
-  struct stat info;
-  return stat(path, &info) == 0;
 }
 
 TEST(SbFileAtomicReplaceTest, ReplacesValidFile) {
@@ -101,4 +95,3 @@ TEST(SbFileAtomicReplaceTest, FailsWithInvalidLength) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

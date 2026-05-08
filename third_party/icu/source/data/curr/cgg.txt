@@ -175,9 +175,13 @@ cgg{
             "SHP",
             "Paundi ya Senti Herena",
         }
+        SLE{
+            "SLE",
+            "Leone",
+        }
         SLL{
             "SLL",
-            "Leone",
+            "Leone (1964—2022)",
         }
         SOS{
             "SOS",
@@ -212,7 +216,7 @@ cgg{
             "Faranga ya CFA BEAC",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "Faranga ya CFA BCEAO",
         }
         ZAR{

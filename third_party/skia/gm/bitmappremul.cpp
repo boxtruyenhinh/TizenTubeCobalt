@@ -10,7 +10,6 @@
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
@@ -18,6 +17,7 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
+#include "src/core/SkColorPriv.h"
 
 /**
  * This GM checks that bitmap pixels are unpremultiplied before being exported
@@ -95,13 +95,9 @@ public:
     }
 
 protected:
-    SkString onShortName() override {
-        return SkString("bitmap_premul");
-    }
+    SkString getName() const override { return SkString("bitmap_premul"); }
 
-    SkISize onISize() override {
-        return SkISize::Make(SLIDE_SIZE * 2, SLIDE_SIZE * 2);
-    }
+    SkISize getISize() override { return SkISize::Make(SLIDE_SIZE * 2, SLIDE_SIZE * 2); }
 
     void onDraw(SkCanvas* canvas) override {
         SkScalar slideSize = SkIntToScalar(SLIDE_SIZE);
@@ -117,3 +113,35 @@ private:
 
 DEF_GM( return new BitmapPremulGM; )
 }  // namespace skiagm
+
+static constexpr int kBoxSize     = 31;
+static constexpr int kPadding     = 5;
+
+static sk_sp<SkImage> make_out_of_gamut_image(SkColorType ct) {
+    SkBitmap bmp;
+    // Odd dimensions so that we hit the different implementation in the SIMD tail handling
+    bmp.allocPixels(SkImageInfo::Make(kBoxSize, kBoxSize, ct, kPremul_SkAlphaType));
+    for (int y = 0; y < kBoxSize; ++y) {
+        for (int x = 0; x < kBoxSize; ++x) {
+            *bmp.getAddr32(x, y) = (0x40000000 | ((x * 8) << 8) | ((y * 8) << 0));
+        }
+    }
+    return bmp.asImage();
+}
+
+DEF_SIMPLE_GM(image_out_of_gamut, canvas, 2 * kBoxSize + 3 * kPadding, kBoxSize + 2 * kPadding) {
+    // This GM draws an image with out-of-gamut colors (RGB > A). Historically, Skia assumed this
+    // was impossible, and contained numerous asserts and optimizations that would break if the
+    // rule were violated. With color spaces and/or SkSL shaders (among other things), it's no
+    // longer reasonable to make this claim. To catch issues with legacy blitters, this draws both
+    // RGBA and BGRA. (This ensures that we always hit the N32 -> N32 case).
+    canvas->clear(SK_ColorGRAY);
+
+    auto rgba = make_out_of_gamut_image(kRGBA_8888_SkColorType),
+         bgra = make_out_of_gamut_image(kBGRA_8888_SkColorType);
+
+    canvas->translate(kPadding, kPadding);
+    canvas->drawImage(rgba, 0, 0);
+    canvas->translate(kBoxSize + kPadding, 0);
+    canvas->drawImage(bgra, 0, 0);
+}

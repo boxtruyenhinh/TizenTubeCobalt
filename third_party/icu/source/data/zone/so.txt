@@ -213,6 +213,9 @@ so{
         "America:Chihuahua"{
             ec{"Jiwaahuu"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"Magaalada Juarez"}
+        }
         "America:Coral_Harbour"{
             ec{"Atikokaan"}
         }
@@ -411,9 +414,6 @@ so{
         "America:Nome"{
             ec{"Noom"}
         }
-        "America:Noronha"{
-            ec{"Noroonha"}
-        }
         "America:North_Dakota:Beulah"{
             ec{"Biyuulah, Waqooyiga Dakoota"}
         }
@@ -432,9 +432,6 @@ so{
         "America:Pangnirtung"{
             ec{"Bangnirtuung"}
         }
-        "America:Paramaribo"{
-            ec{"Baramaribo"}
-        }
         "America:Phoenix"{
             ec{"Foonikis"}
         }
@@ -443,9 +440,6 @@ so{
         }
         "America:Port_of_Spain"{
             ec{"Boort of Isbayn"}
-        }
-        "America:Porto_Velho"{
-            ec{"Boorto Felho"}
         }
         "America:Puerto_Rico"{
             ec{"Boorta Riiko"}
@@ -1062,6 +1056,9 @@ so{
         "Pacific:Johnston"{
             ec{"Joonston"}
         }
+        "Pacific:Kanton"{
+            ec{"Kantoon"}
+        }
         "Pacific:Kiritimati"{
             ec{"Kiritimaati"}
         }
@@ -1567,9 +1564,9 @@ so{
             ls{"Waqtiga Niyuu"}
         }
         "meta:Norfolk"{
-            ld{"Waqtiga Xagaaga ee Noorfek Aylaan"}
-            lg{"Waqtiga Noorfek Aylaan"}
-            ls{"Waqtiga Caadiga Ah ee Noorfek Aylaan"}
+            ld{"Waqtiga Maalinta ee Norfolk Island"}
+            lg{"Waqtiga Norfolk Island"}
+            ls{"Waqtiga Caadiga ah ee Norfolk Island"}
         }
         "meta:Noronha"{
             ld{"Waqtiga Xagaaga ee Farnaando de Nooronha"}
@@ -1749,6 +1746,9 @@ so{
             ld{"Waqtiga Xagaaga ee Yekaterinbaag"}
             lg{"Waqtiga Yekaterinbaag"}
             ls{"Waqtiga Caadiga Ah ee Yekaterinbaag"}
+        }
+        "meta:Yukon"{
+            ls{"Waqtiga Yukon"}
         }
         regionFormat{"Waqtiga {0}"}
         regionFormatDaylight{"Waqtiga Dharaarta ee {0}"}

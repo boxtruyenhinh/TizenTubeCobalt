@@ -5,13 +5,17 @@
 #ifndef INCLUDE_CPPGC_VISITOR_H_
 #define INCLUDE_CPPGC_VISITOR_H_
 
+#include <type_traits>
+
 #include "cppgc/custom-space.h"
-#include "cppgc/ephemeron-pair.h"
 #include "cppgc/garbage-collected.h"
 #include "cppgc/internal/logging.h"
+#include "cppgc/internal/member-storage.h"
 #include "cppgc/internal/pointer-policies.h"
 #include "cppgc/liveness-broker.h"
+#include "cppgc/macros.h"
 #include "cppgc/member.h"
+#include "cppgc/sentinel-pointer.h"
 #include "cppgc/source-location.h"
 #include "cppgc/trace-trait.h"
 #include "cppgc/type-traits.h"
@@ -31,6 +35,25 @@ class VisitorFactory;
 }  // namespace internal
 
 using WeakCallback = void (*)(const LivenessBroker&, const void*);
+
+/**
+ * An ephemeron pair is used to conditionally retain an object.
+ * The `value` will be kept alive only if the `key` is alive.
+ */
+template <typename K, typename V>
+struct EphemeronPair {
+  CPPGC_DISALLOW_NEW();
+
+  EphemeronPair(K* k, V* v) : key(k), value(v) {}
+  WeakMember<K> key;
+  Member<V> value;
+
+  void ClearValueIfKeyIsDead(const LivenessBroker& broker) {
+    if (!broker.IsHeapObjectAlive(key)) value = nullptr;
+  }
+
+  void Trace(Visitor* visitor) const;
+};
 
 /**
  * Visitor passed to trace methods. All managed pointers must have called the
@@ -68,9 +91,9 @@ class V8_EXPORT Visitor {
    */
   template <typename T>
   void Trace(const Member<T>& member) {
-    const T* value = member.GetRawAtomic();
+    const T* value = member.GetAtomic();
     CPPGC_DCHECK(value != kSentinelPointer);
-    Trace(value);
+    TraceImpl(value);
   }
 
   /**
@@ -81,12 +104,12 @@ class V8_EXPORT Visitor {
   template <typename T>
   void Trace(const WeakMember<T>& weak_member) {
     static_assert(sizeof(T), "Pointee type must be fully defined.");
-    static_assert(internal::IsGarbageCollectedType<T>::value,
+    static_assert(internal::IsGarbageCollectedOrMixinType<T>::value,
                   "T must be GarbageCollected or GarbageCollectedMixin type");
     static_assert(!internal::IsAllocatedOnCompactableSpace<T>::value,
                   "Weak references to compactable objects are not allowed");
 
-    const T* value = weak_member.GetRawAtomic();
+    const T* value = weak_member.GetAtomic();
 
     // Bailout assumes that WeakMember emits write barrier.
     if (!value) {
@@ -96,6 +119,44 @@ class V8_EXPORT Visitor {
     CPPGC_DCHECK(value != kSentinelPointer);
     VisitWeak(value, TraceTrait<T>::GetTraceDescriptor(value),
               &HandleWeak<WeakMember<T>>, &weak_member);
+  }
+
+#if defined(CPPGC_POINTER_COMPRESSION)
+  /**
+   * Trace method for UncompressedMember.
+   *
+   * \param member UncompressedMember reference retaining an object.
+   */
+  template <typename T>
+  void Trace(const subtle::UncompressedMember<T>& member) {
+    const T* value = member.GetAtomic();
+    CPPGC_DCHECK(value != kSentinelPointer);
+    TraceImpl(value);
+  }
+#endif  // defined(CPPGC_POINTER_COMPRESSION)
+
+  template <typename T>
+  void TraceMultiple(const subtle::UncompressedMember<T>* start, size_t len) {
+    static_assert(sizeof(T), "Pointee type must be fully defined.");
+    static_assert(internal::IsGarbageCollectedOrMixinType<T>::value,
+                  "T must be GarbageCollected or GarbageCollectedMixin type");
+    VisitMultipleUncompressedMember(start, len,
+                                    &TraceTrait<T>::GetTraceDescriptor);
+  }
+
+  template <typename T,
+            std::enable_if_t<!std::is_same_v<
+                Member<T>, subtle::UncompressedMember<T>>>* = nullptr>
+  void TraceMultiple(const Member<T>* start, size_t len) {
+    static_assert(sizeof(T), "Pointee type must be fully defined.");
+    static_assert(internal::IsGarbageCollectedOrMixinType<T>::value,
+                  "T must be GarbageCollected or GarbageCollectedMixin type");
+#if defined(CPPGC_POINTER_COMPRESSION)
+    static_assert(std::is_same_v<Member<T>, subtle::CompressedMember<T>>,
+                  "Member and CompressedMember must be the same.");
+    VisitMultipleCompressedMember(start, len,
+                                  &TraceTrait<T>::GetTraceDescriptor);
+#endif  // defined(CPPGC_POINTER_COMPRESSION)
   }
 
   /**
@@ -114,6 +175,26 @@ class V8_EXPORT Visitor {
     CheckObjectNotInConstruction(&object);
 #endif  // V8_ENABLE_CHECKS
     TraceTrait<T>::Trace(this, &object);
+  }
+
+  template <typename T>
+  void TraceMultiple(const T* start, size_t len) {
+#if V8_ENABLE_CHECKS
+    // This object is embedded in potentially multiple nested objects. The
+    // outermost object must not be in construction as such objects are (a) not
+    // processed immediately, and (b) only processed conservatively if not
+    // otherwise possible.
+    CheckObjectNotInConstruction(start);
+#endif  // V8_ENABLE_CHECKS
+    for (size_t i = 0; i < len; ++i) {
+      const T* object = &start[i];
+      if constexpr (std::is_polymorphic_v<T>) {
+        // The object's vtable may be uninitialized in which case the object is
+        // not traced.
+        if (*reinterpret_cast<const uintptr_t*>(object) == 0) continue;
+      }
+      TraceTrait<T>::Trace(this, object);
+    }
   }
 
   /**
@@ -135,20 +216,74 @@ class V8_EXPORT Visitor {
    */
   template <typename K, typename V>
   void Trace(const EphemeronPair<K, V>& ephemeron_pair) {
-    TraceEphemeron(ephemeron_pair.key, ephemeron_pair.value.GetRawAtomic());
+    TraceEphemeron(ephemeron_pair.key, &ephemeron_pair.value);
+    RegisterWeakCallbackMethod<EphemeronPair<K, V>,
+                               &EphemeronPair<K, V>::ClearValueIfKeyIsDead>(
+        &ephemeron_pair);
   }
 
   /**
-   * Trace method for ephemerons. Used for tracing raw ephemeron in which the
-   * key and value are kept separately.
+   * Trace method for a single ephemeron. Used for tracing a raw ephemeron in
+   * which the `key` and `value` are kept separately.
    *
-   * \param key WeakMember reference weakly retaining a key object.
-   * \param value Member reference weakly retaining a value object.
+   * \param weak_member_key WeakMember reference weakly retaining a key object.
+   * \param member_value Member reference with ephemeron semantics.
    */
-  template <typename K, typename V>
-  void TraceEphemeron(const WeakMember<K>& key, const V* value) {
-    TraceDescriptor value_desc = TraceTrait<V>::GetTraceDescriptor(value);
-    VisitEphemeron(key, value_desc);
+  template <typename KeyType, typename ValueType>
+  void TraceEphemeron(const WeakMember<KeyType>& weak_member_key,
+                      const Member<ValueType>* member_value) {
+    const KeyType* key = weak_member_key.GetAtomic();
+    if (!key) return;
+
+    // `value` must always be non-null.
+    CPPGC_DCHECK(member_value);
+    const ValueType* value = member_value->GetAtomic();
+    if (!value) return;
+
+    // KeyType and ValueType may refer to GarbageCollectedMixin.
+    TraceDescriptor value_desc =
+        TraceTrait<ValueType>::GetTraceDescriptor(value);
+    CPPGC_DCHECK(value_desc.base_object_payload);
+    const void* key_base_object_payload =
+        TraceTrait<KeyType>::GetTraceDescriptor(key).base_object_payload;
+    CPPGC_DCHECK(key_base_object_payload);
+
+    VisitEphemeron(key_base_object_payload, value, value_desc);
+  }
+
+  /**
+   * Trace method for a single ephemeron. Used for tracing a raw ephemeron in
+   * which the `key` and `value` are kept separately. Note that this overload
+   * is for non-GarbageCollected `value`s that can be traced though.
+   *
+   * \param key `WeakMember` reference weakly retaining a key object.
+   * \param value Reference weakly retaining a value object. Note that
+   *   `ValueType` here should not be `Member`. It is expected that
+   *   `TraceTrait<ValueType>::GetTraceDescriptor(value)` returns a
+   *   `TraceDescriptor` with a null base pointer but a valid trace method.
+   */
+  template <typename KeyType, typename ValueType>
+  void TraceEphemeron(const WeakMember<KeyType>& weak_member_key,
+                      const ValueType* value) {
+    static_assert(!IsGarbageCollectedOrMixinTypeV<ValueType>,
+                  "garbage-collected types must use WeakMember and Member");
+    const KeyType* key = weak_member_key.GetAtomic();
+    if (!key) return;
+
+    // `value` must always be non-null.
+    CPPGC_DCHECK(value);
+    TraceDescriptor value_desc =
+        TraceTrait<ValueType>::GetTraceDescriptor(value);
+    // `value_desc.base_object_payload` must be null as this override is only
+    // taken for non-garbage-collected values.
+    CPPGC_DCHECK(!value_desc.base_object_payload);
+
+    // KeyType might be a GarbageCollectedMixin.
+    const void* key_base_object_payload =
+        TraceTrait<KeyType>::GetTraceDescriptor(key).base_object_payload;
+    CPPGC_DCHECK(key_base_object_payload);
+
+    VisitEphemeron(key_base_object_payload, value, value_desc);
   }
 
   /**
@@ -158,25 +293,36 @@ class V8_EXPORT Visitor {
    */
   template <typename T>
   void TraceStrongly(const WeakMember<T>& weak_member) {
-    const T* value = weak_member.GetRawAtomic();
+    const T* value = weak_member.GetAtomic();
     CPPGC_DCHECK(value != kSentinelPointer);
-    Trace(value);
+    TraceImpl(value);
   }
 
   /**
-   * Trace method for weak containers.
+   * Trace method for retaining containers strongly.
    *
-   * \param object reference of the weak container.
+   * \param object reference to the container.
+   */
+  template <typename T>
+  void TraceStrongContainer(const T* object) {
+    TraceImpl(object);
+  }
+
+  /**
+   * Trace method for retaining containers weakly. Note that weak containers
+   * should emit write barriers.
+   *
+   * \param object reference to the container.
    * \param callback to be invoked.
-   * \param data custom data that is passed to the callback.
+   * \param callback_data custom data that is passed to the callback.
    */
   template <typename T>
   void TraceWeakContainer(const T* object, WeakCallback callback,
-                          const void* data) {
+                          const void* callback_data) {
     if (!object) return;
     VisitWeakContainer(object, TraceTrait<T>::GetTraceDescriptor(object),
                        TraceTrait<T>::GetWeakTraceDescriptor(object), callback,
-                       data);
+                       callback_data);
   }
 
   /**
@@ -184,13 +330,14 @@ class V8_EXPORT Visitor {
    * compactable space. Such references maybe be arbitrarily moved by the GC.
    *
    * \param slot location of reference to object that might be moved by the GC.
+   * The slot must contain an uncompressed pointer.
    */
   template <typename T>
   void RegisterMovableReference(const T** slot) {
     static_assert(internal::IsAllocatedOnCompactableSpace<T>::value,
                   "Only references to objects allocated on compactable spaces "
                   "should be registered as movable slots.");
-    static_assert(!internal::IsGarbageCollectedMixinTypeV<T>,
+    static_assert(!IsGarbageCollectedMixinTypeV<T>,
                   "Mixin types do not support compaction.");
     HandleMovableReference(reinterpret_cast<const void**>(slot));
   }
@@ -222,18 +369,54 @@ class V8_EXPORT Visitor {
     return false;
   }
 
+  /**
+   * Checks whether the visitor is running concurrently to the mutator or not.
+   */
+  virtual bool IsConcurrent() const { return false; }
+
  protected:
   virtual void Visit(const void* self, TraceDescriptor) {}
   virtual void VisitWeak(const void* self, TraceDescriptor, WeakCallback,
                          const void* weak_member) {}
-  virtual void VisitRoot(const void*, TraceDescriptor, const SourceLocation&) {}
-  virtual void VisitWeakRoot(const void* self, TraceDescriptor, WeakCallback,
-                             const void* weak_root, const SourceLocation&) {}
-  virtual void VisitEphemeron(const void* key, TraceDescriptor value_desc) {}
+  virtual void VisitEphemeron(const void* key, const void* value,
+                              TraceDescriptor value_desc) {}
   virtual void VisitWeakContainer(const void* self, TraceDescriptor strong_desc,
                                   TraceDescriptor weak_desc,
                                   WeakCallback callback, const void* data) {}
   virtual void HandleMovableReference(const void**) {}
+
+  virtual void VisitMultipleUncompressedMember(
+      const void* start, size_t len,
+      TraceDescriptorCallback get_trace_descriptor) {
+    // Default implementation merely delegates to Visit().
+    const char* it = static_cast<const char*>(start);
+    const char* end = it + len * internal::kSizeOfUncompressedMember;
+    for (; it < end; it += internal::kSizeOfUncompressedMember) {
+      const auto* current = reinterpret_cast<const internal::RawPointer*>(it);
+      const void* object = current->LoadAtomic();
+      if (!object) continue;
+
+      Visit(object, get_trace_descriptor(object));
+    }
+  }
+
+#if defined(CPPGC_POINTER_COMPRESSION)
+  virtual void VisitMultipleCompressedMember(
+      const void* start, size_t len,
+      TraceDescriptorCallback get_trace_descriptor) {
+    // Default implementation merely delegates to Visit().
+    const char* it = static_cast<const char*>(start);
+    const char* end = it + len * internal::kSizeofCompressedMember;
+    for (; it < end; it += internal::kSizeofCompressedMember) {
+      const auto* current =
+          reinterpret_cast<const internal::CompressedPointer*>(it);
+      const void* object = current->LoadAtomic();
+      if (!object) continue;
+
+      Visit(object, get_trace_descriptor(object));
+    }
+  }
+#endif  // defined(CPPGC_POINTER_COMPRESSION)
 
  private:
   template <typename T, void (T::*method)(const LivenessBroker&)>
@@ -247,50 +430,15 @@ class V8_EXPORT Visitor {
   template <typename PointerType>
   static void HandleWeak(const LivenessBroker& info, const void* object) {
     const PointerType* weak = static_cast<const PointerType*>(object);
-    // Sentinel values are preserved for weak pointers.
-    if (*weak == kSentinelPointer) return;
-    const auto* raw = weak->Get();
-    if (!info.IsHeapObjectAlive(raw)) {
+    if (!info.IsHeapObjectAlive(weak->GetFromGC())) {
       weak->ClearFromGC();
     }
   }
 
-  template <typename Persistent,
-            std::enable_if_t<Persistent::IsStrongPersistent::value>* = nullptr>
-  void TraceRoot(const Persistent& p, const SourceLocation& loc) {
-    using PointeeType = typename Persistent::PointeeType;
-    static_assert(sizeof(PointeeType),
-                  "Persistent's pointee type must be fully defined");
-    static_assert(internal::IsGarbageCollectedType<PointeeType>::value,
-                  "Persistent's pointee type must be GarbageCollected or "
-                  "GarbageCollectedMixin");
-    if (!p.Get()) {
-      return;
-    }
-    VisitRoot(p.Get(), TraceTrait<PointeeType>::GetTraceDescriptor(p.Get()),
-              loc);
-  }
-
-  template <
-      typename WeakPersistent,
-      std::enable_if_t<!WeakPersistent::IsStrongPersistent::value>* = nullptr>
-  void TraceRoot(const WeakPersistent& p, const SourceLocation& loc) {
-    using PointeeType = typename WeakPersistent::PointeeType;
-    static_assert(sizeof(PointeeType),
-                  "Persistent's pointee type must be fully defined");
-    static_assert(internal::IsGarbageCollectedType<PointeeType>::value,
-                  "Persistent's pointee type must be GarbageCollected or "
-                  "GarbageCollectedMixin");
-    static_assert(!internal::IsAllocatedOnCompactableSpace<PointeeType>::value,
-                  "Weak references to compactable objects are not allowed");
-    VisitWeakRoot(p.Get(), TraceTrait<PointeeType>::GetTraceDescriptor(p.Get()),
-                  &HandleWeak<WeakPersistent>, &p, loc);
-  }
-
   template <typename T>
-  void Trace(const T* t) {
+  void TraceImpl(const T* t) {
     static_assert(sizeof(T), "Pointee type must be fully defined.");
-    static_assert(internal::IsGarbageCollectedType<T>::value,
+    static_assert(internal::IsGarbageCollectedOrMixinType<T>::value,
                   "T must be GarbageCollected or GarbageCollectedMixin type");
     if (!t) {
       return;
@@ -312,6 +460,74 @@ class V8_EXPORT Visitor {
   friend class internal::VisitorBase;
 };
 
+template <typename K, typename V>
+void EphemeronPair<K, V>::Trace(Visitor* visitor) const {
+  visitor->TraceEphemeron(key, value);
+}
+
+namespace internal {
+
+class V8_EXPORT RootVisitor {
+ public:
+  explicit RootVisitor(Visitor::Key) {}
+
+  virtual ~RootVisitor() = default;
+
+  template <typename AnyStrongPersistentType,
+            std::enable_if_t<
+                AnyStrongPersistentType::IsStrongPersistent::value>* = nullptr>
+  void Trace(const AnyStrongPersistentType& p) {
+    using PointeeType = typename AnyStrongPersistentType::PointeeType;
+    const void* object = Extract(p);
+    if (!object) {
+      return;
+    }
+    VisitRoot(object, TraceTrait<PointeeType>::GetTraceDescriptor(object),
+              p.Location());
+  }
+
+  template <typename AnyWeakPersistentType,
+            std::enable_if_t<
+                !AnyWeakPersistentType::IsStrongPersistent::value>* = nullptr>
+  void Trace(const AnyWeakPersistentType& p) {
+    using PointeeType = typename AnyWeakPersistentType::PointeeType;
+    static_assert(!internal::IsAllocatedOnCompactableSpace<PointeeType>::value,
+                  "Weak references to compactable objects are not allowed");
+    const void* object = Extract(p);
+    if (!object) {
+      return;
+    }
+    VisitWeakRoot(object, TraceTrait<PointeeType>::GetTraceDescriptor(object),
+                  &HandleWeak<AnyWeakPersistentType>, &p, p.Location());
+  }
+
+ protected:
+  virtual void VisitRoot(const void*, TraceDescriptor, const SourceLocation&) {}
+  virtual void VisitWeakRoot(const void* self, TraceDescriptor, WeakCallback,
+                             const void* weak_root, const SourceLocation&) {}
+
+ private:
+  template <typename AnyPersistentType>
+  static const void* Extract(AnyPersistentType& p) {
+    using PointeeType = typename AnyPersistentType::PointeeType;
+    static_assert(sizeof(PointeeType),
+                  "Persistent's pointee type must be fully defined");
+    static_assert(internal::IsGarbageCollectedOrMixinType<PointeeType>::value,
+                  "Persistent's pointee type must be GarbageCollected or "
+                  "GarbageCollectedMixin");
+    return p.GetFromGC();
+  }
+
+  template <typename PointerType>
+  static void HandleWeak(const LivenessBroker& info, const void* object) {
+    const PointerType* weak = static_cast<const PointerType*>(object);
+    if (!info.IsHeapObjectAlive(weak->GetFromGC())) {
+      weak->ClearFromGC();
+    }
+  }
+};
+
+}  // namespace internal
 }  // namespace cppgc
 
 #endif  // INCLUDE_CPPGC_VISITOR_H_

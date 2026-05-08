@@ -146,7 +146,6 @@ br{
         IL{"Israel"}
         IM{"Enez Vanav"}
         IN{"India"}
-        IO{"Tiriad breizhveurat Meurvor Indez"}
         IQ{"Iraq"}
         IR{"Iran"}
         IS{"Island"}
@@ -307,6 +306,7 @@ br{
         CG{"Kongo (Republik)"}
         CI{"Aod Olifant"}
         CZ{"Republik Tchek"}
+        NZ{"Aotearoa Zeland-Nevez"}
         SZ{"Swaziland"}
         TL{"Timor ar Reter"}
     }

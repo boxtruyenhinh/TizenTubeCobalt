@@ -16,43 +16,38 @@
 
 #include <string>
 
+#include "starboard/android/shared/starboard_bridge.h"
 #include "starboard/common/log.h"
-
-#include "starboard/android/shared/application_android.h"
-#include "starboard/android/shared/jni_env_ext.h"
-#include "starboard/android/shared/jni_utils.h"
 #include "starboard/common/string.h"
 #include "starboard/extension/platform_info.h"
+#include "third_party/jni_zero/jni_zero.h"
 
 namespace starboard {
-namespace android {
-namespace shared {
 
 namespace {
 
+using jni_zero::AttachCurrentThread;
+
 bool GetFirmwareVersionDetails(char* out_value, int value_length) {
-  JniEnvExt* env = JniEnvExt::Get();
-  ScopedLocalJavaRef<jstring> id_string(env->CallStarboardObjectMethodOrAbort(
-      "getBuildFingerprint", "()Ljava/lang/String;"));
-  std::string utf_str = env->GetStringStandardUTFOrAbort(id_string.Get());
-  if (strlen(utf_str.c_str()) + 1 > value_length)
+  JNIEnv* env = AttachCurrentThread();
+  std::string utf_str =
+      StarboardBridge::GetInstance()->GetBuildFingerprint(env);
+  if (utf_str.length() + 1 > static_cast<size_t>(value_length)) {
     return false;
+  }
   starboard::strlcpy(out_value, utf_str.c_str(), value_length);
   return true;
 }
 
 const char* GetOsExperience() {
-  bool is_amati = JniEnvExt::Get()->CallStarboardBooleanMethodOrAbort(
-      "getIsAmatiDevice", "()Z");
-  if (is_amati) {
-    return "Amati";
-  }
-  return "Watson";
+  JNIEnv* env = AttachCurrentThread();
+  return StarboardBridge::GetInstance()->IsAmatiDevice(env) ? "Amati"
+                                                            : "Watson";
 }
 
 int64_t GetCoreServicesVersion() {
-  return JniEnvExt::Get()->CallStarboardLongMethodOrAbort(
-      "getPlayServicesVersion", "()J");
+  JNIEnv* env = AttachCurrentThread();
+  return StarboardBridge::GetInstance()->GetPlayServicesVersion(env);
 }
 
 // clang-format off
@@ -71,6 +66,4 @@ const void* GetPlatformInfoApi() {
   return &kPlatformInfoApi;
 }
 
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard

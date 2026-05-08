@@ -18,18 +18,8 @@
 #include "starboard/extension/player_set_max_video_input_size.h"
 
 namespace starboard {
-namespace android {
-namespace shared {
 
 namespace {
-
-// Definitions of any functions included as components in the extension
-// are added here.
-
-void SetMaxVideoInputSizeForCurrentThread(int max_video_input_size) {
-  starboard::android::shared::SetMaxVideoInputSizeForCurrentThread(
-      max_video_input_size);
-}
 
 const StarboardExtensionPlayerSetMaxVideoInputSizeApi
     kPlayerSetMaxVideoInputSizeApi = {
@@ -44,6 +34,4 @@ const void* GetPlayerSetMaxVideoInputSizeApi() {
   return &kPlayerSetMaxVideoInputSizeApi;
 }
 
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard

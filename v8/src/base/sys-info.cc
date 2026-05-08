@@ -23,11 +23,7 @@
 #include "src/base/logging.h"
 #include "src/base/macros.h"
 #if V8_OS_WIN
-#include "src/base/win32-headers.h"
-#endif
-
-#if V8_OS_STARBOARD
-#include "starboard/system.h"
+#include <windows.h>
 #endif
 
 namespace v8 {
@@ -43,6 +39,9 @@ int SysInfo::NumberOfProcessors() {
     return 1;
   }
   return ncpu;
+#elif V8_OS_ZOS
+  // This is from zoslib:
+  return __get_num_online_cpus();
 #elif V8_OS_POSIX
   long result = sysconf(_SC_NPROCESSORS_ONLN);  // NOLINT(runtime/int)
   if (result == -1) {
@@ -53,15 +52,13 @@ int SysInfo::NumberOfProcessors() {
   SYSTEM_INFO system_info = {};
   ::GetNativeSystemInfo(&system_info);
   return static_cast<int>(system_info.dwNumberOfProcessors);
-#elif V8_OS_STARBOARD
-  return SbSystemGetNumberOfProcessors();
 #endif
 }
 
 
 // static
 int64_t SysInfo::AmountOfPhysicalMemory() {
-#if V8_OS_MACOSX
+#if V8_OS_DARWIN
   int mib[2] = {CTL_HW, HW_MEMSIZE};
   int64_t memsize = 0;
   size_t len = sizeof(memsize);
@@ -96,6 +93,10 @@ int64_t SysInfo::AmountOfPhysicalMemory() {
 #elif V8_OS_AIX
   int64_t result = sysconf(_SC_AIX_REALMEM);
   return static_cast<int64_t>(result) * 1024L;
+#elif V8_OS_ZOS
+  int pages = __get_num_frames();
+  long page_size = sysconf(_SC_PAGESIZE);
+  return static_cast<uint64_t>(pages) * page_size;
 #elif V8_OS_POSIX
   long pages = sysconf(_SC_PHYS_PAGES);    // NOLINT(runtime/int)
   long page_size = sysconf(_SC_PAGESIZE);  // NOLINT(runtime/int)
@@ -103,8 +104,6 @@ int64_t SysInfo::AmountOfPhysicalMemory() {
     return 0;
   }
   return static_cast<int64_t>(pages) * page_size;
-#elif V8_OS_STARBOARD
-  return SbSystemGetTotalCPUMemory();
 #endif
 }
 
@@ -120,8 +119,22 @@ int64_t SysInfo::AmountOfVirtualMemory() {
     return 0;
   }
   return (rlim.rlim_cur == RLIM_INFINITY) ? 0 : rlim.rlim_cur;
-#elif V8_OS_STARBOARD
-  return 0;
+#endif
+}
+
+// static
+uintptr_t SysInfo::AddressSpaceEnd() {
+#if V8_OS_WIN
+  SYSTEM_INFO info;
+  GetSystemInfo(&info);
+  uintptr_t max_address =
+      reinterpret_cast<uintptr_t>(info.lpMaximumApplicationAddress);
+  return max_address + 1;
+#else
+  // We don't query POSIX rlimits here (e.g. RLIMIT_AS) as they limit the size
+  // of memory mappings, but not the address space (e.g. even with a small
+  // RLIMIT_AS, a process can still map pages at high addresses).
+  return std::numeric_limits<uintptr_t>::max();
 #endif
 }
 

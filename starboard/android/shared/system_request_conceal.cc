@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/system.h"
+// clang-format on
 
-#include "starboard/android/shared/jni_env_ext.h"
-
-using starboard::android::shared::JniEnvExt;
+#include "starboard/android/shared/starboard_bridge.h"
+#include "third_party/jni_zero/jni_zero.h"
 
 void SbSystemRequestConceal() {
-  JniEnvExt* env = JniEnvExt::Get();
-  env->CallStarboardVoidMethodOrAbort("requestSuspend", "()V");
+  JNIEnv* env = jni_zero::AttachCurrentThread();
+  starboard::StarboardBridge::GetInstance()->RequestSuspend(env);
 }

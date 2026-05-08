@@ -8,46 +8,58 @@
 #include "tools/viewer/SkSLDebuggerSlide.h"
 
 #include "include/core/SkCanvas.h"
-#include "tools/viewer/Viewer.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkStream.h"
+#include "include/core/SkString.h"
+#include "include/private/base/SkAssert.h"
+#include "tools/sk_app/Application.h"
+#include "tools/sksltrace/SkSLTraceUtils.h"
 
 #include <algorithm>
 #include <cstdio>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
+
 #include "imgui.h"
 
 using namespace sk_app;
-using LineNumberMap = SkSL::SkVMDebugTracePlayer::LineNumberMap;
-
-///////////////////////////////////////////////////////////////////////////////
+using LineNumberMap = SkSL::SkSLDebugTracePlayer::LineNumberMap;
 
 SkSLDebuggerSlide::SkSLDebuggerSlide() {
     fName = "Debugger";
-    fTrace = sk_make_sp<SkSL::SkVMDebugTrace>();
+    fTrace = sk_make_sp<SkSL::DebugTracePriv>();
 }
 
 void SkSLDebuggerSlide::load(SkScalar winWidth, SkScalar winHeight) {}
 
 void SkSLDebuggerSlide::unload() {
-    fTrace = sk_make_sp<SkSL::SkVMDebugTrace>();
+    fTrace = sk_make_sp<SkSL::DebugTracePriv>();
     fPlayer.reset(nullptr);
     fPlayer.setBreakpoints(std::unordered_set<int>{});
 }
 
 void SkSLDebuggerSlide::showLoadTraceGUI() {
-    ImGui::InputText("Trace Path", fTraceFile, SK_ARRAY_COUNT(fTraceFile));
+    ImGui::InputText("Trace Path", fTraceFile, std::size(fTraceFile));
     bool load = ImGui::Button("Load Debug Trace");
 
     if (load) {
         SkFILEStream file(fTraceFile);
         if (!file.isValid()) {
             ImGui::OpenPopup("Can't Open Trace");
-        } else if (!fTrace->readTrace(&file)) {
-            ImGui::OpenPopup("Invalid Trace");
         } else {
-            // Trace loaded successfully. On the next refresh, the user will see the debug UI.
-            fPlayer.reset(fTrace);
-            fPlayer.step();
-            fRefresh = true;
-            return;
+            fTrace = SkSLTraceUtils::ReadTrace(&file);
+            if (!fTrace) {
+                ImGui::OpenPopup("Invalid Trace");
+            } else {
+                // Trace loaded successfully. On the next refresh, the user will see the debug UI.
+                fPlayer.reset(fTrace);
+                fPlayer.step();
+                fRefresh = true;
+                return;
+            }
         }
     }
 
@@ -201,7 +213,7 @@ void SkSLDebuggerSlide::showStackTraceTable() {
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
                 int funcIdx = callStack.rbegin()[row];
                 SkASSERT(funcIdx >= 0 && (size_t)funcIdx < fTrace->fFuncInfo.size());
-                const SkSL::SkVMFunctionInfo& funcInfo = fTrace->fFuncInfo[funcIdx];
+                const SkSL::FunctionDebugInfo& funcInfo = fTrace->fFuncInfo[funcIdx];
 
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
@@ -223,7 +235,7 @@ void SkSLDebuggerSlide::showVariableTable() {
             ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthStretch;
 
     int frame = fPlayer.getStackDepth() - 1;
-    std::vector<SkSL::SkVMDebugTracePlayer::VariableData> vars;
+    std::vector<SkSL::SkSLDebugTracePlayer::VariableData> vars;
     if (frame >= 0) {
         vars = fPlayer.getLocalVariables(frame);
     } else {
@@ -239,10 +251,10 @@ void SkSLDebuggerSlide::showVariableTable() {
             clipper.Begin(vars.size());
             while (clipper.Step()) {
                 for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
-                    const SkSL::SkVMDebugTracePlayer::VariableData& var = vars.at(row);
+                    const SkSL::SkSLDebugTracePlayer::VariableData& var = vars.at(row);
                     SkASSERT(var.fSlotIndex >= 0);
                     SkASSERT((size_t)var.fSlotIndex < fTrace->fSlotInfo.size());
-                    const SkSL::SkVMSlotInfo& slotInfo = fTrace->fSlotInfo[var.fSlotIndex];
+                    const SkSL::SlotDebugInfo& slotInfo = fTrace->fSlotInfo[var.fSlotIndex];
 
                     ImGui::TableNextRow();
                     if (var.fDirty) {

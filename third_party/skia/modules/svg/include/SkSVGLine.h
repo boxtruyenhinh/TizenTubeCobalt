@@ -8,12 +8,23 @@
 #ifndef SkSVGLine_DEFINED
 #define SkSVGLine_DEFINED
 
+#include "include/core/SkPath.h"
+#include "include/core/SkRefCnt.h"
+#include "include/private/base/SkAPI.h"
+#include "modules/svg/include/SkSVGNode.h"
 #include "modules/svg/include/SkSVGShape.h"
 #include "modules/svg/include/SkSVGTypes.h"
 
+#include <tuple>
+
+class SkCanvas;
+class SkPaint;
+class SkSVGLengthContext;
+class SkSVGRenderContext;
+enum class SkPathFillType;
 struct SkPoint;
 
-class SkSVGLine final : public SkSVGShape {
+class SK_API SkSVGLine final : public SkSVGShape {
 public:
     static sk_sp<SkSVGLine> Make() { return sk_sp<SkSVGLine>(new SkSVGLine()); }
 

@@ -16,7 +16,6 @@
 #include "starboard/nplb/microphone_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -26,7 +25,7 @@ TEST(SbMicrophoneOpenTest, SunnyDay) {
       SbMicrophoneGetAvailable(info_array, kMaxNumberOfMicrophone);
   EXPECT_GE(available_microphones, 0);
 
-  if (available_microphones != 0) {
+  if (available_microphones > 0) {
     ASSERT_TRUE(SbMicrophoneIsSampleRateSupported(
         info_array[0].id, info_array[0].max_sample_rate_hz));
     SbMicrophone microphone = SbMicrophoneCreate(
@@ -46,7 +45,7 @@ TEST(SbMicrophoneOpenTest, SunnyDayNoClose) {
       SbMicrophoneGetAvailable(info_array, kMaxNumberOfMicrophone);
   EXPECT_GE(available_microphones, 0);
 
-  if (available_microphones != 0) {
+  if (available_microphones > 0) {
     ASSERT_TRUE(SbMicrophoneIsSampleRateSupported(
         info_array[0].id, info_array[0].max_sample_rate_hz));
     SbMicrophone microphone = SbMicrophoneCreate(
@@ -64,7 +63,7 @@ TEST(SbMicrophoneOpenTest, SunnyDayMultipleOpenCalls) {
       SbMicrophoneGetAvailable(info_array, kMaxNumberOfMicrophone);
   EXPECT_GE(available_microphones, 0);
 
-  if (available_microphones != 0) {
+  if (available_microphones > 0) {
     ASSERT_TRUE(SbMicrophoneIsSampleRateSupported(
         info_array[0].id, info_array[0].max_sample_rate_hz));
     SbMicrophone microphone = SbMicrophoneCreate(
@@ -93,4 +92,3 @@ TEST(SbMicrophoneOpenTest, RainyDayOpenWithInvalidMicrophone) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

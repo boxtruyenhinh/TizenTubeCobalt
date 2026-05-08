@@ -14,14 +14,13 @@
 
 #include "starboard/shared/starboard/queue_application.h"
 
-#include "starboard/common/atomic.h"
-#include "starboard/common/condition_variable.h"
+#include <atomic>
+#include <limits>
+
 #include "starboard/common/log.h"
 #include "starboard/common/time.h"
 #include "starboard/event.h"
 
-namespace starboard {
-namespace shared {
 namespace starboard {
 
 void QueueApplication::Wake() {
@@ -92,11 +91,11 @@ void QueueApplication::CancelTimedEvent(SbEventId event_id) {
 
 void QueueApplication::InjectAndProcess(SbEventType type,
                                         bool checkSystemEvents) {
-  atomic_bool event_processed;
+  std::atomic_bool event_processed{false};
   Event* flagged_event = new Event(
-      type, const_cast<atomic_bool*>(&event_processed), [](void* flag) {
+      type, const_cast<std::atomic_bool*>(&event_processed), [](void* flag) {
         auto* bool_flag =
-            const_cast<atomic_bool*>(static_cast<atomic_bool*>(flag));
+            const_cast<std::atomic_bool*>(static_cast<std::atomic_bool*>(flag));
         bool_flag->store(true);
       });
   Inject(flagged_event);
@@ -120,7 +119,7 @@ int64_t QueueApplication::GetNextTimedEventTargetTime() {
 QueueApplication::TimedEventQueue::TimedEventQueue() : set_(&IsLess) {}
 
 QueueApplication::TimedEventQueue::~TimedEventQueue() {
-  ScopedLock lock(mutex_);
+  std::lock_guard lock(mutex_);
   for (TimedEventMap::iterator i = map_.begin(); i != map_.end(); ++i) {
     delete i->second;
   }
@@ -129,7 +128,7 @@ QueueApplication::TimedEventQueue::~TimedEventQueue() {
 }
 
 bool QueueApplication::TimedEventQueue::Inject(TimedEvent* timed_event) {
-  ScopedLock lock(mutex_);
+  std::lock_guard lock(mutex_);
   int64_t oldTime = GetTimeLocked();
   map_[timed_event->id] = timed_event;
   set_.insert(timed_event);
@@ -137,7 +136,7 @@ bool QueueApplication::TimedEventQueue::Inject(TimedEvent* timed_event) {
 }
 
 void QueueApplication::TimedEventQueue::Cancel(SbEventId event_id) {
-  ScopedLock lock(mutex_);
+  std::lock_guard lock(mutex_);
   TimedEventMap::iterator i = map_.find(event_id);
   if (i == map_.end()) {
     return;
@@ -150,7 +149,7 @@ void QueueApplication::TimedEventQueue::Cancel(SbEventId event_id) {
 }
 
 Application::TimedEvent* QueueApplication::TimedEventQueue::Get() {
-  ScopedLock lock(mutex_);
+  std::lock_guard lock(mutex_);
   if (set_.empty()) {
     return NULL;
   }
@@ -166,13 +165,13 @@ Application::TimedEvent* QueueApplication::TimedEventQueue::Get() {
 }
 
 int64_t QueueApplication::TimedEventQueue::GetTime() {
-  ScopedLock lock(mutex_);
+  std::lock_guard lock(mutex_);
   return GetTimeLocked();
 }
 
 int64_t QueueApplication::TimedEventQueue::GetTimeLocked() {
   if (set_.empty()) {
-    return kSbInt64Max;
+    return std::numeric_limits<int64_t>::max();
   }
 
   TimedEvent* timed_event = *(set_.begin());
@@ -227,6 +226,4 @@ Application::Event* QueueApplication::GetNextInjectedEvent() {
   }
 }
 
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

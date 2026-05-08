@@ -15,13 +15,18 @@
 #ifndef STARBOARD_SHARED_FFMPEG_FFMPEG_VIDEO_DECODER_IMPL_H_
 #define STARBOARD_SHARED_FFMPEG_FFMPEG_VIDEO_DECODER_IMPL_H_
 
-#include <pthread.h>
-
+#include <limits>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <queue>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
+#include "starboard/common/pass_key.h"
 #include "starboard/common/queue.h"
 #include "starboard/common/ref_counted.h"
+#include "starboard/common/thread.h"
 #include "starboard/media.h"
 #include "starboard/shared/ffmpeg/ffmpeg_common.h"
 #include "starboard/shared/ffmpeg/ffmpeg_dispatch.h"
@@ -33,35 +38,36 @@
 #include "starboard/shared/starboard/player/input_buffer_internal.h"
 
 namespace starboard {
-namespace shared {
-namespace ffmpeg {
 
 // Forward class declaration of the explicit specialization with value FFMPEG.
 template <>
-class VideoDecoderImpl<FFMPEG>;
+class FfmpegVideoDecoderImpl<FFMPEG>;
 
 // Declare the explicit specialization of the class with value FFMPEG.
 template <>
-class VideoDecoderImpl<FFMPEG> : public VideoDecoder {
+class FfmpegVideoDecoderImpl<FFMPEG> : public FfmpegVideoDecoder {
  public:
-  VideoDecoderImpl(SbMediaVideoCodec video_codec,
-                   SbPlayerOutputMode output_mode,
-                   SbDecodeTargetGraphicsContextProvider*
-                       decode_target_graphics_context_provider);
-  ~VideoDecoderImpl() override;
+  FfmpegVideoDecoderImpl(starboard::PassKey<FfmpegVideoDecoderImpl<FFMPEG>>,
+                         SbMediaVideoCodec video_codec,
+                         SbPlayerOutputMode output_mode,
+                         SbDecodeTargetGraphicsContextProvider*
+                             decode_target_graphics_context_provider);
+  ~FfmpegVideoDecoderImpl() override;
+
+  // From: FfmpegVideoDecoder
+  static std::unique_ptr<FfmpegVideoDecoder> Create(
+      SbMediaVideoCodec video_codec,
+      SbPlayerOutputMode output_mode,
+      SbDecodeTargetGraphicsContextProvider*
+          decode_target_graphics_context_provider);
 
   // From: VideoDecoder
-  static VideoDecoder* Create(SbMediaVideoCodec video_codec,
-                              SbPlayerOutputMode output_mode,
-                              SbDecodeTargetGraphicsContextProvider*
-                                  decode_target_graphics_context_provider);
-  bool is_valid() const override;
-
-  // From: starboard::player::filter::VideoDecoder
   void Initialize(const DecoderStatusCB& decoder_status_cb,
                   const ErrorCB& error_cb) override;
   size_t GetPrerollFrameCount() const override { return 8; }
-  int64_t GetPrerollTimeout() const override { return kSbInt64Max; }
+  int64_t GetPrerollTimeout() const override {
+    return std::numeric_limits<int64_t>::max();
+  }
   size_t GetMaxNumberOfCachedFrames() const override { return 12; }
 
   void WriteInputBuffers(const InputBuffers& input_buffers) override;
@@ -75,8 +81,19 @@ class VideoDecoderImpl<FFMPEG> : public VideoDecoder {
 #endif  // LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(52, 8, 0)
 
  private:
-  typedef ::starboard::shared::starboard::player::filter::CpuVideoFrame
-      CpuVideoFrame;
+  class DecoderThread : public Thread {
+   public:
+    explicit DecoderThread(FfmpegVideoDecoderImpl<FFMPEG>* decoder)
+        : Thread("ff_video_dec",
+                 ThreadOptions().SetPriority(kSbThreadPriorityHigh)),
+          decoder_(decoder) {
+      SB_CHECK(decoder_);
+    }
+    void Run() override { decoder_->DecoderThreadFunc(); }
+
+   private:
+    FfmpegVideoDecoderImpl<FFMPEG>* const decoder_;
+  };
 
   enum EventType {
     kInvalid,
@@ -91,18 +108,17 @@ class VideoDecoderImpl<FFMPEG> : public VideoDecoder {
     scoped_refptr<InputBuffer> input_buffer;
 
     explicit Event(EventType type = kInvalid) : type(type) {
-      SB_DCHECK(type != kWriteInputBuffer);
+      SB_DCHECK_NE(type, kWriteInputBuffer);
     }
 
     explicit Event(const scoped_refptr<InputBuffer>& input_buffer)
         : type(kWriteInputBuffer), input_buffer(input_buffer) {}
   };
 
-  static void* ThreadEntryPoint(void* context);
   void DecoderThreadFunc();
 
   bool DecodePacket(AVPacket* packet);
-  void InitializeCodec();
+  bool InitializeCodec();
   void TeardownCodec();
   SbDecodeTarget GetCurrentDecodeTarget() override;
 
@@ -114,7 +130,8 @@ class VideoDecoderImpl<FFMPEG> : public VideoDecoder {
   // Returns false if the frame contains invalid data.
   bool ProcessDecodedFrame(const AVFrame& av_frame);
 
-  FFMPEGDispatch* ffmpeg_;
+  // Guaranteed to be non-null.
+  FFMPEGDispatch* const ffmpeg_;
 
   // |video_codec_| will be initialized inside ctor and won't be changed during
   // the life time of this class.
@@ -128,14 +145,14 @@ class VideoDecoderImpl<FFMPEG> : public VideoDecoder {
 
   // The AV related classes will only be created and accessed on the decoder
   // thread.
-  AVCodecContext* codec_context_;
-  AVFrame* av_frame_;
+  AVCodecContext* codec_context_ = nullptr;
+  AVFrame* av_frame_ = nullptr;
 
-  bool stream_ended_;
-  bool error_occurred_;
+  bool stream_ended_ = false;
+  bool error_occurred_ = false;
 
   // Working thread to avoid lengthy decoding work block the player thread.
-  pthread_t decoder_thread_;
+  std::unique_ptr<Thread> decoder_thread_;
 
   // Decode-to-texture related state.
   SbPlayerOutputMode output_mode_;
@@ -151,15 +168,13 @@ class VideoDecoderImpl<FFMPEG> : public VideoDecoder {
   // to obtain the current decode target (which ultimately ends up being a
   // copy of |decode_target_|), we need to safe-guard access to |decode_target_|
   // and |frames_|, we do so through this mutex.
-  Mutex decode_target_and_frames_mutex_;
+  std::mutex decode_target_and_frames_mutex_;
 
   // int frame_last_rendered_pts_;
   // scoped_refptr<VideoFrame> frame_;
   std::queue<scoped_refptr<CpuVideoFrame>> frames_;
 };
 
-}  // namespace ffmpeg
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_FFMPEG_FFMPEG_VIDEO_DECODER_IMPL_H_

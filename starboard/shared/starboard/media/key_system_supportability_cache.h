@@ -21,9 +21,6 @@
 #include "starboard/shared/starboard/media/mime_supportability_cache.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace media {
 
 // KeySystemSupportabilityCache caches the supportabilities of the combinations
 // of codec and key system.
@@ -69,9 +66,6 @@ class KeySystemSupportabilityCache {
   std::atomic_bool is_enabled_{false};
 };
 
-}  // namespace media
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_MEDIA_KEY_SYSTEM_SUPPORTABILITY_CACHE_H_

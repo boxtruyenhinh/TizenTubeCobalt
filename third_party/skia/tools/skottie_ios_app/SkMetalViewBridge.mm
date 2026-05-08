@@ -3,11 +3,16 @@
 
 #include "tools/skottie_ios_app/SkMetalViewBridge.h"
 
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkSurface.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrContextOptions.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/mtl/GrMtlTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrContextOptions.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/mtl/GrMtlBackendContext.h"
+#include "include/gpu/ganesh/mtl/GrMtlDirectContext.h"
+#include "include/gpu/ganesh/mtl/GrMtlTypes.h"
+#include "include/gpu/ganesh/mtl/SkSurfaceMetal.h"
 
 #import <Metal/Metal.h>
 #import <MetalKit/MetalKit.h>
@@ -25,15 +30,21 @@ sk_sp<SkSurface> SkMtkViewToSurface(MTKView* mtkView, GrRecordingContext* rConte
     const SkSurfaceProps surfaceProps;
     int sampleCount = (int)[mtkView sampleCount];
 
-    return SkSurface::MakeFromMTKView(rContext, (__bridge GrMTLHandle)mtkView, origin, sampleCount,
-                                      colorType, colorSpace, &surfaceProps);
+    return SkSurfaces::WrapMTKView(rContext,
+                                   (__bridge GrMTLHandle)mtkView,
+                                   origin,
+                                   sampleCount,
+                                   colorType,
+                                   colorSpace,
+                                   &surfaceProps);
 }
 
 GrContextHolder SkMetalDeviceToGrContext(id<MTLDevice> device, id<MTLCommandQueue> queue) {
+    GrMtlBackendContext backendContext = {};
+    backendContext.fDevice.reset((__bridge void*)device);
+    backendContext.fQueue.reset((__bridge void*)queue);
     GrContextOptions grContextOptions;  // set different options here.
-    return GrContextHolder(GrDirectContext::MakeMetal((__bridge void*)device,
-                                                      (__bridge void*)queue,
-                                                      grContextOptions).release());
+    return GrContextHolder(GrDirectContexts::MakeMetal(backendContext, grContextOptions).release());
 }
 
 void SkMtkViewConfigForSkia(MTKView* mtkView) {

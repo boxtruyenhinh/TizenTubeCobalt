@@ -18,21 +18,17 @@
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 
-#include "starboard/shared/gles/gl_call.h"
-
+#include "starboard/common/check_op.h"
 #include "starboard/decode_target.h"
+#include "starboard/shared/gles/gl_call.h"
 
 SbDecodeTargetPrivate::Data::~Data() {
   glDeleteTextures(1, &info.planes[0].texture);
-  SB_DCHECK(glGetError() == GL_NO_ERROR);
+  SB_DCHECK_EQ(glGetError(), GL_NO_ERROR);
 }
 
 namespace starboard {
-namespace shared {
-
 namespace {
-
-using starboard::player::filter::CpuVideoFrame;
 
 struct CreateParamsForVideoFrame {
   SbDecodeTarget decode_target_out;
@@ -52,7 +48,7 @@ void CreateTargetFromVideoFrameWithContextRunner(void* context) {
       static_cast<CreateParamsForVideoFrame*>(context);
 
   SB_DCHECK(params->frame);
-  SB_DCHECK(params->frame->format() == CpuVideoFrame::kYV12);
+  SB_DCHECK_EQ(params->frame->format(), CpuVideoFrame::kYV12);
   static const SbDecodeTargetFormat format = kSbDecodeTargetFormat3PlaneYUVI420;
   static const int plane_count = 3;
 
@@ -92,7 +88,7 @@ void CreateTargetFromVideoFrameWithContextRunner(void* context) {
         target_info.planes[plane_index].height == video_frame_plane.height) {
       // No need to reallocate texture object, only update pixels.
       GL_CALL(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, video_frame_plane.width,
-                              video_frame_plane.height, GL_ALPHA,
+                              video_frame_plane.height, GL_RED_EXT,
                               GL_UNSIGNED_BYTE, video_frame_plane.data));
 
     } else {
@@ -104,9 +100,10 @@ void CreateTargetFromVideoFrameWithContextRunner(void* context) {
       GL_CALL(
           glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
 
-      GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, video_frame_plane.width,
-                           video_frame_plane.height, 0, GL_ALPHA,
-                           GL_UNSIGNED_BYTE, video_frame_plane.data));
+      GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RED_EXT,
+                           video_frame_plane.width, video_frame_plane.height, 0,
+                           GL_RED_EXT, GL_UNSIGNED_BYTE,
+                           video_frame_plane.data));
     }
 
     GL_CALL(glPixelStorei(GL_UNPACK_ROW_LENGTH_EXT, 0));
@@ -230,5 +227,4 @@ SbDecodeTarget DecodeTargetCopy(SbDecodeTarget decode_target) {
   return out_decode_target;
 }
 
-}  // namespace shared
 }  // namespace starboard

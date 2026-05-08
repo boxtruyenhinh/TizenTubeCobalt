@@ -7,7 +7,7 @@
 
 #include <memory>
 
-#include "src/deoptimizer/deoptimizer.h"
+#include "src/deoptimizer/deoptimized-frame-info.h"
 #include "src/execution/isolate.h"
 #include "src/execution/v8threads.h"
 #include "src/objects/objects.h"
@@ -19,9 +19,11 @@ class JavaScriptFrame;
 class CommonFrame;
 class WasmFrame;
 
-class FrameInspector {
+class V8_EXPORT_PRIVATE FrameInspector {
  public:
   FrameInspector(CommonFrame* frame, int inlined_frame_index, Isolate* isolate);
+  FrameInspector(const FrameInspector&) = delete;
+  FrameInspector& operator=(const FrameInspector&) = delete;
 
   ~FrameInspector();
 
@@ -34,9 +36,14 @@ class FrameInspector {
   Handle<Object> GetContext();
   Handle<Object> GetReceiver() { return receiver_; }
 
-  Handle<String> GetFunctionName() { return function_name_; }
+  DirectHandle<String> GetFunctionName();
 
+#if V8_ENABLE_WEBASSEMBLY
   bool IsWasm();
+#if V8_ENABLE_DRUMBRAKE
+  bool IsWasmInterpreter();
+#endif  // V8_ENABLE_DRUMBRAKE
+#endif  // V8_ENABLE_WEBASSEMBLY
   bool IsJavaScript();
 
   JavaScriptFrame* javascript_frame();
@@ -44,8 +51,8 @@ class FrameInspector {
   int inlined_frame_index() const { return inlined_frame_index_; }
 
  private:
-  bool ParameterIsShadowedByContextLocal(Handle<ScopeInfo> info,
-                                         Handle<String> parameter_name);
+  bool ParameterIsShadowedByContextLocal(DirectHandle<ScopeInfo> info,
+                                         DirectHandle<String> parameter_name);
 
   CommonFrame* frame_;
   int inlined_frame_index_;
@@ -54,14 +61,9 @@ class FrameInspector {
   Handle<Script> script_;
   Handle<Object> receiver_;
   Handle<JSFunction> function_;
-  Handle<String> function_name_;
   int source_position_ = -1;
   bool is_optimized_ = false;
-  bool is_interpreted_ = false;
-  bool has_adapted_arguments_ = false;
   bool is_constructor_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(FrameInspector);
 };
 
 class RedirectActiveFunctions : public ThreadVisitor {
@@ -71,14 +73,15 @@ class RedirectActiveFunctions : public ThreadVisitor {
     kUseDebugBytecode,
   };
 
-  explicit RedirectActiveFunctions(SharedFunctionInfo shared, Mode mode);
+  RedirectActiveFunctions(Isolate* isolate, Tagged<SharedFunctionInfo> shared,
+                          Mode mode);
 
   void VisitThread(Isolate* isolate, ThreadLocalTop* top) override;
 
  private:
-  SharedFunctionInfo shared_;
+  Tagged<SharedFunctionInfo> shared_;
   Mode mode_;
-  DisallowHeapAllocation no_gc_;
+  DISALLOW_GARBAGE_COLLECTION(no_gc_)
 };
 
 }  // namespace internal

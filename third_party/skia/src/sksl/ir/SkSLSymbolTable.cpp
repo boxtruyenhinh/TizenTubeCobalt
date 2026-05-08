@@ -8,74 +8,110 @@
 #include "src/sksl/ir/SkSLSymbolTable.h"
 
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLPosition.h"
+#include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLType.h"
-#include "src/sksl/ir/SkSLUnresolvedFunction.h"
 
 namespace SkSL {
 
-std::vector<const FunctionDeclaration*> SymbolTable::GetFunctions(const Symbol& s) {
-    switch (s.kind()) {
-        case Symbol::Kind::kFunctionDeclaration:
-            return { &s.as<FunctionDeclaration>() };
-        case Symbol::Kind::kUnresolvedFunction:
-            return s.as<UnresolvedFunction>().functions();
-        default:
-            return std::vector<const FunctionDeclaration*>();
-    }
+std::unique_ptr<SymbolTable> SymbolTable::insertNewParent() {
+    auto newTable = std::make_unique<SymbolTable>(fParent, fBuiltin);
+    fParent = newTable.get();
+    return newTable;
 }
 
-const Symbol* SymbolTable::operator[](std::string_view name) {
-    return this->lookup(fBuiltin ? nullptr : this, MakeSymbolKey(name));
+bool SymbolTable::isType(std::string_view name) const {
+    const Symbol* symbol = this->find(name);
+    return symbol && symbol->is<Type>();
 }
 
-const Symbol* SymbolTable::lookup(SymbolTable* writableSymbolTable, const SymbolKey& key) {
-    // Symbol-table lookup can cause new UnresolvedFunction nodes to be created; however, we don't
-    // want these to end up in built-in root symbol tables (where they will outlive the Program
-    // associated with those UnresolvedFunction nodes). `writableSymbolTable` tracks the closest
-    // symbol table to the root which is not a built-in.
-    if (!fBuiltin) {
-        writableSymbolTable = this;
+bool SymbolTable::isBuiltinType(std::string_view name) const {
+    if (!this->isBuiltin()) {
+        return fParent && fParent->isBuiltinType(name);
     }
-    const Symbol** symbolPPtr = fSymbols.find(key);
-    if (!symbolPPtr) {
-        if (fParent) {
-            return fParent->lookup(writableSymbolTable, key);
+    return this->isType(name);
+}
+
+const Symbol* SymbolTable::findBuiltinSymbol(std::string_view name) const {
+    if (!this->isBuiltin()) {
+        return fParent ? fParent->findBuiltinSymbol(name) : nullptr;
+    }
+    return this->find(name);
+}
+
+bool SymbolTable::wouldShadowSymbolsFrom(const SymbolTable* other) const {
+    // We are checking two hash maps for overlap; we always iterate over the smaller one to minimize
+    // the total number of checks.
+    const SymbolTable* self = this;
+    if (self->count() > other->count()) {
+        std::swap(self, other);
+    }
+
+    bool foundShadow = false;
+
+    self->fSymbols.foreach([&](const SymbolKey& key, const Symbol* symbol) {
+        if (foundShadow) {
+            // We've already found a shadowed symbol; stop searching.
+            return;
         }
-        return nullptr;
+        if (other->fSymbols.find(key) != nullptr) {
+            foundShadow = true;
+        }
+    });
+
+    return foundShadow;
+}
+
+Symbol* SymbolTable::lookup(const SymbolKey& key) const {
+    Symbol** symbolPPtr = fSymbols.find(key);
+    if (symbolPPtr) {
+        return *symbolPPtr;
     }
 
-    const Symbol* symbol = *symbolPPtr;
-    if (fParent) {
-        auto functions = GetFunctions(*symbol);
-        if (functions.size() > 0) {
-            bool modified = false;
-            const Symbol* previous = fParent->lookup(writableSymbolTable, key);
-            if (previous) {
-                auto previousFunctions = GetFunctions(*previous);
-                for (const FunctionDeclaration* prev : previousFunctions) {
-                    bool found = false;
-                    for (const FunctionDeclaration* current : functions) {
-                        if (current->matches(*prev)) {
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) {
-                        functions.push_back(prev);
-                        modified = true;
-                    }
-                }
-                if (modified) {
-                    SkASSERT(functions.size() > 1);
-                    return writableSymbolTable
-                                   ? writableSymbolTable->takeOwnershipOfSymbol(
-                                             std::make_unique<UnresolvedFunction>(functions))
-                                   : nullptr;
-                }
+    // The symbol wasn't found; recurse into the parent symbol table.
+    return fParent ? fParent->lookup(key) : nullptr;
+}
+
+void SymbolTable::renameSymbol(const Context& context, Symbol* symbol, std::string_view newName) {
+    if (symbol->is<FunctionDeclaration>()) {
+        // This is a function declaration, so we need to rename the entire overload set.
+        for (FunctionDeclaration* fn = &symbol->as<FunctionDeclaration>(); fn != nullptr;
+             fn = fn->mutableNextOverload()) {
+            fn->setName(newName);
+        }
+    } else {
+        // Other types of symbols don't allow multiple symbols with the same name.
+        symbol->setName(newName);
+    }
+
+    this->addWithoutOwnership(context, symbol);
+}
+
+std::unique_ptr<Symbol> SymbolTable::removeSymbol(const Symbol* symbol) {
+    // Remove the symbol from our symbol lookup table.
+    if (fSymbols.removeIfExists(MakeSymbolKey(symbol->name()))) {
+        // Transfer ownership of the symbol if we own it. (This will leave a nullptr behind in the
+        // `fOwnedSymbols` list, which should be harmless.)
+        for (std::unique_ptr<Symbol>& owned : fOwnedSymbols) {
+            if (symbol == owned.get()) {
+                return std::move(owned);
             }
         }
     }
-    return symbol;
+
+    // We don't own the symbol after all.
+    return nullptr;
+}
+
+void SymbolTable::moveSymbolTo(SymbolTable* otherTable, Symbol* sym, const Context& context) {
+    if (std::unique_ptr<Symbol> ownedSymbol = this->removeSymbol(sym)) {
+        otherTable->add(context, std::move(ownedSymbol));
+    } else {
+        otherTable->addWithoutOwnership(context, sym);
+    }
 }
 
 const std::string* SymbolTable::takeOwnershipOfString(std::string str) {
@@ -84,43 +120,91 @@ const std::string* SymbolTable::takeOwnershipOfString(std::string str) {
     return &fOwnedStrings.front();
 }
 
-void SymbolTable::addWithoutOwnership(const Symbol* symbol) {
-    const std::string_view& name = symbol->name();
-
-    const Symbol*& refInSymbolTable = fSymbols[MakeSymbolKey(name)];
-    if (refInSymbolTable == nullptr) {
-        refInSymbolTable = symbol;
-        return;
-    }
-
-    if (!symbol->is<FunctionDeclaration>()) {
-        fContext.fErrors->error(symbol->fLine, "symbol '" + std::string(name) +
-                                               "' was already defined");
-        return;
-    }
-
-    std::vector<const FunctionDeclaration*> functions;
-    if (refInSymbolTable->is<FunctionDeclaration>()) {
-        functions = {&refInSymbolTable->as<FunctionDeclaration>(),
-                     &symbol->as<FunctionDeclaration>()};
-
-        refInSymbolTable = this->takeOwnershipOfSymbol(
-                std::make_unique<UnresolvedFunction>(std::move(functions)));
-    } else if (refInSymbolTable->is<UnresolvedFunction>()) {
-        functions = refInSymbolTable->as<UnresolvedFunction>().functions();
-        functions.push_back(&symbol->as<FunctionDeclaration>());
-
-        refInSymbolTable = this->takeOwnershipOfSymbol(
-                std::make_unique<UnresolvedFunction>(std::move(functions)));
+void SymbolTable::addWithoutOwnership(const Context& context, Symbol* symbol) {
+    if (!this->addWithoutOwnership(symbol)) {
+        context.fErrors->error(symbol->position(),
+                               "symbol '" + std::string(symbol->name()) + "' was already defined");
     }
 }
 
-const Type* SymbolTable::addArrayDimension(const Type* type, int arraySize) {
-    if (arraySize != 0) {
-        const std::string* arrayName = this->takeOwnershipOfString(type->getArrayName(arraySize));
-        type = this->takeOwnershipOfSymbol(Type::MakeArrayType(*arrayName, *type, arraySize));
+void SymbolTable::addWithoutOwnershipOrDie(Symbol* symbol) {
+    if (!this->addWithoutOwnership(symbol)) {
+        SK_ABORT("symbol '%.*s' was already defined",
+                 (int)symbol->name().size(), symbol->name().data());
     }
-    return type;
+}
+
+bool SymbolTable::addWithoutOwnership(Symbol* symbol) {
+    if (symbol->name().empty()) {
+        // We have legitimate use cases of nameless symbols, such as anonymous function parameters.
+        // If we find one here, we don't need to add its name to the symbol table.
+        return true;
+    }
+    auto key = MakeSymbolKey(symbol->name());
+
+    // If this is a function declaration, we need to keep the overload chain in sync.
+    if (symbol->is<FunctionDeclaration>()) {
+        // If we have a function with the same name...
+        Symbol* existingSymbol = this->lookup(key);
+        if (existingSymbol && existingSymbol->is<FunctionDeclaration>()) {
+            // ... add the existing function as the next overload in the chain.
+            FunctionDeclaration* existingDecl = &existingSymbol->as<FunctionDeclaration>();
+            symbol->as<FunctionDeclaration>().setNextOverload(existingDecl);
+            fSymbols[key] = symbol;
+            return true;
+        }
+    }
+
+    if (fAtModuleBoundary && fParent && fParent->lookup(key)) {
+        // We are attempting to declare a symbol at global scope that already exists in a parent
+        // module. This is a duplicate symbol and should be rejected.
+        return false;
+    }
+
+    std::swap(symbol, fSymbols[key]);
+    return symbol == nullptr;
+}
+
+void SymbolTable::injectWithoutOwnership(Symbol* symbol) {
+    auto key = MakeSymbolKey(symbol->name());
+    fSymbols[key] = symbol;
+}
+
+const Type* SymbolTable::addArrayDimension(const Context& context,
+                                           const Type* type,
+                                           int arraySize) {
+    if (arraySize == 0) {
+        return type;
+    }
+    // If we are making an array of a builtin type, we add it as high as possible in the symbol
+    // table tree (at the module boundary), to enable additional reuse of the array-type.
+    if (fParent && !fAtModuleBoundary && !context.fConfig->isBuiltinCode() && type->isBuiltin()) {
+        return fParent->addArrayDimension(context, type, arraySize);
+    }
+    // Reuse an existing array type with this name if one already exists in our symbol table.
+    std::string arrayName = type->getArrayName(arraySize);
+    if (const Symbol* existingSymbol = this->find(arrayName)) {
+        // We would expect an existing symbol named `Type[123]` to match our `Type[123]`. However,
+        // we might be compiling invalid code that contains duplicate symbols, and so we need to
+        // verify that these two types actually match before reusing the existing type.
+        const Type* existingType = &existingSymbol->as<Type>();
+        if (existingType->isArray() && type->matches(existingType->componentType())) {
+            return existingType;
+        }
+    }
+    // Add a new array type to the symbol table.
+    const std::string* arrayNamePtr = this->takeOwnershipOfString(std::move(arrayName));
+    return this->add(context, Type::MakeArrayType(context, *arrayNamePtr, *type, arraySize));
+}
+
+std::unique_ptr<Expression> SymbolTable::instantiateSymbolRef(const Context& context,
+                                                              std::string_view name,
+                                                              Position pos) {
+    if (const Symbol* symbol = this->find(name)) {
+        return symbol->instantiate(context, pos);
+    }
+    context.fErrors->error(pos, "unknown identifier '" + std::string(name) + "'");
+    return nullptr;
 }
 
 }  // namespace SkSL

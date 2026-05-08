@@ -15,27 +15,21 @@
 #ifndef STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_VIDEO_RENDERER_SINK_H_
 #define STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_VIDEO_RENDERER_SINK_H_
 
+#include <cstdint>
 #include <functional>
 
 #include "starboard/common/ref_counted.h"
 #include "starboard/media.h"
 #include "starboard/shared/internal_only.h"
 #include "starboard/shared/starboard/player/filter/video_frame_internal.h"
-#include "starboard/types.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 // The class is used to display the video frames.
 // It is expected that a pointer of this class is passed to RenderCB and the
 // DrawFrameCB will be called for each frame that is going to be rendered.
 class VideoRendererSink : public RefCountedThreadSafe<VideoRendererSink> {
  public:
-  typedef ::starboard::shared::starboard::player::filter::VideoFrame VideoFrame;
-
   enum DrawFrameStatus { kNotReleased, kReleased };
 
   // TODO: Add Stop().
@@ -50,14 +44,12 @@ class VideoRendererSink : public RefCountedThreadSafe<VideoRendererSink> {
 
   virtual ~VideoRendererSink() {}
 
+  virtual void SetPlaybackRate(double playback_rate) {}
+
   virtual void SetRenderCB(RenderCB render_cb) = 0;
   virtual void SetBounds(int z_index, int x, int y, int width, int height) = 0;
 };
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_PLAYER_FILTER_VIDEO_RENDERER_SINK_H_

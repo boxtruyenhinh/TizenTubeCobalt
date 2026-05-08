@@ -15,13 +15,12 @@
 #include "starboard/raspi/shared/open_max/open_max_video_decode_component.h"
 
 #include <algorithm>
+#include <map>
+#include <queue>
 
 #include "starboard/configuration.h"
 
 namespace starboard {
-namespace raspi {
-namespace shared {
-namespace open_max {
 
 namespace {
 
@@ -67,8 +66,8 @@ bool OpenMaxVideoDecodeComponent::OnEnableOutputPort(
   SB_DCHECK(port_definition);
 
   output_port_definition_ = *port_definition;
-  SB_DCHECK(port_definition->format.video.eColorFormat ==
-            OMX_COLOR_FormatYUV420PackedPlanar);
+  SB_DCHECK_EQ(port_definition->format.video.eColorFormat,
+               OMX_COLOR_FormatYUV420PackedPlanar);
   port_definition->format.video.eColorFormat =
       OMX_COLOR_FormatYUV420PackedPlanar;
   port_definition->nBufferCountActual = kOMXOutputBufferCount;
@@ -77,7 +76,4 @@ bool OpenMaxVideoDecodeComponent::OnEnableOutputPort(
   return true;
 }
 
-}  // namespace open_max
-}  // namespace shared
-}  // namespace raspi
 }  // namespace starboard

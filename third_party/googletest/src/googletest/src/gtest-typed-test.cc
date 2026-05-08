@@ -29,6 +29,10 @@
 
 #include "gtest/gtest-typed-test.h"
 
+#include <set>
+#include <string>
+#include <vector>
+
 #include "gtest/gtest.h"
 
 namespace testing {
@@ -90,10 +94,10 @@ const char* TypedTestSuitePState::VerifyRegisteredTestNames(
   }
 
   const std::string& errors_str = errors.GetString();
-  if (errors_str != "") {
-    posix::PrintF("%s %s", FormatFileLocation(file, line).c_str(),
+  if (!errors_str.empty()) {
+    fprintf(stderr, "%s %s", FormatFileLocation(file, line).c_str(),
             errors_str.c_str());
-    posix::Flush();
+    fflush(stderr);
     posix::Abort();
   }
 

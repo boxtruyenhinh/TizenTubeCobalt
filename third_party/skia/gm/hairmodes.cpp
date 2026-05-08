@@ -10,7 +10,6 @@
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
@@ -21,6 +20,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
+#include "src/core/SkColorPriv.h"
 
 constexpr SkBlendMode gModes[] = {
     SkBlendMode::kClear,
@@ -84,11 +84,9 @@ namespace skiagm {
         SkPaint fBGPaint;
 
     protected:
-        SkString onShortName() override {
-            return SkString("hairmodes");
-        }
+        SkString getName() const override { return SkString("hairmodes"); }
 
-        SkISize onISize() override { return SkISize::Make(640, 480); }
+        SkISize getISize() override { return SkISize::Make(640, 480); }
 
         void onOnceBeforeDraw() override {
             fBGPaint.setShader(make_bg_shader());
@@ -103,7 +101,7 @@ namespace skiagm {
             for (int alpha = 0; alpha < 4; ++alpha) {
                 canvas->save();
                 canvas->save();
-                for (size_t i = 0; i < SK_ARRAY_COUNT(gModes); ++i) {
+                for (size_t i = 0; i < std::size(gModes); ++i) {
                     if (6 == i) {
                         canvas->restore();
                         canvas->translate(W * 5, 0);

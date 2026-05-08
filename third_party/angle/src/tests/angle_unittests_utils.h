@@ -27,6 +27,10 @@ class NullFactory : public GLImplFactory
     CompilerImpl *createCompiler() override { return nullptr; }
     ShaderImpl *createShader(const gl::ShaderState &data) override { return nullptr; }
     ProgramImpl *createProgram(const gl::ProgramState &data) override { return nullptr; }
+    ProgramExecutableImpl *createProgramExecutable(const gl::ProgramExecutable *executable) override
+    {
+        return nullptr;
+    }
 
     // Framebuffer creation
     FramebufferImpl *createFramebuffer(const gl::FramebufferState &data) override
@@ -72,11 +76,6 @@ class NullFactory : public GLImplFactory
         return nullptr;
     }
 
-    std::vector<PathImpl *> createPaths(GLsizei range) override
-    {
-        return std::vector<PathImpl *>();
-    }
-
     SemaphoreImpl *createSemaphore() override { return nullptr; }
 
     OverlayImpl *createOverlay(const gl::OverlayState &state) override { return nullptr; }
@@ -90,6 +89,7 @@ class MockGLFactory : public GLImplFactory
     MOCK_METHOD0(createCompiler, CompilerImpl *());
     MOCK_METHOD1(createShader, ShaderImpl *(const gl::ShaderState &));
     MOCK_METHOD1(createProgram, ProgramImpl *(const gl::ProgramState &));
+    MOCK_METHOD1(createProgramExecutable, ProgramExecutableImpl *(const gl::ProgramExecutable *));
     MOCK_METHOD1(createProgramPipeline, ProgramPipelineImpl *(const gl::ProgramPipelineState &));
     MOCK_METHOD1(createFramebuffer, FramebufferImpl *(const gl::FramebufferState &));
     MOCK_METHOD0(createMemoryObject, MemoryObjectImpl *());
@@ -103,7 +103,6 @@ class MockGLFactory : public GLImplFactory
     MOCK_METHOD1(createTransformFeedback,
                  TransformFeedbackImpl *(const gl::TransformFeedbackState &));
     MOCK_METHOD1(createSampler, SamplerImpl *(const gl::SamplerState &));
-    MOCK_METHOD1(createPaths, std::vector<PathImpl *>(GLsizei));
     MOCK_METHOD0(createSemaphore, SemaphoreImpl *());
     MOCK_METHOD1(createOverlay, OverlayImpl *(const gl::OverlayState &));
 };
@@ -139,6 +138,7 @@ class MockEGLFactory : public EGLImplFactory
                                const egl::AttributeMap &));
     MOCK_METHOD2(createStreamProducerD3DTexture,
                  StreamProducerImpl *(egl::Stream::ConsumerType, const egl::AttributeMap &));
+    MOCK_METHOD1(createShareGroup, ShareGroupImpl *(const egl::ShareGroupState &));
 };
 
 }  // namespace rx

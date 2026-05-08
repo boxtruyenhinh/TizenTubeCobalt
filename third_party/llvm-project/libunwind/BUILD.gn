@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import("//starboard/build/config/os_definitions.gni")
-
 common_sources = [
   "src/AddressSpace.hpp",
   "src/CompactUnwinder.hpp",
@@ -46,8 +44,6 @@ if (is_apple) {
 config("common_unwind_dependents_config") {
   include_dirs = [ "include" ]
   defines = [
-    # Ensure that __external_threading is used for threading support.
-    "_LIBCPP_HAS_THREAD_API_EXTERNAL",
     "LLVM_PATH=" +
         rebase_path("//third_party/llvm-project/llvm/", root_build_dir),
   ]
@@ -65,6 +61,8 @@ if (sb_is_evergreen || (sb_is_modular && host_os == "win")) {
     cflags = [
       "-nostdinc",
       "-Wno-unused-command-line-argument",
+      "-Wno-unreachable-code",
+      "-Wno-unreachable-code-return",
     ]
 
     cflags_cc = [
@@ -91,6 +89,7 @@ if (sb_is_evergreen || (sb_is_modular && host_os == "win")) {
       "LIBUNWIND_PRINT_DWARF",
       "LIBUNWIND_PRINT_UNWINDING",
     ]
+    include_dirs = ["//third_party/llvm-project/compiler-rt/include"]
   }
 
   static_library("unwind") {
@@ -103,7 +102,6 @@ if (sb_is_evergreen || (sb_is_modular && host_os == "win")) {
       "//starboard/common",
       "//third_party/musl:c",
     ]
-    configs -= [ "//starboard/build/config:default_cpp_standard" ]
   }
 }
 
@@ -113,7 +111,10 @@ config("unwind_starboard_config") {
     "//starboard/build/config:starboard_implementation",
   ]
 
-  cflags = [ "-Wno-unused-command-line-argument" ]
+  cflags = [
+    "-Wno-unused-command-line-argument",
+    "-Wno-unreachable-code",
+  ]
   cflags_cc = [
     "-std=c++17",
     "-fPIC",
@@ -134,19 +135,10 @@ config("unwind_starboard_config") {
   ]
 }
 
-config("unwind_hide_symbols_config") {
-  cflags = [ "-fvisibility=hidden" ]
-
-  defines = [
-    "_LIBUNWIND_HIDE_SYMBOLS",
-  ]
-}
-
 static_library("unwind_starboard") {
   sources = common_sources
 
   configs += [ ":unwind_starboard_config" ]
-  configs += [ ":unwind_hide_symbols_config" ]
   all_dependent_configs = [ ":common_unwind_dependents_config" ]
 
   public_deps = [

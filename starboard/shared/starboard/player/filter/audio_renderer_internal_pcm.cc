@@ -15,18 +15,15 @@
 #include "starboard/shared/starboard/player/filter/audio_renderer_internal_pcm.h"
 
 #include <algorithm>
+#include <mutex>
 #include <string>
 #include <utility>
 
+#include "starboard/common/check_op.h"
 #include "starboard/common/time.h"
-#include "starboard/memory.h"
 #include "starboard/shared/starboard/media/media_util.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace filter {
 
 namespace {
 
@@ -68,18 +65,22 @@ SbMediaAudioSampleType GetSinkAudioSampleType(
 }  // namespace
 
 AudioRendererPcm::AudioRendererPcm(
+    JobQueue* job_queue,
     std::unique_ptr<AudioDecoder> decoder,
     std::unique_ptr<AudioRendererSink> audio_renderer_sink,
-    const media::AudioStreamInfo& audio_stream_info,
+    const AudioStreamInfo& audio_stream_info,
     int max_cached_frames,
-    int min_frames_per_append)
-    : max_cached_frames_(max_cached_frames),
+    int min_frames_per_append,
+    const ExperimentalFeatures& experimental_features)
+    : JobOwner(job_queue),
+      max_cached_frames_(max_cached_frames),
       min_frames_per_append_(min_frames_per_append),
+      experimental_features_(experimental_features),
       decoder_(std::move(decoder)),
       frames_consumed_set_at_(CurrentMonotonicTime()),
       channels_(audio_stream_info.number_of_channels),
       sink_sample_type_(GetSinkAudioSampleType(audio_renderer_sink.get())),
-      bytes_per_frame_(media::GetBytesPerSample(sink_sample_type_) * channels_),
+      bytes_per_frame_(GetBytesPerSample(sink_sample_type_) * channels_),
       frame_buffer_(max_cached_frames_ * bytes_per_frame_),
       process_audio_data_job_(
           std::bind(&AudioRendererPcm::ProcessAudioData, this)),
@@ -88,9 +89,10 @@ AudioRendererPcm::AudioRendererPcm(
                 << " channels, " << bytes_per_frame_ << " bytes per frame, "
                 << max_cached_frames_ << " max cached frames, and "
                 << min_frames_per_append_ << " min frames per append.";
-  SB_DCHECK(decoder_ != NULL);
-  SB_DCHECK(min_frames_per_append_ > 0);
-  SB_DCHECK(max_cached_frames_ >= min_frames_per_append_ * 2);
+  SB_DCHECK(decoder_);
+  SB_DCHECK_GT(min_frames_per_append_, 0);
+  SB_DCHECK_GE(max_cached_frames_, min_frames_per_append_ * 2);
+  SB_CHECK(audio_renderer_sink_);
 
   frame_buffers_[0] = &frame_buffer_[0];
 
@@ -105,7 +107,11 @@ AudioRendererPcm::~AudioRendererPcm() {
                 << " channels, " << bytes_per_frame_ << " bytes per frame, "
                 << max_cached_frames_ << " max cached frames, and "
                 << min_frames_per_append_ << " min frames per append.";
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
+
+  // Stop audio renderer sink before destroying members, in order to
+  // prevent the callback called during destruction.
+  audio_renderer_sink_->Stop();
 }
 
 void AudioRendererPcm::Initialize(const ErrorCB& error_cb,
@@ -127,7 +133,7 @@ void AudioRendererPcm::Initialize(const ErrorCB& error_cb,
 }
 
 void AudioRendererPcm::WriteSamples(const InputBuffers& input_buffers) {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
   SB_DCHECK(!input_buffers.empty());
   SB_DCHECK(can_accept_more_data_);
 
@@ -145,7 +151,7 @@ void AudioRendererPcm::WriteSamples(const InputBuffers& input_buffers) {
 }
 
 void AudioRendererPcm::WriteEndOfStream() {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
   // TODO: Check |can_accept_more_data_| and make WriteEndOfStream() depend on
   // CanAcceptMoreData() or callback.
   // SB_DCHECK(can_accept_more_data_);
@@ -158,51 +164,51 @@ void AudioRendererPcm::WriteEndOfStream() {
 
   decoder_->WriteEndOfStream();
 
-  ScopedLock lock(mutex_);
+  std::lock_guard lock(mutex_);
   eos_state_ = kEOSWrittenToDecoder;
   first_input_written_ = true;
 }
 
 void AudioRendererPcm::SetVolume(double volume) {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
   audio_renderer_sink_->SetVolume(volume);
 }
 
 bool AudioRendererPcm::IsEndOfStreamWritten() const {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
   return eos_state_ >= kEOSWrittenToDecoder;
 }
 
 bool AudioRendererPcm::IsEndOfStreamPlayed() const {
-  ScopedLock lock(mutex_);
+  std::lock_guard lock(mutex_);
   return IsEndOfStreamPlayed_Locked();
 }
 
 bool AudioRendererPcm::CanAcceptMoreData() const {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
   return eos_state_ == kEOSNotReceived && can_accept_more_data_ &&
          (!decoder_sample_rate_ || !time_stretcher_.IsQueueFull());
 }
 
 void AudioRendererPcm::Play() {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
 
-  ScopedLock lock(mutex_);
+  std::lock_guard lock(mutex_);
   paused_ = false;
   consume_frames_called_ = false;
 }
 
 void AudioRendererPcm::Pause() {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
 
-  ScopedLock lock(mutex_);
+  std::lock_guard lock(mutex_);
   paused_ = true;
 }
 
 void AudioRendererPcm::SetPlaybackRate(double playback_rate) {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
 
-  ScopedLock lock(mutex_);
+  std::lock_guard lock(mutex_);
 
   if (playback_rate_ == 0.f && playback_rate > 0.f) {
     consume_frames_called_ = false;
@@ -210,10 +216,13 @@ void AudioRendererPcm::SetPlaybackRate(double playback_rate) {
 
   playback_rate_ = playback_rate;
 
-  audio_renderer_sink_->SetPlaybackRate(playback_rate_ > 0.0 ? 1.0 : 0.0);
+  double adjusted_playback_rate = playback_rate_ > 0.0 ? 1.0 : 0.0;
+  if (audio_renderer_sink_->AllowDirectPlaybackRateSetting()) {
+    adjusted_playback_rate = playback_rate_;
+  }
+
+  audio_renderer_sink_->SetPlaybackRate(adjusted_playback_rate);
   if (audio_renderer_sink_->HasStarted()) {
-    // TODO: Remove SetPlaybackRate() support from audio sink as it only need to
-    // support play/pause.
     if (playback_rate_ > 0.0) {
       if (process_audio_data_job_token_.is_valid()) {
         RemoveJobByToken(process_audio_data_job_token_);
@@ -225,15 +234,15 @@ void AudioRendererPcm::SetPlaybackRate(double playback_rate) {
 }
 
 void AudioRendererPcm::Seek(int64_t seek_to_time) {
-  SB_DCHECK(BelongsToCurrentThread());
-  SB_DCHECK(seek_to_time >= 0);
+  SB_CHECK(BelongsToCurrentThread());
+  SB_DCHECK_GE(seek_to_time, 0);
 
-  audio_renderer_sink_->Stop();
+  audio_renderer_sink_->Reset();
 
   {
     // Set the following states under a lock first to ensure that from now on
     // GetCurrentMediaTime() returns |seeking_to_time_|.
-    ScopedLock scoped_lock(mutex_);
+    std::lock_guard scoped_lock(mutex_);
     eos_state_ = kEOSNotReceived;
     seeking_to_time_ = std::max<int64_t>(seek_to_time, 0);
     last_media_time_ = seek_to_time;
@@ -266,7 +275,7 @@ void AudioRendererPcm::Seek(int64_t seek_to_time) {
 
   if (first_input_written_) {
     decoder_->Reset();
-    decoder_sample_rate_ = nullopt;
+    decoder_sample_rate_ = std::nullopt;
     first_input_written_ = false;
   }
 
@@ -294,7 +303,7 @@ int64_t AudioRendererPcm::GetCurrentMediaTime(bool* is_playing,
   int samples_per_second = 1;
 
   {
-    ScopedLock scoped_lock(mutex_);
+    std::lock_guard scoped_lock(mutex_);
 
     *is_playing = !paused_ && !seeking_;
     *is_eos_played = IsEndOfStreamPlayed_Locked();
@@ -305,6 +314,8 @@ int64_t AudioRendererPcm::GetCurrentMediaTime(bool* is_playing,
       return seeking_to_time_;
     }
 
+    // |frames_consumed_by_sink_since_last_get_current_time_| could include
+    // silence frames if overflow audio samples are allowed.
     if (frames_consumed_by_sink_since_last_get_current_time_ > 0) {
       audio_frame_tracker_.RecordPlayedFrames(
           frames_consumed_by_sink_since_last_get_current_time_);
@@ -328,6 +339,12 @@ int64_t AudioRendererPcm::GetCurrentMediaTime(bool* is_playing,
     frames_played =
         audio_frame_tracker_.GetFutureFramesPlayedAdjustedToPlaybackRate(
             elapsed_frames, playback_rate);
+    if (audio_renderer_sink_->AllowOverflowAudioSamples()) {
+      // A simple workaround to handle silence frames for tunnel mode player.
+      // |playback_rate| is ignored as tunnel mode doesn't support
+      // vsp.
+      frames_played += audio_frame_tracker_.GetOverflowedFrames();
+    }
     media_time =
         seeking_to_time_ + frames_played * 1'000'000LL / samples_per_second;
     if (media_time < last_media_time_) {
@@ -370,21 +387,17 @@ void AudioRendererPcm::GetSourceStatus(int* frames_in_buffer,
                                        bool* is_playing,
                                        bool* is_eos_reached) {
 #if SB_PLAYER_FILTER_ENABLE_STATE_CHECK
-  sink_callbacks_since_last_check_.increment();
+  ++sink_callbacks_since_last_check_;
 #endif  // SB_PLAYER_FILTER_ENABLE_STATE_CHECK
 
-  {
-    ScopedTryLock lock(mutex_);
-    if (lock.is_locked()) {
-      UpdateVariablesOnSinkThread_Locked(
-          frames_consumed_set_at_on_sink_thread_);
-    }
+  if (std::unique_lock lock(mutex_, std::try_to_lock); lock.owns_lock()) {
+    UpdateVariablesOnSinkThread_Locked(frames_consumed_set_at_on_sink_thread_);
   }
 
   *is_eos_reached = is_eos_reached_on_sink_thread_;
   *is_playing = is_playing_on_sink_thread_;
 
-  if (*is_playing) {
+  if (*is_playing || experimental_features_.allow_audio_writing_on_pause) {
     *frames_in_buffer =
         frames_in_buffer_on_sink_thread_ - frames_consumed_on_sink_thread_;
     *offset_in_frames =
@@ -425,7 +438,7 @@ void AudioRendererPcm::GetSourceStatus(int* frames_in_buffer,
 void AudioRendererPcm::ConsumeFrames(int frames_consumed,
                                      int64_t frames_consumed_at) {
 #if SB_PLAYER_FILTER_ENABLE_STATE_CHECK
-  sink_callbacks_since_last_check_.increment();
+  ++sink_callbacks_since_last_check_;
 #endif  // SB_PLAYER_FILTER_ENABLE_STATE_CHECK
 
   // Note that occasionally thread context switch may cause that the time
@@ -439,8 +452,8 @@ void AudioRendererPcm::ConsumeFrames(int frames_consumed,
   // However, if this ever becomes a problem, we can smooth it out over multiple
   // ConsumeFrames() calls.
 
-  ScopedTryLock lock(mutex_);
-  if (lock.is_locked()) {
+  std::unique_lock lock(mutex_, std::try_to_lock);
+  if (lock.owns_lock()) {
     frames_consumed_on_sink_thread_ += frames_consumed;
 
     UpdateVariablesOnSinkThread_Locked(frames_consumed_at);
@@ -465,8 +478,6 @@ void AudioRendererPcm::OnError(bool capability_changed,
 
 void AudioRendererPcm::UpdateVariablesOnSinkThread_Locked(
     int64_t system_time_on_consume_frames) {
-  mutex_.DCheckAcquired();
-
   if (frames_consumed_on_sink_thread_ > 0) {
     SB_DCHECK(total_frames_consumed_by_sink_ +
                   frames_consumed_on_sink_thread_ <=
@@ -481,6 +492,15 @@ void AudioRendererPcm::UpdateVariablesOnSinkThread_Locked(
     if (non_silence_frames_consumed != 0) {
       frames_consumed_set_at_ = system_time_on_consume_frames;
     }
+
+    if (audio_renderer_sink_->AllowOverflowAudioSamples()) {
+      auto silence_frames_consumed =
+          frames_consumed_on_sink_thread_ - non_silence_frames_consumed;
+      frames_consumed_by_sink_since_last_get_current_time_ +=
+          silence_frames_consumed;
+      frames_consumed_set_at_ = system_time_on_consume_frames;
+    }
+
     consume_frames_called_ = true;
     frames_consumed_on_sink_thread_ = 0;
   }
@@ -508,7 +528,7 @@ void AudioRendererPcm::OnFirstOutput(
     const SbMediaAudioSampleType decoded_sample_type,
     const SbMediaAudioFrameStorageType decoded_storage_type,
     const int decoded_sample_rate) {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
   SB_DCHECK(!decoder_sample_rate_);
   decoder_sample_rate_ = decoded_sample_rate;
   int destination_sample_rate =
@@ -545,13 +565,12 @@ void AudioRendererPcm::OnFirstOutput(
 }
 
 bool AudioRendererPcm::IsEndOfStreamPlayed_Locked() const {
-  mutex_.DCheckAcquired();
   return eos_state_ >= kEOSSentToSink &&
          total_frames_sent_to_sink_ == total_frames_consumed_by_sink_;
 }
 
 void AudioRendererPcm::OnDecoderConsumed() {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
 
   // TODO: Unify EOS and non EOS request once WriteEndOfStream() depends on
   // CanAcceptMoreData().
@@ -563,7 +582,7 @@ void AudioRendererPcm::OnDecoderConsumed() {
 }
 
 void AudioRendererPcm::OnDecoderOutput() {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
 
   ++pending_decoder_outputs_;
 
@@ -576,7 +595,7 @@ void AudioRendererPcm::OnDecoderOutput() {
 }
 
 void AudioRendererPcm::ProcessAudioData() {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
 
   process_audio_data_job_token_.ResetToInvalid();
 
@@ -621,7 +640,7 @@ void AudioRendererPcm::ProcessAudioData() {
     if (decoded_audio->is_end_of_stream()) {
       SB_DCHECK(eos_state_ == kEOSWrittenToDecoder) << eos_state_;
       {
-        ScopedLock lock(mutex_);
+        std::lock_guard lock(mutex_);
         eos_state_ = kEOSDecoded;
         if (seeking_) {
           seeking_ = false;
@@ -678,13 +697,13 @@ void AudioRendererPcm::ProcessAudioData() {
 }
 
 bool AudioRendererPcm::AppendAudioToFrameBuffer(bool* is_frame_buffer_full) {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
   SB_DCHECK(is_frame_buffer_full);
 
   *is_frame_buffer_full = false;
 
   if (time_stretcher_.IsQueueFull()) {
-    ScopedLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     if (seeking_) {
       seeking_ = false;
       Schedule(prerolled_cb_);
@@ -705,16 +724,22 @@ bool AudioRendererPcm::AppendAudioToFrameBuffer(bool* is_frame_buffer_full) {
 
   int offset_to_append = total_frames_sent_to_sink_ % max_cached_frames_;
 
+  double adjusted_playback_rate = playback_rate_;
+  if (audio_renderer_sink_->AllowDirectPlaybackRateSetting()) {
+    adjusted_playback_rate = 1.0;
+  }
+
   scoped_refptr<DecodedAudio> decoded_audio = time_stretcher_.Read(
-      max_cached_frames_ - frames_in_buffer, playback_rate_);
+      max_cached_frames_ - frames_in_buffer, adjusted_playback_rate);
   SB_DCHECK(decoded_audio);
 
   {
-    ScopedLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     if (decoded_audio->frames() == 0 && eos_state_ == kEOSDecoded) {
       eos_state_ = kEOSSentToSink;
     }
-    audio_frame_tracker_.AddFrames(decoded_audio->frames(), playback_rate_);
+    audio_frame_tracker_.AddFrames(decoded_audio->frames(),
+                                   adjusted_playback_rate);
   }
 
   // |time_stretcher_| only support kSbMediaAudioSampleTypeFloat32 and
@@ -748,7 +773,7 @@ bool AudioRendererPcm::AppendAudioToFrameBuffer(bool* is_frame_buffer_full) {
 
 #if SB_PLAYER_FILTER_ENABLE_STATE_CHECK
 void AudioRendererPcm::CheckAudioSinkStatus() {
-  SB_DCHECK(BelongsToCurrentThread());
+  SB_CHECK(BelongsToCurrentThread());
 
   // Check if sink callbacks are called too frequently.
   if (sink_callbacks_since_last_check_.load() > kMaxSinkCallbacksBetweenCheck) {
@@ -767,7 +792,7 @@ void AudioRendererPcm::CheckAudioSinkStatus() {
   // Check if sink has updated.
   int64_t elapsed = CurrentMonotonicTime() - frames_consumed_set_at_;
   if (elapsed > kCheckAudioSinkStatusInterval) {
-    ScopedLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     SB_DLOG(WARNING) << "|frames_consumed_| has not been updated for "
                      << elapsed / 1'000'000LL << " seconds, with "
                      << total_frames_sent_to_sink_ -
@@ -781,8 +806,4 @@ void AudioRendererPcm::CheckAudioSinkStatus() {
 }
 #endif  // SB_PLAYER_FILTER_ENABLE_STATE_CHECK
 
-}  // namespace filter
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

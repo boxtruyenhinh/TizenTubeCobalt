@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/shared/starboard/media/media_support_internal.h"
+// clang-format on
 
 #include "starboard/android/shared/max_media_codec_output_buffers_lookup_table.h"
 #include "starboard/android/shared/media_capabilities_cache.h"
@@ -21,25 +23,21 @@
 #include "starboard/media.h"
 #include "starboard/shared/starboard/media/media_util.h"
 
-using starboard::android::shared::MaxMediaCodecOutputBuffersLookupTable;
-using starboard::android::shared::MediaCapabilitiesCache;
-using starboard::android::shared::SupportedVideoCodecToMimeType;
-using starboard::shared::starboard::media::IsSDRVideo;
-using starboard::shared::starboard::media::MimeType;
+namespace starboard {
 
-bool SbMediaIsVideoSupported(SbMediaVideoCodec video_codec,
-                             const MimeType* mime_type,
-                             int profile,
-                             int level,
-                             int bit_depth,
-                             SbMediaPrimaryId primary_id,
-                             SbMediaTransferId transfer_id,
-                             SbMediaMatrixId matrix_id,
-                             int frame_width,
-                             int frame_height,
-                             int64_t bitrate,
-                             int fps,
-                             bool decode_to_texture_required) {
+bool MediaIsVideoSupported(SbMediaVideoCodec video_codec,
+                           const MimeType* mime_type,
+                           int profile,
+                           int level,
+                           int bit_depth,
+                           SbMediaPrimaryId primary_id,
+                           SbMediaTransferId transfer_id,
+                           SbMediaMatrixId matrix_id,
+                           int frame_width,
+                           int frame_height,
+                           int64_t bitrate,
+                           int fps,
+                           bool decode_to_texture_required) {
   const bool must_support_hdr =
       !IsSDRVideo(bit_depth, primary_id, transfer_id, matrix_id);
   if (must_support_hdr &&
@@ -52,10 +50,6 @@ bool SbMediaIsVideoSupported(SbMediaVideoCodec video_codec,
 
   bool must_support_tunnel_mode = false;
   if (mime_type) {
-    if (!mime_type->is_valid()) {
-      return false;
-    }
-
     // Allows for enabling tunneled playback. Disabled by default.
     // https://source.android.com/devices/tv/multimedia-tunneling
     if (!mime_type->ValidateBoolParameter("tunnelmode")) {
@@ -115,3 +109,5 @@ bool SbMediaIsVideoSupported(SbMediaVideoCodec video_codec,
       mime, require_secure_playback, must_support_hdr, must_support_tunnel_mode,
       frame_width, frame_height, bitrate, fps);
 }
+
+}  // namespace starboard

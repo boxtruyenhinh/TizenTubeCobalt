@@ -15,16 +15,14 @@
 #ifndef STARBOARD_NPLB_PLAYER_CREATION_PARAM_HELPERS_H_
 #define STARBOARD_NPLB_PLAYER_CREATION_PARAM_HELPERS_H_
 
-#include "starboard/configuration.h"
-
 #include "starboard/common/log.h"
+#include "starboard/configuration.h"
 #include "starboard/drm.h"
 #include "starboard/media.h"
 #include "starboard/nplb/player_test_util.h"
 #include "starboard/player.h"
 #include "starboard/shared/starboard/media/media_util.h"
 
-namespace starboard {
 namespace nplb {
 
 // Encapsulates all information contained in `SbPlayerCreationParam`.  It
@@ -34,8 +32,8 @@ namespace nplb {
 struct PlayerCreationParam {
   SbDrmSystem drm_system = kSbDrmSystemInvalid;
 
-  shared::starboard::media::AudioStreamInfo audio_stream_info;
-  shared::starboard::media::VideoStreamInfo video_stream_info;
+  starboard::AudioStreamInfo audio_stream_info;
+  starboard::VideoStreamInfo video_stream_info;
 
   SbPlayerOutputMode output_mode = kSbPlayerOutputModeInvalid;
 
@@ -50,22 +48,15 @@ struct PlayerCreationParam {
 
     creation_param->drm_system = drm_system;
 
-#if SB_API_VERSION >= 15
     audio_stream_info.ConvertTo(&creation_param->audio_stream_info);
     video_stream_info.ConvertTo(&creation_param->video_stream_info);
-#else   // SB_API_VERSION >= 15
-    audio_stream_info.ConvertTo(&creation_param->audio_sample_info);
-    video_stream_info.ConvertTo(&creation_param->video_sample_info);
-#endif  // SB_API_VERSION >= 15
 
     creation_param->output_mode = output_mode;
   }
 };
 
-shared::starboard::media::AudioStreamInfo CreateAudioStreamInfo(
-    SbMediaAudioCodec codec);
-shared::starboard::media::VideoStreamInfo CreateVideoStreamInfo(
-    SbMediaVideoCodec codec);
+starboard::AudioStreamInfo CreateAudioStreamInfo(SbMediaAudioCodec codec);
+starboard::VideoStreamInfo CreateVideoStreamInfo(SbMediaVideoCodec codec);
 PlayerCreationParam CreatePlayerCreationParam(SbMediaAudioCodec audio_codec,
                                               SbMediaVideoCodec video_codec,
                                               SbPlayerOutputMode output_mode);
@@ -76,6 +67,5 @@ SbPlayerOutputMode GetPreferredOutputMode(
     const PlayerCreationParam& creation_param);
 
 }  // namespace nplb
-}  // namespace starboard
 
 #endif  // STARBOARD_NPLB_PLAYER_CREATION_PARAM_HELPERS_H_

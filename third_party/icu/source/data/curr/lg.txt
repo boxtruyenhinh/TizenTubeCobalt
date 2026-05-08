@@ -175,9 +175,13 @@ lg{
             "SHP",
             "Pawundi ey’eSenti Herena",
         }
+        SLE{
+            "SLE",
+            "Lewone",
+        }
         SLL{
             "SLL",
-            "Lewone",
+            "Lewone (1964—2022)",
         }
         SOS{
             "SOS",
@@ -216,7 +220,7 @@ lg{
             "Faranga ey’omu Afirika eya wakati",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "Faranga ey’omu Afirika ey’ebugwanjuba",
         }
         ZAR{

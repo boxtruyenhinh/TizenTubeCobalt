@@ -12,27 +12,6 @@ ha{
         "America:North_Dakota:New_Salem"{
             ec{"New Salem, Arewacin Dakota"}
         }
-        "Asia:Aden"{
-            ec{"Aden"}
-        }
-        "Asia:Amman"{
-            ec{"Amman"}
-        }
-        "Asia:Baghdad"{
-            ec{"Baghdad"}
-        }
-        "Asia:Bahrain"{
-            ec{"Bahrain"}
-        }
-        "Asia:Baku"{
-            ec{"Baku"}
-        }
-        "Asia:Bangkok"{
-            ec{"Bangkok"}
-        }
-        "Asia:Beirut"{
-            ec{"Beirut"}
-        }
         "Etc:UTC"{
             ls{"Hadewa Lokaci na Duniya"}
         }
@@ -635,6 +614,9 @@ ha{
             ld{"Lokacin Bazara na Yekaterinburg"}
             lg{"Lokacin Yekaterinburg"}
             ls{"Tsayayyen Lokacin Yekaterinburg"}
+        }
+        "meta:Yukon"{
+            ls{"Lokacin Yukon"}
         }
         regionFormat{"{0} Lokaci"}
         regionFormatDaylight{"{0} Lokacin Rana"}

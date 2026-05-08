@@ -5,19 +5,27 @@
  * found in the LICENSE file.
  */
 
+#include "src/core/SkEdgeBuilder.h"
+
 #include "include/core/SkPath.h"
-#include "include/private/SkTo.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkFixed.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkSafe32.h"
+#include "src/base/SkSafeMath.h"
 #include "src/core/SkAnalyticEdge.h"
 #include "src/core/SkEdge.h"
-#include "src/core/SkEdgeBuilder.h"
 #include "src/core/SkEdgeClipper.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkLineClipper.h"
 #include "src/core/SkPathPriv.h"
-#include "src/core/SkSafeMath.h"
 
 SkEdgeBuilder::Combine SkBasicEdgeBuilder::combineVertical(const SkEdge* edge, SkEdge* last) {
-    if (last->fCurveCount || last->fDX || edge->fX != last->fX) {
+    // We only consider edges that were originally lines to be vertical to avoid numerical issues
+    // (crbug.com/1154864).
+    if (last->fEdgeType != SkEdge::Type::kLine || last->fDxDy || edge->fX != last->fX) {
         return kNo_Combine;
     }
     if (edge->fWinding == last->fWinding) {
@@ -63,7 +71,9 @@ SkEdgeBuilder::Combine SkAnalyticEdgeBuilder::combineVertical(const SkAnalyticEd
         return SkAbs32(a - b) < 0x100;
     };
 
-    if (last->fCurveCount || last->fDX || edge->fX != last->fX) {
+    // We only consider edges that were originally lines to be vertical to avoid numerical issues
+    // (crbug.com/1154864).
+    if (last->fEdgeType != SkAnalyticEdge::Type::kLine || last->fDX || edge->fX != last->fX) {
         return kNo_Combine;
     }
     if (edge->fWinding == last->fWinding) {
@@ -107,10 +117,18 @@ SkEdgeBuilder::Combine SkAnalyticEdgeBuilder::combineVertical(const SkAnalyticEd
     return kNo_Combine;
 }
 
-template <typename Edge>
-static bool is_vertical(const Edge* edge) {
-    return edge->fDX         == 0
-        && edge->fCurveCount == 0;
+static bool is_vertical(const SkEdge* edge) {
+    // We only consider edges that were originally lines to be vertical to avoid numerical issues
+    // (crbug.com/1154864).
+    return edge->fDxDy     == 0
+        && edge->fEdgeType == SkEdge::Type::kLine;
+}
+
+static bool is_vertical(const SkAnalyticEdge* edge) {
+    // We only consider edges that were originally lines to be vertical to avoid numerical issues
+    // (crbug.com/1154864).
+    return edge->fDX       == 0
+        && edge->fEdgeType == SkAnalyticEdge::Type::kLine;
 }
 
 // TODO: we can deallocate the edge if edge->setFoo() fails
@@ -118,13 +136,13 @@ static bool is_vertical(const Edge* edge) {
 
 void SkBasicEdgeBuilder::addLine(const SkPoint pts[]) {
     SkEdge* edge = fAlloc.make<SkEdge>();
-    if (edge->setLine(pts[0], pts[1], fClipShift)) {
+    if (edge->setLine(pts[0], pts[1])) {
         Combine combine = is_vertical(edge) && !fList.empty()
-            ? this->combineVertical(edge, (SkEdge*)fList.top())
+            ? this->combineVertical(edge, (SkEdge*)fList.back())
             : kNo_Combine;
 
         switch (combine) {
-            case kTotal_Combine:    fList.pop();           break;
+            case kTotal_Combine:    fList.pop_back();      break;
             case kPartial_Combine:                         break;
             case kNo_Combine:       fList.push_back(edge); break;
         }
@@ -135,11 +153,11 @@ void SkAnalyticEdgeBuilder::addLine(const SkPoint pts[]) {
     if (edge->setLine(pts[0], pts[1])) {
 
         Combine combine = is_vertical(edge) && !fList.empty()
-            ? this->combineVertical(edge, (SkAnalyticEdge*)fList.top())
+            ? this->combineVertical(edge, (SkAnalyticEdge*)fList.back())
             : kNo_Combine;
 
         switch (combine) {
-            case kTotal_Combine:    fList.pop();           break;
+            case kTotal_Combine:    fList.pop_back();      break;
             case kPartial_Combine:                         break;
             case kNo_Combine:       fList.push_back(edge); break;
         }
@@ -147,7 +165,7 @@ void SkAnalyticEdgeBuilder::addLine(const SkPoint pts[]) {
 }
 void SkBasicEdgeBuilder::addQuad(const SkPoint pts[]) {
     SkQuadraticEdge* edge = fAlloc.make<SkQuadraticEdge>();
-    if (edge->setQuadratic(pts, fClipShift)) {
+    if (edge->setQuadratic(pts)) {
         fList.push_back(edge);
     }
 }
@@ -160,7 +178,7 @@ void SkAnalyticEdgeBuilder::addQuad(const SkPoint pts[]) {
 
 void SkBasicEdgeBuilder::addCubic(const SkPoint pts[]) {
     SkCubicEdge* edge = fAlloc.make<SkCubicEdge>();
-    if (edge->setCubic(pts, fClipShift)) {
+    if (edge->setCubic(pts)) {
         fList.push_back(edge);
     }
 }
@@ -173,18 +191,6 @@ void SkAnalyticEdgeBuilder::addCubic(const SkPoint pts[]) {
 
 // TODO: merge addLine() and addPolyLine()?
 
-SkEdgeBuilder::Combine SkBasicEdgeBuilder::addPolyLine(const SkPoint pts[],
-                                                       char* arg_edge, char** arg_edgePtr) {
-    auto edge    = (SkEdge*) arg_edge;
-    auto edgePtr = (SkEdge**)arg_edgePtr;
-
-    if (edge->setLine(pts[0], pts[1], fClipShift)) {
-        return is_vertical(edge) && edgePtr > (SkEdge**)fEdgeList
-            ? this->combineVertical(edge, edgePtr[-1])
-            : kNo_Combine;
-    }
-    return SkEdgeBuilder::kPartial_Combine;  // A convenient lie.  Same do-nothing behavior.
-}
 SkEdgeBuilder::Combine SkAnalyticEdgeBuilder::addPolyLine(const SkPoint pts[],
                                                           char* arg_edge, char** arg_edgePtr) {
     auto edge    = (SkAnalyticEdge*) arg_edge;
@@ -199,19 +205,12 @@ SkEdgeBuilder::Combine SkAnalyticEdgeBuilder::addPolyLine(const SkPoint pts[],
 }
 
 SkRect SkBasicEdgeBuilder::recoverClip(const SkIRect& src) const {
-    return { SkIntToScalar(src.fLeft   >> fClipShift),
-             SkIntToScalar(src.fTop    >> fClipShift),
-             SkIntToScalar(src.fRight  >> fClipShift),
-             SkIntToScalar(src.fBottom >> fClipShift), };
+    return SkRect::Make(src);
 }
 SkRect SkAnalyticEdgeBuilder::recoverClip(const SkIRect& src) const {
     return SkRect::Make(src);
 }
 
-char* SkBasicEdgeBuilder::allocEdges(size_t n, size_t* size) {
-    *size = sizeof(SkEdge);
-    return (char*)fAlloc.makeArrayDefault<SkEdge>(n);
-}
 char* SkAnalyticEdgeBuilder::allocEdges(size_t n, size_t* size) {
     *size = sizeof(SkAnalyticEdge);
     return (char*)fAlloc.makeArrayDefault<SkAnalyticEdge>(n);
@@ -231,13 +230,6 @@ int SkEdgeBuilder::buildPoly(const SkPath& path, const SkIRect* iclip, bool canC
         }
     }
 
-    size_t edgeSize;
-    char* edge = this->allocEdges(maxEdgeCount, &edgeSize);
-
-    SkDEBUGCODE(char* edgeStart = edge);
-    char** edgePtr = fAlloc.makeArrayDefault<char*>(maxEdgeCount);
-    fEdgeList = (void**)edgePtr;
-
     SkPathEdgeIter iter(path);
     if (iclip) {
         SkRect clip = this->recoverClip(*iclip);
@@ -249,12 +241,7 @@ int SkEdgeBuilder::buildPoly(const SkPath& path, const SkIRect* iclip, bool canC
                     int lineCount = SkLineClipper::ClipLine(e.fPts, clip, lines, canCullToTheRight);
                     SkASSERT(lineCount <= SkLineClipper::kMaxClippedLineSegments);
                     for (int i = 0; i < lineCount; i++) {
-                        switch( this->addPolyLine(lines + i, edge, edgePtr) ) {
-                            case kTotal_Combine:   edgePtr--; break;
-                            case kPartial_Combine:            break;
-                            case kNo_Combine: *edgePtr++ = edge;
-                                               edge += edgeSize;
-                        }
+                        this->addLine(lines + i);
                     }
                     break;
                 }
@@ -267,12 +254,7 @@ int SkEdgeBuilder::buildPoly(const SkPath& path, const SkIRect* iclip, bool canC
         while (auto e = iter.next()) {
             switch (e.fEdge) {
                 case SkPathEdgeIter::Edge::kLine: {
-                    switch( this->addPolyLine(e.fPts, edge, edgePtr) ) {
-                        case kTotal_Combine:   edgePtr--; break;
-                        case kPartial_Combine:            break;
-                        case kNo_Combine: *edgePtr++ = edge;
-                                           edge += edgeSize;
-                    }
+                    this->addLine(e.fPts);
                     break;
                 }
                 default:
@@ -281,17 +263,11 @@ int SkEdgeBuilder::buildPoly(const SkPath& path, const SkIRect* iclip, bool canC
             }
         }
     }
-    SkASSERT((size_t)(edge - edgeStart) <= maxEdgeCount * edgeSize);
-    SkASSERT((size_t)(edgePtr - (char**)fEdgeList) <= maxEdgeCount);
-    return SkToInt(edgePtr - (char**)fEdgeList);
+    fEdgeList = fList.begin();
+    return fList.size();
 }
 
 int SkEdgeBuilder::build(const SkPath& path, const SkIRect* iclip, bool canCullToTheRight) {
-    SkAutoConicToQuads quadder;
-    const SkScalar conicTol = SK_Scalar1 / 4;
-    bool is_finite = true;
-
-    SkPathEdgeIter iter(path);
     if (iclip) {
         SkRect clip = this->recoverClip(*iclip);
         struct Rec {
@@ -307,7 +283,7 @@ int SkEdgeBuilder::build(const SkPath& path, const SkIRect* iclip, bool canCullT
 
             while ((verb = clipper->next(pts)) != SkPath::kDone_Verb) {
                 const int count = SkPathPriv::PtsInIter(verb);
-                if (!SkScalarsAreFinite(&pts[0].fX, count*2)) {
+                if (!SkIsFinite(&pts[0].fX, count*2)) {
                     rec->fIsFinite = false;
                     return;
                 }
@@ -319,45 +295,53 @@ int SkEdgeBuilder::build(const SkPath& path, const SkIRect* iclip, bool canCullT
                 }
             }
         }, &rec);
-        is_finite = rec.fIsFinite;
-    } else {
-        auto handle_quad = [this](const SkPoint pts[3]) {
-            SkPoint monoX[5];
-            int n = SkChopQuadAtYExtrema(pts, monoX);
-            for (int i = 0; i <= n; i++) {
-                this->addQuad(&monoX[i * 2]);
+        fEdgeList = fList.begin();
+        return rec.fIsFinite ? fList.size() : 0;
+    }
+
+    SkPathEdgeIter iter(path);
+    SkAutoConicToQuads quadder;
+    constexpr float kConicTol = 0.25f;
+    SkPoint monoY[10];
+    SkPoint monoX[5];
+    auto handle_quad = [this, &monoX](const SkPoint pts[3]) {
+        int n = SkChopQuadAtYExtrema(pts, monoX);
+        for (int i = 0; i <= n; i++) {
+            this->addQuad(&monoX[i * 2]);
+        }
+    };
+
+    while (auto e = iter.next()) {
+        switch (e.fEdge) {
+            case SkPathEdgeIter::Edge::kLine:
+                this->addLine(e.fPts);
+                break;
+            case SkPathEdgeIter::Edge::kQuad: {
+                handle_quad(e.fPts);
+                break;
             }
-        };
-        while (auto e = iter.next()) {
-            switch (e.fEdge) {
-                case SkPathEdgeIter::Edge::kLine:
-                    this->addLine(e.fPts);
-                    break;
-                case SkPathEdgeIter::Edge::kQuad: {
-                    handle_quad(e.fPts);
-                    break;
+            case SkPathEdgeIter::Edge::kConic: {
+                const SkPoint* quadPts =
+                        quadder.computeQuads(e.fPts, iter.conicWeight(), kConicTol);
+                for (int i = 0; i < quadder.countQuads(); ++i) {
+                    handle_quad(quadPts);
+                    quadPts += 2;
                 }
-                case SkPathEdgeIter::Edge::kConic: {
-                    const SkPoint* quadPts = quadder.computeQuads(
-                                          e.fPts, iter.conicWeight(), conicTol);
-                    for (int i = 0; i < quadder.countQuads(); ++i) {
-                        handle_quad(quadPts);
-                        quadPts += 2;
-                    }
-                } break;
-                case SkPathEdgeIter::Edge::kCubic: {
-                    SkPoint monoY[10];
-                    int n = SkChopCubicAtYExtrema(e.fPts, monoY);
-                    for (int i = 0; i <= n; i++) {
-                        this->addCubic(&monoY[i * 3]);
-                    }
-                    break;
+            } break;
+            case SkPathEdgeIter::Edge::kCubic: {
+                int n = SkChopCubicAtYExtrema(e.fPts, monoY);
+                for (int i = 0; i <= n; i++) {
+                    this->addCubic(&monoY[i * 3]);
                 }
+                break;
             }
+            default:
+                SkDEBUGFAIL("Unknown edge type");
+                break;
         }
     }
     fEdgeList = fList.begin();
-    return is_finite ? fList.count() : 0;
+    return fList.size();
 }
 
 int SkEdgeBuilder::buildEdges(const SkPath& path,

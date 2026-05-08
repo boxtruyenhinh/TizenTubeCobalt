@@ -13,7 +13,7 @@ yo{
         }
         ALL{
             "ALL",
-            "Lẹ́kẹ̀ Àlìbéníà",
+            "Lẹ́ẹ̀kì Àlìbáníà",
         }
         AMD{
             "AMD",
@@ -113,7 +113,7 @@ yo{
         }
         CHF{
             "CHF",
-            "Faransi ti Orílẹ́ède Siwisi",
+            "Faransí Síwíìsì",
         }
         CLP{
             "CLP",
@@ -209,7 +209,7 @@ yo{
         }
         GIP{
             "GIP",
-            "Pọ́n-ùn Gibraltar",
+            "Pọ́n-ùn Gibúrátà",
         }
         GMD{
             "GMD",
@@ -241,7 +241,7 @@ yo{
         }
         HRK{
             "HRK",
-            "Kúnà Croatian",
+            "Kúnà Kúróṣíà",
         }
         HTG{
             "HTG",
@@ -425,7 +425,7 @@ yo{
         }
         NOK{
             "NOK",
-            "Kírónì Nọ́ọ́wè",
+            "kórónì Nọ́wè",
         }
         NPR{
             "NPR",
@@ -452,7 +452,7 @@ yo{
             "Kínà Papua Guinea Tuntun",
         }
         PHP{
-            "PHP",
+            "₱",
             "Písò Fílípìnì",
         }
         PKR{
@@ -519,9 +519,13 @@ yo{
             "SHP",
             "Pọ́n-un Elena",
         }
+        SLE{
+            "SLE",
+            "Líónì Sira Líonì",
+        }
         SLL{
             "SLL",
-            "Líónì Sira Líonì",
+            "Líónì Sira Líonì (1964—2022)",
         }
         SOS{
             "SOS",
@@ -632,7 +636,7 @@ yo{
             "Dọ́là Ilà Oòrùn Karíbíà",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "Faransì ìwọ̀-oorùn Afíríkà",
         }
         XPF{
@@ -663,9 +667,6 @@ yo{
             "ZWD",
             "Dọla ti Orílẹ́ède Siibabuwe",
         }
-    }
-    Currencies%narrow{
-        KRW{"₩"}
     }
     CurrencyPlurals{
         ALL{
@@ -777,7 +778,7 @@ yo{
             other{"àwọn sídì Gana"}
         }
         GIP{
-            other{"àwọn pọ́n-ùn Gibraltar"}
+            other{"àwọn pọ́n-ùn Gibúrátà"}
         }
         GMD{
             other{"àwọn dalasi Gamibia"}
@@ -795,7 +796,7 @@ yo{
             other{"àwọn Lẹmipírà Ọ́ńdúrà"}
         }
         HRK{
-            other{"àwọn kúnà Croatian"}
+            other{"àwọn kúnà Kúróṣíà"}
         }
         HTG{
             other{"àwọn gọ́dì Àítì"}
@@ -804,7 +805,7 @@ yo{
             other{"àwọn fọ́ríǹtì Họ̀ngérí"}
         }
         ISK{
-            other{"kòrónà aílandíìkì"}
+            other{"kórónọ̀ Áílándíìkì"}
         }
         JMD{
             other{"àwọn dọ́là Jàmáíkà"}
@@ -820,6 +821,9 @@ yo{
         }
         LRD{
             other{"àwọn dọla Liberia"}
+        }
+        LSL{
+            other{"Lótì ti Lẹ̀sótò"}
         }
         LYD{
             other{"àwọn dínà Líbíyà"}
@@ -851,14 +855,11 @@ yo{
         NAD{
             other{"àwọn dọla Namibíà"}
         }
-        NGN{
-            other{"Náírà Nàìjíríà"}
-        }
         NIO{
             other{"àwọn kọ̀dóbà Naikarágúà"}
         }
         NOK{
-            other{"kìrónà Nọ́ọ́wè"}
+            other{"kórónà Nọ́wè"}
         }
         PAB{
             other{"àwọn bálíbóà Pànámà"}
@@ -878,9 +879,6 @@ yo{
         RSD{
             other{"àwọn dínárì Sàbíà"}
         }
-        RUB{
-            other{"Owó ruble ti ilẹ̀ Rọ́ṣíà"}
-        }
         RWF{
             other{"àwọn faransi Ruwanda"}
         }
@@ -896,8 +894,11 @@ yo{
         SHP{
             other{"àwọn pọ́n-un Elena"}
         }
-        SLL{
+        SLE{
             other{"àwọn líónì Sira Líonì"}
+        }
+        SLL{
+            other{"àwọn líónì Sira Líonì (1964—2022)"}
         }
         SOS{
             other{"àwọ́n ṣílè Somali"}
@@ -923,9 +924,6 @@ yo{
         UGX{
             other{"àwọn ṣile Uganda"}
         }
-        USD{
-            other{"Dọ́là ti Orílẹ̀-Èdè Amẹ́ríkà"}
-        }
         UYU{
             other{"àwọn pẹ́sò Úrúgúwè"}
         }
@@ -940,9 +938,6 @@ yo{
         }
         XOF{
             other{"àwọn faransì ìwọ̀-oorùn Afíríkà"}
-        }
-        XXX{
-            other{"owóníná àìmọ̀"}
         }
         ZAR{
             other{"rándì Gúúsù Afíríkà"}

@@ -16,28 +16,16 @@
 #include <cstdlib>
 #include <string>
 
-#if SB_API_VERSION < 16
-#include "starboard/accessibility.h"
-#else  // SB_API_VERSION < 16
+#include "cobalt/android/jni_headers/CaptionSettings_jni.h"
 #include "starboard/android/shared/accessibility_extension.h"
-#endif  // SB_API_VERSION < 16
-#include "starboard/android/shared/jni_env_ext.h"
-#include "starboard/android/shared/jni_utils.h"
+#include "starboard/android/shared/starboard_bridge.h"
 #include "starboard/common/log.h"
 #include "starboard/common/memory.h"
 #include "starboard/configuration.h"
 #include "starboard/shared/starboard/accessibility_internal.h"
+#include "third_party/jni_zero/jni_zero.h"
 
 namespace starboard {
-namespace android {
-namespace shared {
-namespace accessibility {
-
-using starboard::android::shared::JniEnvExt;
-using starboard::android::shared::ScopedLocalJavaRef;
-using starboard::shared::starboard::GetClosestCaptionColor;
-using starboard::shared::starboard::GetClosestFontSizePercentage;
-using starboard::shared::starboard::GetClosestOpacity;
 
 namespace {
 
@@ -60,28 +48,6 @@ SbAccessibilityCaptionCharacterEdgeStyle AndroidEdgeTypeToSbEdgeStyle(
   }
 }
 
-SbAccessibilityCaptionFontFamily AndroidFontFamilyToSbFontFamily(int family) {
-  switch (family) {
-    case 0:
-      return kSbAccessibilityCaptionFontFamilyCasual;
-    case 1:
-      return kSbAccessibilityCaptionFontFamilyCursive;
-    case 2:
-      return kSbAccessibilityCaptionFontFamilyMonospaceSansSerif;
-    case 3:
-      return kSbAccessibilityCaptionFontFamilyMonospaceSerif;
-    case 4:
-      return kSbAccessibilityCaptionFontFamilyProportionalSansSerif;
-    case 5:
-      return kSbAccessibilityCaptionFontFamilyProportionalSerif;
-    case 6:
-      return kSbAccessibilityCaptionFontFamilySmallCapitals;
-    default:
-      SB_NOTREACHED() << "Invalid font family conversion";
-      return kSbAccessibilityCaptionFontFamilyCasual;
-  }
-}
-
 SbAccessibilityCaptionState BooleanToCaptionState(bool is_set) {
   if (is_set) {
     return kSbAccessibilityCaptionStateSet;
@@ -90,19 +56,15 @@ SbAccessibilityCaptionState BooleanToCaptionState(bool is_set) {
   }
 }
 
-void SetColorProperties(jobject j_caption_settings,
-                        const char* color_field,
-                        const char* has_color_field,
+void SetColorProperties(jint j_color,
+                        bool has_color,
                         SbAccessibilityCaptionColor* color,
                         SbAccessibilityCaptionState* color_state,
                         SbAccessibilityCaptionOpacityPercentage* opacity,
                         SbAccessibilityCaptionState* opacity_state) {
-  JniEnvExt* env = JniEnvExt::Get();
-  jint j_color = env->GetIntFieldOrAbort(j_caption_settings, color_field, "I");
   *color = GetClosestCaptionColor(j_color);
   *opacity = GetClosestOpacity((0xFF & (j_color >> 24)) * 100 / 255);
-  *color_state = BooleanToCaptionState(
-      env->GetBooleanFieldOrAbort(j_caption_settings, has_color_field, "Z"));
+  *color_state = BooleanToCaptionState(has_color);
   // Color and opacity are combined into a single ARGB value.
   // Therefore, if the color is set, so is the opacity.
   *opacity_state = *color_state;
@@ -112,19 +74,18 @@ void SetColorProperties(jobject j_caption_settings,
 
 bool GetCaptionSettings(SbAccessibilityCaptionSettings* caption_settings) {
   if (!caption_settings ||
-      !starboard::common::MemoryIsZero(
-          caption_settings, sizeof(SbAccessibilityCaptionSettings))) {
+      !MemoryIsZero(caption_settings, sizeof(SbAccessibilityCaptionSettings))) {
     return false;
   }
 
-  JniEnvExt* env = JniEnvExt::Get();
+  JNIEnv* env = jni_zero::AttachCurrentThread();
 
-  ScopedLocalJavaRef<jobject> j_caption_settings(
-      env->CallStarboardObjectMethodOrAbort(
-          "getCaptionSettings", "()Ldev/cobalt/coat/CaptionSettings;"));
+  auto j_caption_settings =
+      StarboardBridge::GetInstance()->GetCaptionSettings(env);
+  SB_CHECK(j_caption_settings);
 
   jfloat font_scale =
-      env->GetFloatFieldOrAbort(j_caption_settings.Get(), "fontScale", "F");
+      Java_CaptionSettings_getFontScale(env, j_caption_settings);
   caption_settings->font_size =
       GetClosestFontSizePercentage(100.0 * font_scale);
   // Android's captioning API always returns a font scale of 1 (100%) if
@@ -137,45 +98,37 @@ bool GetCaptionSettings(SbAccessibilityCaptionSettings* caption_settings) {
   caption_settings->font_family_state = kSbAccessibilityCaptionStateUnsupported;
 
   caption_settings->character_edge_style = AndroidEdgeTypeToSbEdgeStyle(
-      env->GetIntFieldOrAbort(j_caption_settings.Get(), "edgeType", "I"));
-  caption_settings->character_edge_style_state =
-      BooleanToCaptionState(env->GetBooleanFieldOrAbort(
-          j_caption_settings.Get(), "hasEdgeType", "Z"));
+      Java_CaptionSettings_getEdgeType(env, j_caption_settings));
+  caption_settings->character_edge_style_state = BooleanToCaptionState(
+      Java_CaptionSettings_hasEdgeType(env, j_caption_settings));
 
   SetColorProperties(
-      j_caption_settings.Get(), "foregroundColor", "hasForegroundColor",
+      Java_CaptionSettings_getForegroundColor(env, j_caption_settings),
+      Java_CaptionSettings_hasForegroundColor(env, j_caption_settings),
       &caption_settings->font_color, &caption_settings->font_color_state,
       &caption_settings->font_opacity, &caption_settings->font_opacity_state);
 
-  SetColorProperties(j_caption_settings.Get(), "backgroundColor",
-                     "hasBackgroundColor", &caption_settings->background_color,
-                     &caption_settings->background_color_state,
-                     &caption_settings->background_opacity,
-                     &caption_settings->background_opacity_state);
+  SetColorProperties(
+      Java_CaptionSettings_getBackgroundColor(env, j_caption_settings),
+      Java_CaptionSettings_hasBackgroundColor(env, j_caption_settings),
+      &caption_settings->background_color,
+      &caption_settings->background_color_state,
+      &caption_settings->background_opacity,
+      &caption_settings->background_opacity_state);
 
-  SetColorProperties(j_caption_settings.Get(), "windowColor", "hasWindowColor",
-                     &caption_settings->window_color,
-                     &caption_settings->window_color_state,
-                     &caption_settings->window_opacity,
-                     &caption_settings->window_opacity_state);
+  SetColorProperties(
+      Java_CaptionSettings_getWindowColor(env, j_caption_settings),
+      Java_CaptionSettings_hasWindowColor(env, j_caption_settings),
+      &caption_settings->window_color, &caption_settings->window_color_state,
+      &caption_settings->window_opacity,
+      &caption_settings->window_opacity_state);
 
   caption_settings->is_enabled =
-      env->GetBooleanFieldOrAbort(j_caption_settings.Get(), "isEnabled", "Z");
+      Java_CaptionSettings_isEnabled(env, j_caption_settings);
   caption_settings->supports_is_enabled = true;
   caption_settings->supports_set_enabled = false;
 
   return true;
 }
 
-}  // namespace accessibility
-}  // namespace shared
-}  // namespace android
 }  // namespace starboard
-
-#if SB_API_VERSION < 16
-bool SbAccessibilityGetCaptionSettings(
-    SbAccessibilityCaptionSettings* caption_settings) {
-  return starboard::android::shared::accessibility::GetCaptionSettings(
-      caption_settings);
-}
-#endif  // SB_API_VERSION < 16

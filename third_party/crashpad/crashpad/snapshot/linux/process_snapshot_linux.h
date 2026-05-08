@@ -1,4 +1,4 @@
-// Copyright 2017 The Crashpad Authors. All rights reserved.
+// Copyright 2017 The Crashpad Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@
 #include <string>
 #include <vector>
 
-#include "base/macros.h"
+#include "build/build_config.h"
 #include "snapshot/crashpad_info_client_options.h"
 #include "snapshot/elf/module_snapshot_elf.h"
 #include "snapshot/linux/exception_snapshot_linux.h"
@@ -42,11 +42,10 @@
 #include "util/process/process_id.h"
 #include "util/process/process_memory_range.h"
 
-#if defined(STARBOARD) || defined(NATIVE_TARGET_BUILD)
+#if BUILDFLAG(IS_NATIVE_TARGET)
 #include "snapshot/module_snapshot_evergreen.h"
 #include "starboard/elf_loader/evergreen_info.h"
-#include "third_party/crashpad/crashpad/util/linux/exception_handler_protocol.h"
-#endif
+#endif  // BUILDFLAG(IS_NATIVE_TARGET)
 
 namespace crashpad {
 
@@ -55,6 +54,10 @@ namespace crashpad {
 class ProcessSnapshotLinux final : public ProcessSnapshot {
  public:
   ProcessSnapshotLinux();
+
+  ProcessSnapshotLinux(const ProcessSnapshotLinux&) = delete;
+  ProcessSnapshotLinux& operator=(const ProcessSnapshotLinux&) = delete;
+
   ~ProcessSnapshotLinux() override;
 
   //! \brief Initializes the object.
@@ -65,23 +68,18 @@ class ProcessSnapshotLinux final : public ProcessSnapshot {
   //!     an appropriate message logged.
   bool Initialize(PtraceConnection* connection);
 
-#if defined(STARBOARD) || defined(NATIVE_TARGET_BUILD)
+#if BUILDFLAG(IS_NATIVE_TARGET)
   //! \brief Initializes the object with Evergreen information.
   //!
   //! \param[in] connection A connection to the process to snapshot.
   //! \param[in] evergreen_information_address An address sent to the handler
   //!     server that points to a populated EvergreenInfo struct.
-  //! \param[in] annotations_address An address sent to the handler server that
-  //!     that points to a populated CrashpadAnnotations struct.
   //!
   //! \return `true` if the snapshot could be created, `false` otherwise with
   //!     an appropriate message logged.
   bool Initialize(PtraceConnection* connnection,
-                  VMAddress evergreen_information_address,
-                  VMAddress serialized_annotations_address,
-                  int serialized_annotations_size,
-                  ExceptionHandlerProtocol::HandlerStartType handler_start_type);
-#endif
+                  VMAddress evergreen_information_address);
+#endif  // BUILDFLAG(IS_NATIVE_TARGET)
 
   //! \brief Finds the thread whose stack contains \a stack_address.
   //!
@@ -124,8 +122,7 @@ class ProcessSnapshotLinux final : public ProcessSnapshot {
   //! android_set_abort_message() function. Contrast this with module
   //! annotations, which are under the control of the process being snapshotted.
   void AddAnnotation(const std::string& key, const std::string& value) {
-    if (annotations_simple_map_.find(key) == annotations_simple_map_.end())
-      annotations_simple_map_[key] = value;
+    annotations_simple_map_[key] = value;
   }
 
   //! \brief Returns options from CrashpadInfo structures found in modules in
@@ -159,12 +156,13 @@ class ProcessSnapshotLinux final : public ProcessSnapshot {
  private:
   void InitializeThreads();
   void InitializeModules();
-#if defined(STARBOARD) || defined(NATIVE_TARGET_BUILD)
+#if BUILDFLAG(IS_NATIVE_TARGET)
   void InitializeModules(VMAddress evergreen_information_address);
-  void AddAnnotations(VMAddress serialized_annotations_address,
-                      int serialized_annotations_size);
 #endif
   void InitializeAnnotations();
+
+  // Initializes options_ on behalf of Initialize().
+  void GetCrashpadOptionsInternal(CrashpadInfoClientOptions* options);
 
   std::map<std::string, std::string> annotations_simple_map_;
   timeval snapshot_time_;
@@ -172,16 +170,15 @@ class ProcessSnapshotLinux final : public ProcessSnapshot {
   UUID client_id_;
   std::vector<std::unique_ptr<internal::ThreadSnapshotLinux>> threads_;
   std::vector<std::unique_ptr<internal::ModuleSnapshotElf>> modules_;
-#if defined(STARBOARD) || defined(NATIVE_TARGET_BUILD)
+#if BUILDFLAG(IS_NATIVE_TARGET)
   std::unique_ptr<internal::ModuleSnapshotEvergreen> evergreen_module_;
 #endif
   std::unique_ptr<internal::ExceptionSnapshotLinux> exception_;
   internal::SystemSnapshotLinux system_;
   ProcessReaderLinux process_reader_;
   ProcessMemoryRange memory_range_;
+  CrashpadInfoClientOptions options_;
   InitializationStateDcheck initialized_;
-
-  DISALLOW_COPY_AND_ASSIGN(ProcessSnapshotLinux);
 };
 
 }  // namespace crashpad

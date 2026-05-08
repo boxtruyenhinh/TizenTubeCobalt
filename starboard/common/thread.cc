@@ -19,39 +19,48 @@
 #include <pthread.h>
 #include <unistd.h>
 
-#include "starboard/common/atomic.h"
+#include <atomic>
+#include <optional>
+#include <string>
+#include <string_view>
+
+#include "starboard/common/check_op.h"
 #include "starboard/common/log.h"
-#include "starboard/common/mutex.h"
-#include "starboard/common/optional.h"
 #include "starboard/common/semaphore.h"
+#include "starboard/common/thread_platform.h"
+#include "starboard/system.h"
 
 namespace starboard {
 
 struct Thread::Data {
-  std::string name_;
   pthread_t thread_ = 0;
-  atomic_bool started_;
-  atomic_bool join_called_;
+  std::atomic_bool started_{false};
+  std::atomic_bool join_called_{false};
   Semaphore join_sema_;
 };
 
-Thread::Thread(const std::string& name) {
-  d_.reset(new Thread::Data);
-  d_->name_ = name;
-}
+Thread::Thread(std::string_view name, const ThreadOptions& options)
+    : name_(name), priority_(options.priority), d_(std::make_unique<Data>()) {}
 
 Thread::~Thread() {
-  SB_DCHECK(d_->join_called_.load()) << "Join not called on thread.";
+  // A started thread must be joined before destruction.
+  if (d_->started_.load()) {
+    SB_DCHECK(d_->join_called_.load())
+        << "Thread '" << name_ << "' was not joined before destruction.";
+  }
 }
 
 void Thread::Start() {
   SB_DCHECK(!d_->started_.load());
   d_->started_.store(true);
 
-  pthread_create(&d_->thread_, NULL, ThreadEntryPoint, this);
+  pthread_attr_t attributes;
+  pthread_attr_init(&attributes);
 
-  // pthread_create() above produced an invalid thread handle.
-  SB_DCHECK(d_->thread_ != 0);
+  const int result =
+      pthread_create(&d_->thread_, &attributes, ThreadEntryPoint, this);
+  pthread_attr_destroy(&attributes);
+  SB_CHECK_EQ(result, 0);
 }
 
 void Thread::Sleep(int64_t microseconds) {
@@ -74,25 +83,56 @@ starboard::Semaphore* Thread::join_sema() {
   return &d_->join_sema_;
 }
 
-starboard::atomic_bool* Thread::joined_bool() {
+std::atomic_bool* Thread::joined_bool() {
   return &d_->join_called_;
 }
 
 void* Thread::ThreadEntryPoint(void* context) {
   Thread* this_ptr = static_cast<Thread*>(context);
-  pthread_setname_np(pthread_self(), this_ptr->d_->name_.c_str());
+
+#if defined(__APPLE__)
+  pthread_setname_np(this_ptr->name_.c_str());
+#else
+  pthread_setname_np(pthread_self(), this_ptr->name_.c_str());
+#endif
+  bool priority_set = false;
+  if (this_ptr->priority_) {
+    priority_set = SbThreadSetPriority(*this_ptr->priority_);
+    if (!priority_set) {
+      SB_LOG(WARNING) << "Failed to set thread priority (unsupported on this "
+                         "platform): requested_priority="
+                      << static_cast<int>(*this_ptr->priority_);
+    }
+  }
+  SB_LOG(INFO) << "Thread started: name=" << this_ptr->name_ << ", priority="
+               << (this_ptr->priority_ && priority_set
+                       ? std::to_string(static_cast<int>(*this_ptr->priority_))
+                       : "(default)");
+
   this_ptr->Run();
-  return NULL;
+
+  TerminateOnThread();
+  return nullptr;
 }
 
 void Thread::Join() {
-  SB_DCHECK(d_->join_called_.load() == false);
+  SB_DCHECK_EQ(d_->join_called_.load(), false);
 
   d_->join_called_.store(true);
   d_->join_sema_.Put();
 
-  if (pthread_join(d_->thread_, NULL) != 0) {
-    SB_DCHECK(false) << "Could not join thread.";
+  if (!d_->started_.load()) {
+    SB_LOG(WARNING) << "Join() called on thread '" << name_
+                    << "' which was not started. Ignoring.";
+    return;
+  }
+
+  int result = pthread_join(d_->thread_, /*retval=*/nullptr);
+  if (result != 0) {
+    char error_msg[256];
+    SbSystemGetErrorString(static_cast<SbSystemError>(result), error_msg,
+                           sizeof(error_msg));
+    SB_CHECK_EQ(result, 0) << "Could not join thread: " << error_msg;
   }
 }
 

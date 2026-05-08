@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -33,6 +34,10 @@ class CdmPromiseTemplate;
 typedef CdmPromiseTemplate<std::string> NewSessionCdmPromise;
 typedef CdmPromiseTemplate<> SimpleCdmPromise;
 typedef CdmPromiseTemplate<CdmKeyInformation::KeyStatus> KeyStatusCdmPromise;
+#if BUILDFLAG(USE_STARBOARD_MEDIA)
+typedef CdmPromiseTemplate<std::string> GetMetricsCdmPromise;
+#endif // BUILDFLAG(USE_STARBOARD_MEDIA)
+
 
 typedef std::vector<std::unique_ptr<CdmKeyInformation>> CdmKeysInfo;
 
@@ -109,6 +114,8 @@ class MEDIA_EXPORT ContentDecryptionModule
     : public base::RefCountedThreadSafe<ContentDecryptionModule,
                                         ContentDecryptionModuleTraits> {
  public:
+  REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE();
+
   ContentDecryptionModule(const ContentDecryptionModule&) = delete;
   ContentDecryptionModule& operator=(const ContentDecryptionModule&) = delete;
 
@@ -180,6 +187,10 @@ class MEDIA_EXPORT ContentDecryptionModule
   // specific thread.
   virtual void DeleteOnCorrectThread() const;
 
+#if BUILDFLAG(USE_STARBOARD_MEDIA)
+  virtual void GetMetrics(std::unique_ptr<GetMetricsCdmPromise> promise);
+#endif // BUILDFLAG(USE_STARBOARD_MEDIA)
+
  protected:
   friend class base::RefCountedThreadSafe<ContentDecryptionModule,
                                           ContentDecryptionModuleTraits>;
@@ -192,6 +203,11 @@ struct MEDIA_EXPORT ContentDecryptionModuleTraits {
   // Destroys |cdm| on the correct thread.
   static void Destruct(const ContentDecryptionModule* cdm);
 };
+
+// Try to convert `hdcp_version_string` to `HdcpVersion`. Returns std::nullopt
+// on failure.
+MEDIA_EXPORT std::optional<media::HdcpVersion> MaybeHdcpVersionFromString(
+    const std::string& hdcp_version_string);
 
 // CDM session event callbacks.
 
@@ -206,7 +222,7 @@ using SessionMessageCB =
 // CDM may close a session at any point, such as in response to a CloseSession()
 // call, when the session is no longer needed, or when system resources are
 // lost, as specified by `reason`.
-// See http://w3c.github.io/encrypted-media/#session-close
+// See http://w3c.github.io/encrypted-media/#session-closed
 using SessionClosedCB =
     base::RepeatingCallback<void(const std::string& session_id,
                                  CdmSessionClosedReason reason)>;

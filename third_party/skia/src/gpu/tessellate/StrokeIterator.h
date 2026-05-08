@@ -5,15 +5,22 @@
  * found in the LICENSE file.
  */
 
-#ifndef tessellate_StrokeIterator_DEFINED
-#define tessellate_StrokeIterator_DEFINED
+#ifndef skgpu_tessellate_StrokeIterator_DEFINED
+#define skgpu_tessellate_StrokeIterator_DEFINED
 
+#include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkPathTypes.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkStrokeRec.h"
+#include "include/private/base/SkAssert.h"
 #include "src/core/SkPathPriv.h"
+
 #include <array>
 
-namespace skgpu {
+class SkPath;
+
+namespace skgpu::tess {
 
 // This class iterates over the stroke geometry defined by a path and stroke. It automatically
 // converts closes and square caps to lines, and round caps to circles so the user doesn't have to
@@ -366,8 +373,6 @@ private:
     std::array<SkPoint, 2> fBeginningCapPts;
 };
 
-}  // namespace skgpu
+}  // namespace skgpu::tess
 
-#endif  // tessellate_StrokeIterator_DEFINED
-
-
+#endif  // skgpu_tessellate_StrokeIterator_DEFINED

@@ -14,21 +14,21 @@
 
 #include "starboard/shared/starboard/audio_sink/stub_audio_sink_type.h"
 
-#include <pthread.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <memory>
+#include <mutex>
 
-#include "starboard/common/mutex.h"
+#include "starboard/common/check_op.h"
+#include "starboard/common/thread_options.h"
 #include "starboard/common/time.h"
 #include "starboard/configuration.h"
 #include "starboard/configuration_constants.h"
-#include "starboard/shared/pthread/thread_create_priority.h"
+#include "starboard/shared/starboard/player/job_thread.h"
+#include "starboard/thread.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace audio_sink {
 namespace {
 
 class StubAudioSink : public SbAudioSinkPrivate {
@@ -46,7 +46,6 @@ class StubAudioSink : public SbAudioSinkPrivate {
   void SetVolume(double volume) override {}
 
  private:
-  static void* ThreadEntryPoint(void* context);
   void AudioThreadFunc();
 
   Type* type_;
@@ -55,10 +54,10 @@ class StubAudioSink : public SbAudioSinkPrivate {
   ConsumeFramesFunc consume_frames_func_;
   void* context_;
 
-  pthread_t audio_out_thread_;
-  ::starboard::Mutex mutex_;
+  const std::unique_ptr<JobThread> audio_out_thread_;
 
-  bool destroying_;
+  std::mutex mutex_;
+  bool destroying_ = false;  // Guarded by |mutex_|.
 };
 
 StubAudioSink::StubAudioSink(
@@ -72,31 +71,20 @@ StubAudioSink::StubAudioSink(
       update_source_status_func_(update_source_status_func),
       consume_frames_func_(consume_frames_func),
       context_(context),
-      audio_out_thread_(0),
-      destroying_(false) {
-  pthread_create(&audio_out_thread_, nullptr, &StubAudioSink::ThreadEntryPoint,
-                 this);
-  SB_DCHECK(audio_out_thread_ != 0);
+      audio_out_thread_(JobThread::Create(
+          "stub_audio_out",
+          ThreadOptions().SetPriority(kSbThreadPriorityRealTime))) {
+  SB_CHECK(audio_out_thread_);
+
+  audio_out_thread_->Schedule([this] { AudioThreadFunc(); });
 }
 
 StubAudioSink::~StubAudioSink() {
   {
-    ScopedLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     destroying_ = true;
   }
-  pthread_join(audio_out_thread_, NULL);
-}
-
-// static
-void* StubAudioSink::ThreadEntryPoint(void* context) {
-  pthread_setname_np(pthread_self(), "stub_audio_out");
-  shared::pthread::ThreadSetPriority(kSbThreadPriorityRealTime);
-
-  SB_DCHECK(context);
-  StubAudioSink* sink = reinterpret_cast<StubAudioSink*>(context);
-  sink->AudioThreadFunc();
-
-  return NULL;
+  audio_out_thread_->Stop();
 }
 
 void StubAudioSink::AudioThreadFunc() {
@@ -104,7 +92,7 @@ void StubAudioSink::AudioThreadFunc() {
 
   for (;;) {
     {
-      ScopedLock lock(mutex_);
+      std::lock_guard lock(mutex_);
       if (destroying_) {
         break;
       }
@@ -144,7 +132,4 @@ SbAudioSink StubAudioSinkType::Create(
                            context);
 }
 
-}  // namespace audio_sink
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

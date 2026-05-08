@@ -16,6 +16,14 @@ es_PY{
     }
     calendar{
         gregorian{
+            AmPmMarkers{
+                "a. m.",
+                "p. m.",
+            }
+            AmPmMarkersAbbr{
+                "a. m.",
+                "p. m.",
+            }
             dayNames{
                 format{
                     short{
@@ -42,8 +50,18 @@ es_PY{
             }
             dayPeriod{
                 stand-alone{
+                    abbreviated{
+                        am{"a. m."}
+                        pm{"p. m."}
+                    }
                     narrow{
+                        am{"a. m."}
                         noon{"m."}
+                        pm{"p. m."}
+                    }
+                    wide{
+                        am{"a. m."}
+                        pm{"p. m."}
                     }
                 }
             }
@@ -53,13 +71,13 @@ es_PY{
                     d{"d/M 'al' d/M"}
                 }
                 h{
-                    a{"h a 'a' h a"}
-                    h{"h 'a' h a"}
+                    a{"h a 'a' h a"}
+                    h{"h 'a' h a"}
                 }
                 hm{
-                    a{"h:mm a 'a' h:mm a"}
-                    h{"h:mm 'a' h:mm a"}
-                    m{"h:mm 'a' h:mm a"}
+                    a{"h:mm a 'a' h:mm a"}
+                    h{"h:mm 'a' h:mm a"}
+                    m{"h:mm 'a' h:mm a"}
                 }
                 yMMM{
                     M{"MMM 'a' MMM y"}
@@ -95,22 +113,6 @@ es_PY{
                         "dic.",
                     }
                 }
-                stand-alone{
-                    abbreviated{
-                        "ene.",
-                        "feb.",
-                        "mar.",
-                        "abr.",
-                        "may.",
-                        "jun.",
-                        "jul.",
-                        "ago.",
-                        "sept.",
-                        "oct.",
-                        "nov.",
-                        "dic.",
-                    }
-                }
             }
         }
     }
@@ -120,18 +122,6 @@ es_PY{
                 "-1"{"el lun. pasado"}
                 "0"{"este lun."}
                 "1"{"el próximo lun."}
-            }
-        }
-        second-narrow{
-            relativeTime{
-                future{
-                    one{"dentro de {0} seg."}
-                    other{"dentro de {0} seg."}
-                }
-                past{
-                    one{"hace {0} seg."}
-                    other{"hace {0} seg."}
-                }
             }
         }
         second-short{

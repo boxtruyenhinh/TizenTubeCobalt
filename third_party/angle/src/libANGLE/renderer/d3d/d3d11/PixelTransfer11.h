@@ -15,18 +15,15 @@
 
 #include <map>
 
+#include <libANGLE/angletypes.h>
 #include "common/platform.h"
 #include "libANGLE/Error.h"
 #include "libANGLE/renderer/d3d/d3d11/ResourceManager11.h"
 
 namespace gl
 {
-
 class Buffer;
-struct Box;
-struct Extents;
-struct PixelUnpackState;
-
+class Context;
 }  // namespace gl
 
 namespace rx
@@ -47,6 +44,7 @@ class PixelTransfer11
     // destArea: the sub-section of destRenderTarget to copy to
     angle::Result copyBufferToTexture(const gl::Context *context,
                                       const gl::PixelUnpackState &unpack,
+                                      gl::Buffer *unpackBuffer,
                                       unsigned int offset,
                                       RenderTargetD3D *destRenderTarget,
                                       GLenum destinationFormat,

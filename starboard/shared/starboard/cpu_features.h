@@ -23,7 +23,6 @@
 #include "starboard/cpu_features.h"
 
 namespace starboard {
-namespace shared {
 
 // Set the general features of SbCPUFeatures to be invalid
 inline void SetGeneralFeaturesInvalid(SbCPUFeatures* features) {
@@ -55,7 +54,6 @@ inline void SetArmFeaturesInvalid(SbCPUFeatures* features) {
   features->arm.part = -1;
 }
 
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_STARBOARD_CPU_FEATURES_H_

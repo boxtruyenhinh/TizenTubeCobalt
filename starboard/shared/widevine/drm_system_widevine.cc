@@ -15,17 +15,19 @@
 #include "starboard/shared/widevine/drm_system_widevine.h"
 
 #include <algorithm>
+#include <mutex>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "build/build_config.h"
+#include "starboard/common/check_op.h"
 #include "starboard/common/instance_counter.h"
 #include "starboard/common/log.h"
-#include "starboard/common/mutex.h"
 #include "starboard/common/once.h"
 #include "starboard/common/string.h"
 #include "starboard/common/time.h"
 #include "starboard/configuration_constants.h"
-#include "starboard/memory.h"
 #include "starboard/shared/starboard/application.h"
 #include "starboard/shared/starboard/media/mime_type.h"
 #include "starboard/shared/widevine/widevine_storage.h"
@@ -36,8 +38,6 @@
 using wv3cdm = ::widevine::Cdm;
 
 namespace starboard {
-namespace shared {
-namespace widevine {
 namespace {
 
 const int kInitializationVectorSize = 16;
@@ -49,7 +49,7 @@ const char kWidevineStorageFileName[] = "wvcdm.dat";
 // get HDCP authentication complete. We set a timeout of 6 seconds for retries.
 const int64_t kUnblockKeyRetryTimeoutUsec = 6'000'000;
 
-DECLARE_INSTANCE_COUNTER(DrmSystemWidevine);
+DECLARE_INSTANCE_COUNTER(DrmSystemWidevine)
 
 class WidevineClock : public wv3cdm::IClock {
  public:
@@ -62,33 +62,33 @@ class Registry {
  public:
   void Register(SbDrmSystem drm_system) {
     SB_DCHECK(SbDrmSystemIsValid(drm_system));
-    ScopedLock scoped_lock(mutex_);
+    std::lock_guard scoped_lock(mutex_);
     auto iter = std::find(drm_systems_.begin(), drm_systems_.end(), drm_system);
     SB_DCHECK(iter == drm_systems_.end());
     drm_systems_.push_back(drm_system);
   }
 
   void Unregister(SbDrmSystem drm_system) {
-    ScopedLock scoped_lock(mutex_);
+    std::lock_guard scoped_lock(mutex_);
     auto iter = std::find(drm_systems_.begin(), drm_systems_.end(), drm_system);
     SB_DCHECK(iter != drm_systems_.end());
     drm_systems_.erase(iter);
   }
 
   bool Contains(SbDrmSystem drm_system) const {
-    ScopedLock scoped_lock(mutex_);
+    std::lock_guard scoped_lock(mutex_);
     auto iter = std::find(drm_systems_.begin(), drm_systems_.end(), drm_system);
     return iter != drm_systems_.end();
   }
 
  private:
-  Mutex mutex_;
+  mutable std::mutex mutex_;
   // Use std::vector<> as usually there is only one active instance of widevine
   // drm system.
   std::vector<SbDrmSystem> drm_systems_;
 };
 
-SB_ONCE_INITIALIZE_FUNCTION(Registry, GetRegistry);
+SB_ONCE_INITIALIZE_FUNCTION(Registry, GetRegistry)
 
 std::string GetWidevineStoragePath() {
   std::vector<char> path(kSbFileMaxPath + 1, 0);
@@ -154,7 +154,7 @@ SbDrmStatus CdmStatusToSbDrmStatus(const wv3cdm::Status status) {
   return kSbDrmStatusUnknownError;
 }
 
-SB_ONCE_INITIALIZE_FUNCTION(Mutex, GetInitializationMutex);
+SB_ONCE_INITIALIZE_FUNCTION(std::mutex, GetInitializationMutex)
 
 void EnsureWidevineCdmIsInitialized(const std::string& company_name,
                                     const std::string& model_name,
@@ -164,7 +164,7 @@ void EnsureWidevineCdmIsInitialized(const std::string& company_name,
   static WidevineTimer s_timer;
   static bool s_initialized = false;
 
-  ScopedLock scoped_lock(*GetInitializationMutex());
+  std::lock_guard scoped_lock(*GetInitializationMutex());
 
   if (s_initialized) {
     return;
@@ -187,13 +187,13 @@ void EnsureWidevineCdmIsInitialized(const std::string& company_name,
                << client_info.model_name << "\".";
 
   auto log_level = wv3cdm::kInfo;
-#if COBALT_BUILD_TYPE_GOLD
+#if BUILDFLAG(COBALT_IS_RELEASE_BUILD)
   log_level = wv3cdm::kSilent;
-#endif  // COBALT_BUILD_TYPE_GOLD
+#endif  // BUILDFLAG(COBALT_IS_RELEASE_BUILD)
   wv3cdm::Status status =
       wv3cdm::initialize(wv3cdm::kNoSecureOutput, client_info, storage,
                          &s_clock, &s_timer, log_level);
-  SB_DCHECK(status == wv3cdm::kSuccess);
+  SB_DCHECK_EQ(status, wv3cdm::kSuccess);
   s_initialized = true;
 }
 
@@ -224,9 +224,7 @@ DrmSystemWidevine::DrmSystemWidevine(
 
   ON_INSTANCE_CREATED(DrmSystemWidevine);
 
-#if !defined(COBALT_BUILD_TYPE_GOLD)
-  using shared::starboard::Application;
-
+#if !BUILDFLAG(COBALT_IS_RELEASE_BUILD)
   auto command_line = Application::Get()->GetCommandLine();
   auto value = command_line->GetSwitchValue("maximum_drm_session_updates");
   if (!value.empty()) {
@@ -234,7 +232,7 @@ DrmSystemWidevine::DrmSystemWidevine(
     SB_LOG(INFO) << "Limit drm session updates to "
                  << maximum_number_of_session_updates_;
   }
-#endif  // !defined(COBALT_BUILD_TYPE_GOLD)
+#endif  // !BUILDFLAG(COBALT_IS_RELEASE_BUILD)
 
   static WidevineStorage s_storage(GetWidevineStoragePath());
   EnsureWidevineCdmIsInitialized(company_name, model_name, &s_storage);
@@ -271,18 +269,19 @@ bool DrmSystemWidevine::IsKeySystemSupported(const char* key_system) {
   // It is possible that the |key_system| comes with extra attributes, like
   // `com.widevine.alpha; encryptionscheme="cenc"`.  We prepend "key_system/"
   // to it, so it can be parsed by MimeType.
-  starboard::media::MimeType mime_type(std::string("key_system/") + key_system);
+  auto mime_type =
+      starboard::MimeType::Create(std::string("key_system/") + key_system);
 
-  if (!mime_type.is_valid()) {
+  if (!mime_type) {
     return false;
   }
-  SB_DCHECK(mime_type.type() == "key_system");
+  SB_DCHECK_EQ(mime_type->type(), "key_system");
 
   for (auto wv_key_system : kWidevineKeySystems) {
-    if (mime_type.subtype() == wv_key_system) {
-      for (int i = 0; i < mime_type.GetParamCount(); ++i) {
-        if (mime_type.GetParamName(i) == "encryptionscheme") {
-          auto value = mime_type.GetParamStringValue(i);
+    if (mime_type->subtype() == wv_key_system) {
+      for (int i = 0; i < mime_type->GetParamCount(); ++i) {
+        if (mime_type->GetParamName(i) == "encryptionscheme") {
+          auto value = mime_type->GetParamStringValue(i);
           if (value != "cenc" && value != "cbcs" && value != "cbcs-1-9") {
             return false;
           }
@@ -304,7 +303,7 @@ void DrmSystemWidevine::GenerateSessionUpdateRequest(
     const char* type,
     const void* initialization_data,
     int initialization_data_size) {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
 
   const std::string init_str(static_cast<const char*>(initialization_data),
                              initialization_data_size);
@@ -339,7 +338,7 @@ void DrmSystemWidevine::UpdateSession(int ticket,
                                       int key_size,
                                       const void* sb_drm_session_id,
                                       int sb_drm_session_id_size) {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
   const std::string str_key(static_cast<const char*>(key), key_size);
 
   wv3cdm::Status status;
@@ -365,7 +364,7 @@ void DrmSystemWidevine::UpdateSession(int ticket,
 
 void DrmSystemWidevine::CloseSession(const void* sb_drm_session_id,
                                      int sb_drm_session_id_size) {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
   std::string wvcdm_session_id;
   bool succeeded = SbDrmSessionIdToWvdmSessionId(
       sb_drm_session_id, sb_drm_session_id_size, &wvcdm_session_id);
@@ -379,7 +378,7 @@ void DrmSystemWidevine::CloseSession(const void* sb_drm_session_id,
 void DrmSystemWidevine::UpdateServerCertificate(int ticket,
                                                 const void* certificate,
                                                 int certificate_size) {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
   const std::string str_certificate(static_cast<const char*>(certificate),
                                     certificate_size);
   wv3cdm::Status status = cdm_->setServiceCertificate(str_certificate);
@@ -391,8 +390,9 @@ void DrmSystemWidevine::UpdateServerCertificate(int ticket,
 }
 
 void IncrementIv(uint8_t* iv, size_t block_count) {
-  if (0 == block_count)
+  if (0 == block_count) {
     return;
+  }
   uint8_t carry = 0;
   uint8_t n = static_cast<uint8_t>(kInitializationVectorSize - 1);
 
@@ -423,7 +423,7 @@ SbDrmSystemPrivate::DecryptStatus DrmSystemWidevine::Decrypt(
   }
 
   // Adapt |buffer| and |drm_info| to a |cdm::InputBuffer|.
-  SB_DCHECK(drm_info->initialization_vector_size == kInitializationVectorSize);
+  SB_DCHECK_EQ(drm_info->initialization_vector_size, kInitializationVectorSize);
   std::vector<uint8_t> initialization_vector(
       drm_info->initialization_vector,
       drm_info->initialization_vector + drm_info->initialization_vector_size);
@@ -450,12 +450,13 @@ SbDrmSystemPrivate::DecryptStatus DrmSystemWidevine::Decrypt(
   size_t block_counter = 0;
   size_t encrypted_offset = 0;
 
-  for (size_t i = 0; i < buffer->drm_info()->subsample_count; i++) {
+  const int32_t subsample_count = buffer->drm_info()->subsample_count;
+  for (int32_t i = 0; i < subsample_count; i++) {
     const SbDrmSubSampleMapping& subsample =
         buffer->drm_info()->subsample_mapping[i];
     if (subsample.clear_byte_count) {
-      input.last_subsample = i + 1 == buffer->drm_info()->subsample_count &&
-                             subsample.encrypted_byte_count == 0;
+      input.last_subsample =
+          i + 1 == subsample_count && subsample.encrypted_byte_count == 0;
       input.encryption_scheme = wv3cdm::EncryptionScheme::kClear;
       input.data_length = subsample.clear_byte_count;
 
@@ -480,12 +481,12 @@ SbDrmSystemPrivate::DecryptStatus DrmSystemWidevine::Decrypt(
     }
 
     if (subsample.encrypted_byte_count) {
-      input.last_subsample = i + 1 == buffer->drm_info()->subsample_count;
+      input.last_subsample = i + 1 == subsample_count;
       input.encryption_scheme = wv3cdm::EncryptionScheme::kAesCtr;
       if (drm_info->encryption_scheme == kSbDrmEncryptionSchemeAesCbc) {
         input.encryption_scheme = wv3cdm::EncryptionScheme::kAesCbc;
       } else {
-        SB_DCHECK(drm_info->encryption_scheme == kSbDrmEncryptionSchemeAesCtr);
+        SB_DCHECK_EQ(drm_info->encryption_scheme, kSbDrmEncryptionSchemeAesCtr);
       }
       input.data_length = subsample.encrypted_byte_count;
 
@@ -497,7 +498,7 @@ SbDrmSystemPrivate::DecryptStatus DrmSystemWidevine::Decrypt(
         }
         if (status == wv3cdm::kKeyUsageBlockedByPolicy) {
           {
-            ScopedLock lock(unblock_key_retry_mutex_);
+            std::lock_guard lock(unblock_key_retry_mutex_);
             if (!unblock_key_retry_start_time_) {
               unblock_key_retry_start_time_ = CurrentMonotonicTime();
             }
@@ -516,8 +517,8 @@ SbDrmSystemPrivate::DecryptStatus DrmSystemWidevine::Decrypt(
         return kFailure;
       }
       {
-        ScopedLock lock(unblock_key_retry_mutex_);
-        unblock_key_retry_start_time_ = nullopt;
+        std::lock_guard lock(unblock_key_retry_mutex_);
+        unblock_key_retry_start_time_ = std::nullopt;
       }
       input.data += subsample.encrypted_byte_count;
       output.data += subsample.encrypted_byte_count;
@@ -552,7 +553,7 @@ void DrmSystemWidevine::GenerateSessionUpdateRequestInternal(
     wv3cdm::InitDataType init_data_type,
     const std::string& initialization_data,
     bool is_first_session) {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
 
   wv3cdm::SessionType session_type = wv3cdm::kTemporary;
 
@@ -563,7 +564,7 @@ void DrmSystemWidevine::GenerateSessionUpdateRequestInternal(
   if (status == wv3cdm::kSuccess) {
     // Ensure that the session id generated by the cdm is never the same as the
     // fake id (kFirstSbDrmSessionId).
-    SB_DCHECK(wvcdm_session_id != kFirstSbDrmSessionId);
+    SB_DCHECK_NE(wvcdm_session_id, kFirstSbDrmSessionId);
     if (is_first_session) {
       first_wvcdm_session_id_ = wvcdm_session_id;
     }
@@ -577,7 +578,7 @@ void DrmSystemWidevine::GenerateSessionUpdateRequestInternal(
     // following if statement will incorrectly assume that there is a follow-up
     // license request automatically generated after the individualization is
     // finished, which won't happen.
-    SB_DCHECK(status != wv3cdm::kDeferred);
+    SB_DCHECK_NE(status, wv3cdm::kDeferred);
   }
 
   if (status != wv3cdm::kSuccess && status != wv3cdm::kDeferred) {
@@ -647,7 +648,7 @@ void DrmSystemWidevine::onKeyStatusesChange(const std::string& wvcdm_session_id,
 
   for (auto& key_status : key_statuses) {
     SbDrmKeyId sb_key_id;
-    SB_DCHECK(key_status.first.size() <= sizeof(sb_key_id.identifier));
+    SB_DCHECK_LE(key_status.first.size(), sizeof(sb_key_id.identifier));
     memcpy(sb_key_id.identifier, key_status.first.c_str(),
            key_status.first.size());
     sb_key_id.identifier_size = static_cast<int>(key_status.first.size());
@@ -681,7 +682,7 @@ void DrmSystemWidevine::onDirectIndividualizationRequest(
 
 void DrmSystemWidevine::SetTicket(const std::string& sb_drm_session_id,
                                   int ticket) {
-  SB_DCHECK(SbThreadGetId() == ticket_thread_id_)
+  SB_DCHECK_EQ(SbThreadGetId(), ticket_thread_id_)
       << "Ticket should only be set from the constructor thread.";
   sb_drm_session_id_to_ticket_map_[sb_drm_session_id] = ticket;
 }
@@ -703,7 +704,7 @@ int DrmSystemWidevine::GetAndResetTicket(const std::string& sb_drm_session_id) {
 
 std::string DrmSystemWidevine::WvdmSessionIdToSbDrmSessionId(
     const std::string& wvcdm_session_id) {
-  SB_DCHECK(wvcdm_session_id != kFirstSbDrmSessionId);
+  SB_DCHECK_NE(wvcdm_session_id, kFirstSbDrmSessionId);
   if (wvcdm_session_id == first_wvcdm_session_id_) {
     return kFirstSbDrmSessionId;
   }
@@ -745,7 +746,7 @@ void DrmSystemWidevine::SendServerCertificateRequest(int ticket) {
 
 wv3cdm::Status DrmSystemWidevine::ProcessServerCertificateResponse(
     const std::string& response) {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
   is_server_certificate_set_ = false;
   std::string certificate;
   auto status = cdm_->parseServiceCertificateResponse(response, &certificate);
@@ -758,7 +759,7 @@ wv3cdm::Status DrmSystemWidevine::ProcessServerCertificateResponse(
 }
 
 void DrmSystemWidevine::TrySendPendingGenerateSessionUpdateRequests() {
-  SB_DCHECK(thread_checker_.CalledOnValidThread());
+  SB_CHECK(thread_checker_.CalledOnValidThread());
   if (!is_server_certificate_set_) {
     return;
   }
@@ -778,7 +779,7 @@ void DrmSystemWidevine::SendSessionUpdateRequest(
     const std::string& message) {
   int ticket = GetAndResetTicket(sb_drm_session_id);
 
-#if !defined(COBALT_BUILD_TYPE_GOLD)
+#if !BUILDFLAG(COBALT_IS_RELEASE_BUILD)
   if (number_of_session_updates_sent_ > maximum_number_of_session_updates_) {
     SB_LOG(INFO) << "Number of drm sessions exceeds maximum allowed session"
                  << " (" << maximum_number_of_session_updates_ << "), fail the"
@@ -789,7 +790,7 @@ void DrmSystemWidevine::SendSessionUpdateRequest(
     return;
   }
   ++number_of_session_updates_sent_;
-#endif  // !defined(COBALT_BUILD_TYPE_GOLD)
+#endif  // !BUILDFLAG(COBALT_IS_RELEASE_BUILD)
 
   session_update_request_callback_(
       this, context_, ticket, kSbDrmStatusSuccess, type, "",
@@ -797,6 +798,4 @@ void DrmSystemWidevine::SendSessionUpdateRequest(
       message.c_str(), static_cast<int>(message.size()), NULL);
 }
 
-}  // namespace widevine
-}  // namespace shared
 }  // namespace starboard

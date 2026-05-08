@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/system.h"
+// clang-format on
 
 #include <sys/utsname.h>
 
@@ -116,8 +118,9 @@ std::string GetModelName() {
 bool CopyStringAndTestIfSuccess(char* out_value,
                                 int value_length,
                                 const char* from_value) {
-  if (strlen(from_value) + 1 > value_length)
+  if (strlen(from_value) + 1 > value_length) {
     return false;
+  }
   starboard::strlcpy(out_value, from_value, value_length);
   return true;
 }
@@ -163,11 +166,9 @@ bool SbSystemGetProperty(SbSystemPropertyId property_id,
       return CopyStringAndTestIfSuccess(out_value, value_length,
                                         "X11; Linux armv7l");
     }
-#if SB_API_VERSION >= 15
     case kSbSystemPropertyDeviceType:
       return CopyStringAndTestIfSuccess(out_value, value_length,
                                         starboard::kSystemDeviceTypeUnknown);
-#endif
 
     default:
       SB_DLOG(WARNING) << __FUNCTION__

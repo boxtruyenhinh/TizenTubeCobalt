@@ -5,6 +5,7 @@
 #ifndef V8_AST_MODULES_H_
 #define V8_AST_MODULES_H_
 
+#include "src/parsing/import-attributes.h"
 #include "src/parsing/scanner.h"  // Only for Scanner::Location.
 #include "src/zone/zone-containers.h"
 
@@ -13,6 +14,7 @@ namespace internal {
 
 
 class AstRawString;
+class AstRawStringComparer;
 class ModuleRequest;
 class SourceTextModuleInfo;
 class SourceTextModuleInfoEntry;
@@ -27,10 +29,6 @@ class SourceTextModuleDescriptor : public ZoneObject {
         regular_exports_(zone),
         regular_imports_(zone) {}
 
-  using ImportAssertions =
-      ZoneMap<const AstRawString*,
-              std::pair<const AstRawString*, Scanner::Location>>;
-
   // The following Add* methods are high-level convenience functions for use by
   // the parser.
 
@@ -38,24 +36,24 @@ class SourceTextModuleDescriptor : public ZoneObject {
   // import {x} from "foo.js";
   // import {x as y} from "foo.js";
   void AddImport(const AstRawString* import_name,
-                 const AstRawString* local_name,
-                 const AstRawString* module_request,
-                 const ImportAssertions* import_assertions,
+                 const AstRawString* local_name, const AstRawString* specifier,
+                 const ModuleImportPhase import_phase,
+                 const ImportAttributes* import_attributes,
                  const Scanner::Location loc,
                  const Scanner::Location specifier_loc, Zone* zone);
 
   // import * as x from "foo.js";
   void AddStarImport(const AstRawString* local_name,
-                     const AstRawString* module_request,
-                     const ImportAssertions* import_assertions,
+                     const AstRawString* specifier,
+                     const ImportAttributes* import_attributes,
                      const Scanner::Location loc,
                      const Scanner::Location specifier_loc, Zone* zone);
 
   // import "foo.js";
   // import {} from "foo.js";
   // export {} from "foo.js";  (sic!)
-  void AddEmptyImport(const AstRawString* module_request,
-                      const ImportAssertions* import_assertions,
+  void AddEmptyImport(const AstRawString* specifier,
+                      const ImportAttributes* import_attributes,
                       const Scanner::Location specifier_loc, Zone* zone);
 
   // export {x};
@@ -70,15 +68,14 @@ class SourceTextModuleDescriptor : public ZoneObject {
   // export {x} from "foo.js";
   // export {x as y} from "foo.js";
   void AddExport(const AstRawString* export_name,
-                 const AstRawString* import_name,
-                 const AstRawString* module_request,
-                 const ImportAssertions* import_assertions,
+                 const AstRawString* import_name, const AstRawString* specifier,
+                 const ImportAttributes* import_attributes,
                  const Scanner::Location loc,
                  const Scanner::Location specifier_loc, Zone* zone);
 
   // export * from "foo.js";
-  void AddStarExport(const AstRawString* module_request,
-                     const ImportAssertions* import_assertions,
+  void AddStarExport(const AstRawString* specifier,
+                     const ImportAttributes* import_attributes,
                      const Scanner::Location loc,
                      const Scanner::Location specifier_loc, Zone* zone);
 
@@ -117,8 +114,8 @@ class SourceTextModuleDescriptor : public ZoneObject {
           module_request(-1),
           cell_index(0) {}
 
-    template <typename LocalIsolate>
-    Handle<SourceTextModuleInfoEntry> Serialize(LocalIsolate* isolate) const;
+    template <typename IsolateT>
+    DirectHandle<SourceTextModuleInfoEntry> Serialize(IsolateT* isolate) const;
   };
 
   enum CellIndexKind { kInvalid, kExport, kImport };
@@ -126,43 +123,46 @@ class SourceTextModuleDescriptor : public ZoneObject {
 
   class AstModuleRequest : public ZoneObject {
    public:
-    // TODO(v8:10958): Consider storing module request location here
-    // instead of using separate ModuleRequestLocation struct.
     AstModuleRequest(const AstRawString* specifier,
-                     const ImportAssertions* import_assertions)
-        : specifier_(specifier), import_assertions_(import_assertions) {}
+                     const ModuleImportPhase phase,
+                     const ImportAttributes* import_attributes, int position,
+                     int index)
+        : specifier_(specifier),
+          phase_(phase),
+          import_attributes_(import_attributes),
+          position_(position),
+          index_(index) {}
 
-    template <typename LocalIsolate>
-    Handle<v8::internal::ModuleRequest> Serialize(LocalIsolate* isolate) const;
+    template <typename IsolateT>
+    DirectHandle<v8::internal::ModuleRequest> Serialize(
+        IsolateT* isolate) const;
 
     const AstRawString* specifier() const { return specifier_; }
-    const ImportAssertions* import_assertions() const {
-      return import_assertions_;
+    const ImportAttributes* import_attributes() const {
+      return import_attributes_;
     }
+    ModuleImportPhase phase() const { return phase_; }
+
+    int position() const { return position_; }
+    int index() const { return index_; }
 
    private:
     const AstRawString* specifier_;
-    const ImportAssertions* import_assertions_;
-  };
-
-  struct ModuleRequestLocation {
-    // The index at which we will place the request in SourceTextModuleInfo's
-    // module_requests FixedArray.
-    int index;
+    const ModuleImportPhase phase_;
+    const ImportAttributes* import_attributes_;
 
     // The JS source code position of the request, used for reporting errors.
-    int position;
+    int position_;
 
-    ModuleRequestLocation(int index, int position)
-        : index(index), position(position) {}
+    // The index at which we will place the request in SourceTextModuleInfo's
+    // module_requests FixedArray.
+    int index_;
   };
 
   // Custom content-based comparer for the below maps, to keep them stable
   // across parses.
   struct V8_EXPORT_PRIVATE AstRawStringComparer {
     bool operator()(const AstRawString* lhs, const AstRawString* rhs) const;
-    static int ThreeWayCompare(const AstRawString* lhs,
-                               const AstRawString* rhs);
   };
 
   struct V8_EXPORT_PRIVATE ModuleRequestComparer {
@@ -171,8 +171,7 @@ class SourceTextModuleDescriptor : public ZoneObject {
   };
 
   using ModuleRequestMap =
-      ZoneMap<const AstModuleRequest*, ModuleRequestLocation,
-              ModuleRequestComparer>;
+      ZoneSet<const AstModuleRequest*, ModuleRequestComparer>;
   using RegularExportMap =
       ZoneMultimap<const AstRawString*, Entry*, AstRawStringComparer>;
   using RegularImportMap =
@@ -230,9 +229,9 @@ class SourceTextModuleDescriptor : public ZoneObject {
     namespace_imports_.push_back(entry);
   }
 
-  template <typename LocalIsolate>
-  Handle<FixedArray> SerializeRegularExports(LocalIsolate* isolate,
-                                             Zone* zone) const;
+  template <typename IsolateT>
+  DirectHandle<FixedArray> SerializeRegularExports(IsolateT* isolate,
+                                                   Zone* zone) const;
 
  private:
   ModuleRequestMap module_requests_;
@@ -269,17 +268,17 @@ class SourceTextModuleDescriptor : public ZoneObject {
   void AssignCellIndices();
 
   int AddModuleRequest(const AstRawString* specifier,
-                       const ImportAssertions* import_assertions,
+                       const ModuleImportPhase import_phase,
+                       const ImportAttributes* import_attributes,
                        Scanner::Location specifier_loc, Zone* zone) {
     DCHECK_NOT_NULL(specifier);
     int module_requests_count = static_cast<int>(module_requests_.size());
     auto it = module_requests_
-                  .insert(std::make_pair(
-                      zone->New<AstModuleRequest>(specifier, import_assertions),
-                      ModuleRequestLocation(module_requests_count,
-                                            specifier_loc.beg_pos)))
+                  .insert(zone->New<AstModuleRequest>(
+                      specifier, import_phase, import_attributes,
+                      specifier_loc.beg_pos, module_requests_count))
                   .first;
-    return it->second.index;
+    return (*it)->index();
   }
 };
 

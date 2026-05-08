@@ -12,17 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
 #include "starboard/shared/starboard/media/media_support_internal.h"
+// clang-format on
 
 #include "starboard/configuration.h"
 #include "starboard/configuration_constants.h"
 #include "starboard/media.h"
 
-using ::starboard::shared::starboard::media::MimeType;
+namespace starboard {
 
-bool SbMediaIsAudioSupported(SbMediaAudioCodec audio_codec,
-                             const MimeType* mime_type,
-                             int64_t bitrate) {
+bool MediaIsAudioSupported(SbMediaAudioCodec audio_codec,
+                           const MimeType* mime_type,
+                           int64_t bitrate) {
   if (audio_codec == kSbMediaAudioCodecAac) {
     return bitrate <= kSbMediaMaxAudioBitrateInBitsPerSecond;
   }
@@ -33,3 +35,5 @@ bool SbMediaIsAudioSupported(SbMediaAudioCodec audio_codec,
 
   return false;
 }
+
+}  // namespace starboard

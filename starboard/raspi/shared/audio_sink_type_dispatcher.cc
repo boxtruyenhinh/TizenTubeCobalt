@@ -15,13 +15,17 @@
 #include "starboard/shared/alsa/alsa_audio_sink_type.h"
 #include "starboard/shared/starboard/audio_sink/audio_sink_internal.h"
 
+namespace starboard {
+
 // static
-void SbAudioSinkPrivate::PlatformInitialize() {
-  starboard::shared::alsa::PlatformInitialize();
-  SbAudioSinkPrivate::EnableFallbackToStub();
+void SbAudioSinkImpl::PlatformInitialize() {
+  AlsaPlatformInitialize();
+  SbAudioSinkImpl::EnableFallbackToStub();
 }
 
 // static
-void SbAudioSinkPrivate::PlatformTearDown() {
-  starboard::shared::alsa::PlatformTearDown();
+void SbAudioSinkImpl::PlatformTearDown() {
+  AlsaPlatformTearDown();
 }
+
+}  // namespace starboard

@@ -259,6 +259,9 @@ yue_Hans{
         "America:Chihuahua"{
             ec{"奇华华"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"华雷斯城"}
+        }
         "America:Coral_Harbour"{
             ec{"阿蒂科肯"}
         }
@@ -1224,6 +1227,9 @@ yue_Hans{
         "Pacific:Johnston"{
             ec{"强斯顿"}
         }
+        "Pacific:Kanton"{
+            ec{"坎顿"}
+        }
         "Pacific:Kiritimati"{
             ec{"基里地马地岛"}
         }
@@ -1605,7 +1611,7 @@ yue_Hans{
             ls{"印度洋时间"}
         }
         "meta:Indochina"{
-            ls{"印度支那时间"}
+            ls{"中南半岛时间"}
         }
         "meta:Indonesia_Central"{
             ls{"印尼中部时间"}
@@ -1941,12 +1947,9 @@ yue_Hans{
             lg{"叶卡捷琳堡时间"}
             ls{"叶卡捷琳堡标准时间"}
         }
-        fallbackFormat{"{1} ({0})"}
-        gmtFormat{"GMT{0}"}
-        gmtZeroFormat{"GMT"}
-        hourFormat{"+HH:mm;-HH:mm"}
+        "meta:Yukon"{
+            ls{"育空时间"}
+        }
         regionFormat{"{0}时间"}
-        regionFormatDaylight{"{0} (+1)"}
-        regionFormatStandard{"{0} (+0)"}
     }
 }

@@ -15,15 +15,12 @@
 #include <string>
 #include <vector>
 
-#include "starboard/drm.h"
-
 #include "starboard/common/log.h"
 #include "starboard/common/queue.h"
+#include "starboard/drm.h"
 #include "starboard/nplb/drm_helpers.h"
-#include "starboard/nplb/testcase_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 namespace {
 
@@ -147,13 +144,14 @@ class SbDrmSessionTest : public ::testing::Test {
                                   int session_id_size);
 
   // Queue containing callback events for OnSessionUpdateRequestGeneratedFunc().
-  Queue<SessionUpdateRequestGeneratedCallbackEvent>
+  starboard::Queue<SessionUpdateRequestGeneratedCallbackEvent>
       session_update_request_callback_event_queue_;
   // Queue containing callback events for OnServerCertificateUpdatedFunc().
-  Queue<ServerCertificateUpdatedCallbackEvent>
+  starboard::Queue<ServerCertificateUpdatedCallbackEvent>
       server_certificate_updated_callback_event_queue_;
   // Queue containing callback events for OnSessionClosedFunc().
-  Queue<SessionClosedCallbackEvent> session_closed_callback_event_queue_;
+  starboard::Queue<SessionClosedCallbackEvent>
+      session_closed_callback_event_queue_;
 
   SbDrmSystem drm_system_ = kSbDrmSystemInvalid;
 };
@@ -163,6 +161,9 @@ void SbDrmSessionTest::SetUp() {
       kWidevineKeySystem, this, OnSessionUpdateRequestGeneratedFunc,
       DummySessionUpdatedFunc, DummySessionKeyStatusesChangedFunc,
       OnServerCertificateUpdatedFunc, OnSessionClosedFunc);
+  if (!SbDrmSystemIsValid(drm_system_)) {
+    GTEST_SKIP() << "DRM Widevine is not supported on this platform.";
+  }
 }
 
 void SbDrmSessionTest::TearDown() {
@@ -286,17 +287,6 @@ void SbDrmSessionTest::OnSessionClosedFunc(SbDrmSystem drm_system,
 }
 
 TEST_F(SbDrmSessionTest, SunnyDay) {
-  // TODO(b/338229737): Skip test case(s) not applicable to Android.
-  if (GetRuntimePlatform() == PlatformType::kPlatformTypeAndroid) {
-    GTEST_SKIP() << "Not applicable on Android";
-  }
-
-  if (!SbDrmSystemIsValid(drm_system_)) {
-    SB_LOG(INFO) << "Skipping test, DRM system Widevine is not supported on "
-                    "this platform.";
-    return;
-  }
-
   if (SbDrmIsServerCertificateUpdatable(drm_system_)) {
     SbDrmUpdateServerCertificate(drm_system_, kInitialTicket,
                                  kWidevineCertificate,
@@ -326,17 +316,6 @@ TEST_F(SbDrmSessionTest, SunnyDay) {
 }
 
 TEST_F(SbDrmSessionTest, CloseDrmSessionBeforeUpdateSession) {
-  // TODO(b/338229737): Skip test case(s) not applicable to Android.
-  if (GetRuntimePlatform() == PlatformType::kPlatformTypeAndroid) {
-    GTEST_SKIP() << "Not applicable on Android";
-  }
-
-  if (!SbDrmSystemIsValid(drm_system_)) {
-    SB_LOG(INFO) << "Skipping test, DRM system Widevine is not supported on "
-                    "this platform.";
-    return;
-  }
-
   SbDrmGenerateSessionUpdateRequest(drm_system_, kInitialTicket,
                                     kCencInitDataType, kCencInitData,
                                     SB_ARRAY_SIZE_INT(kCencInitData));
@@ -360,17 +339,6 @@ TEST_F(SbDrmSessionTest, CloseDrmSessionBeforeUpdateSession) {
 }
 
 TEST_F(SbDrmSessionTest, InvalidSessionUpdateRequestParams) {
-  // TODO(b/338229737): Skip test case(s) not applicable to Android.
-  if (GetRuntimePlatform() == PlatformType::kPlatformTypeAndroid) {
-    GTEST_SKIP() << "Not applicable on Android";
-  }
-
-  if (!SbDrmSystemIsValid(drm_system_)) {
-    SB_LOG(INFO) << "Skipping test, DRM system Widevine is not supported on "
-                    "this platform.";
-    return;
-  }
-
   SbDrmGenerateSessionUpdateRequest(drm_system_, kSbDrmTicketInvalid,
                                     kCencInitDataType, kCencInitData,
                                     SB_ARRAY_SIZE_INT(kCencInitData));
@@ -427,4 +395,3 @@ TEST_F(SbDrmSessionTest, InvalidSessionUpdateRequestParams) {
 
 }  // namespace
 }  // namespace nplb
-}  // namespace starboard

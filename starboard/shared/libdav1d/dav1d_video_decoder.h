@@ -15,39 +15,42 @@
 #ifndef STARBOARD_SHARED_LIBDAV1D_DAV1D_VIDEO_DECODER_H_
 #define STARBOARD_SHARED_LIBDAV1D_DAV1D_VIDEO_DECODER_H_
 
-#include "third_party/libdav1d/include/dav1d/dav1d.h"
-
+#include <limits>
 #include <memory>
+#include <mutex>
 #include <queue>
 #include <string>
 
 #include "starboard/common/ref_counted.h"
+#include "starboard/common/size.h"
 #include "starboard/decode_target.h"
 #include "starboard/shared/internal_only.h"
 #include "starboard/shared/starboard/player/filter/cpu_video_frame.h"
 #include "starboard/shared/starboard/player/filter/video_decoder_internal.h"
 #include "starboard/shared/starboard/player/input_buffer_internal.h"
 #include "starboard/shared/starboard/player/job_thread.h"
+#include "third_party/dav1d/libdav1d/include/dav1d/dav1d.h"
 
 namespace starboard {
-namespace shared {
-namespace libdav1d {
 
-class VideoDecoder : public starboard::player::filter::VideoDecoder,
-                     private starboard::player::JobQueue::JobOwner {
+class Dav1dVideoDecoder : public VideoDecoder, private JobQueue::JobOwner {
  public:
-  VideoDecoder(SbMediaVideoCodec video_codec,
-               SbPlayerOutputMode output_mode,
-               SbDecodeTargetGraphicsContextProvider*
-                   decode_target_graphics_context_provider);
-  ~VideoDecoder() override;
+  Dav1dVideoDecoder(JobQueue* job_queue,
+                    SbMediaVideoCodec video_codec,
+                    SbPlayerOutputMode output_mode,
+                    SbDecodeTargetGraphicsContextProvider*
+                        decode_target_graphics_context_provider,
+                    bool may_reduce_quality_for_speed);
+  ~Dav1dVideoDecoder() override;
 
   void Initialize(const DecoderStatusCB& decoder_status_cb,
                   const ErrorCB& error_cb) override;
 
   // TODO: Verify if these values are correct.
   size_t GetPrerollFrameCount() const override { return 8; }
-  int64_t GetPrerollTimeout() const override { return kSbInt64Max; }
+  int64_t GetPrerollTimeout() const override {
+    return std::numeric_limits<int64_t>::max();
+  }
   size_t GetMaxNumberOfCachedFrames() const override { return 12; }
 
   void WriteInputBuffers(const InputBuffers& input_buffers) override;
@@ -55,8 +58,6 @@ class VideoDecoder : public starboard::player::filter::VideoDecoder,
   void Reset() override;
 
  private:
-  typedef ::starboard::shared::starboard::player::filter::CpuVideoFrame
-      CpuVideoFrame;
   const int kDav1dSuccess = 0;
 
   const int kDav1dPlaneY = 0;
@@ -80,20 +81,21 @@ class VideoDecoder : public starboard::player::filter::VideoDecoder,
 
   void UpdateDecodeTarget_Locked(const scoped_refptr<CpuVideoFrame>& frame);
 
+  const bool may_reduce_quality_for_speed_;
+
   // The following callbacks will be initialized in Initialize() and won't be
   // changed during the life time of this class.
   DecoderStatusCB decoder_status_cb_;
   ErrorCB error_cb_;
 
-  int current_frame_height_ = 0;
-  int current_frame_width_ = 0;
+  Size current_frame_size_;
   int frames_being_decoded_ = 0;
   Dav1dContext* dav1d_context_ = NULL;
 
   bool stream_ended_ = false;
 
   // Working thread to avoid lengthy decoding work block the player thread.
-  starboard::player::ScopedJobThreadPtr decoder_thread_;
+  std::unique_ptr<JobThread> decoder_thread_;
 
   // Decode-to-texture related state.
   const SbPlayerOutputMode output_mode_;
@@ -109,13 +111,11 @@ class VideoDecoder : public starboard::player::filter::VideoDecoder,
   // to obtain the current decode target (which ultimately ends up being a
   // copy of |decode_target_|), we need to safe-guard access to |decode_target_|
   // and we do so through this mutex.
-  Mutex decode_target_mutex_;
+  std::mutex decode_target_mutex_;
 
   std::queue<scoped_refptr<CpuVideoFrame>> frames_;
 };
 
-}  // namespace libdav1d
-}  // namespace shared
 }  // namespace starboard
 
 #endif  // STARBOARD_SHARED_LIBDAV1D_DAV1D_VIDEO_DECODER_H_

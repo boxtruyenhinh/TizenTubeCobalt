@@ -1,24 +1,26 @@
-cc_library(
-    name = "skparagraph",
+load("//bazel:skia_rules.bzl", "skia_cc_library")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
+
+licenses(["notice"])
+
+skia_cc_library(
+    name = "skparagraph_harfbuzz_skunicode",
+    srcs = ["//modules/skparagraph/src:srcs"],
     hdrs = ["//modules/skparagraph/include:hdrs"],
-    visibility = ["//:__subpackages__"],
+    defines = ["SK_DISABLE_LEGACY_PARAGRAPH_UNICODE"],
+    features = ["layering_check"],
+    visibility = [
+        "//:__subpackages__",
+    ],
     deps = [
-        "//modules/skparagraph/src:Decorations_src",
-        "//modules/skparagraph/src:FontCollection_src",
-        "//modules/skparagraph/src:OneLineShaper_src",
-        "//modules/skparagraph/src:ParagraphBuilderImpl_src",
-        "//modules/skparagraph/src:ParagraphCache_src",
-        "//modules/skparagraph/src:ParagraphImpl_src",
-        "//modules/skparagraph/src:ParagraphStyle_src",
-        "//modules/skparagraph/src:Run_src",
-        "//modules/skparagraph/src:TextLine_src",
-        "//modules/skparagraph/src:TextShadow_src",
-        "//modules/skparagraph/src:TextStyle_src",
-        "//modules/skparagraph/src:TextWrapper_src",
-        "//modules/skparagraph/src:TypefaceFontProvider_src",
-        # TODO(kjlubick) Can this make a bigger, clearer error if harfbuzz and ICU are not
-        #   available?
-        "//modules/skshaper",
-        "//modules/skunicode",
+        "//:core",
+        "//modules/skshaper:skshaper_harfbuzz",
+        "//modules/skshaper:skshaper_unicode",
+        "//modules/skunicode:skunicode_core",
+        "//src/base",
+        "//src/core:core_priv",
     ],
 )

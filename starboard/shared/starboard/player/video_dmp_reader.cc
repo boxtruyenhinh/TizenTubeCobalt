@@ -16,12 +16,12 @@
 
 #include <algorithm>
 #include <functional>
+#include <iomanip>
+
+#include "starboard/common/check_op.h"
+#include "starboard/shared/starboard/media/iamf_util.h"
 
 namespace starboard {
-namespace shared {
-namespace starboard {
-namespace player {
-namespace video_dmp {
 
 namespace {
 
@@ -39,7 +39,7 @@ int64_t CalculateAverageBitrate(const std::vector<AccessUnit>& access_units) {
   int64_t duration =
       access_units.back().timestamp() - access_units.front().timestamp();
 
-  SB_DCHECK(duration > 0);
+  SB_DCHECK_GT(duration, 0);
 
   int64_t total_bitrate = 0;
   for (auto& au : access_units) {
@@ -48,10 +48,6 @@ int64_t CalculateAverageBitrate(const std::vector<AccessUnit>& access_units) {
 
   return total_bitrate * 8 * 1'000'000LL / duration;
 }
-
-static void DeallocateSampleFunc(SbPlayer player,
-                                 void* context,
-                                 const void* sample_buffer) {}
 
 SbPlayerSampleInfo ConvertToPlayerSampleInfo(
     const VideoDmpReader::AudioAccessUnit& audio_unit) {
@@ -87,7 +83,7 @@ bool VideoDmpReader::Registry::GetDmpInfo(const std::string& filename,
   SB_DCHECK(!filename.empty());
   SB_DCHECK(dmp_info);
 
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   auto iter = dmp_infos_.find(filename);
   if (iter == dmp_infos_.end()) {
     return false;
@@ -100,7 +96,7 @@ void VideoDmpReader::Registry::Register(const std::string& filename,
                                         const DmpInfo& dmp_info) {
   SB_DCHECK(!filename.empty());
 
-  ScopedLock scoped_lock(mutex_);
+  std::lock_guard scoped_lock(mutex_);
   SB_DCHECK(dmp_infos_.find(filename) == dmp_infos_.end());
   dmp_infos_[filename] = dmp_info;
 }
@@ -108,9 +104,9 @@ void VideoDmpReader::Registry::Register(const std::string& filename,
 VideoDmpReader::VideoDmpReader(
     const char* filename,
     ReadOnDemandOptions read_on_demand_options /*= kDisableReadOnDemand*/)
-    : file_reader_(filename, 1024 * 1024),
-      read_cb_(std::bind(&FileCacheReader::Read, &file_reader_, _1, _2)),
-      allow_read_on_demand_(read_on_demand_options == kEnableReadOnDemand) {
+    : allow_read_on_demand_(read_on_demand_options == kEnableReadOnDemand),
+      file_reader_(filename, 1024 * 1024),
+      read_cb_(std::bind(&FileCacheReader::Read, &file_reader_, _1, _2)) {
   bool already_cached =
       GetRegistry()->GetDmpInfo(file_reader_.GetAbsolutePathName(), &dmp_info_);
 
@@ -162,11 +158,16 @@ std::string VideoDmpReader::audio_mime_type() const {
     case kSbMediaAudioCodecPcm:
       ss << "audio/wav; codecs=\"1\";";
       break;
-#if SB_API_VERSION >= 15
     case kSbMediaAudioCodecIamf:
-      ss << "audio/mp4; codecs=\"iamf\";";
+      SB_CHECK(dmp_info_.iamf_primary_profile.has_value());
+      // Only Opus IAMF substreams are currently supported.
+      ss << "audio/mp4; codecs=\"iamf.";
+      ss << std::setw(3) << std::setfill('0') << std::hex
+         << static_cast<int>(*dmp_info_.iamf_primary_profile) << "."
+         << std::setw(3) << std::setfill('0') << std::hex
+         << static_cast<int>(dmp_info_.iamf_additional_profile.value_or(0))
+         << ".Opus\";";
       break;
-#endif  // SB_API_VERSION >= 15
     default:
       SB_NOTREACHED() << "Unsupported audio codec: " << dmp_info_.audio_codec;
   }
@@ -203,8 +204,8 @@ std::string VideoDmpReader::video_mime_type() {
   }
   if (number_of_video_buffers() > 0) {
     const auto& video_stream_info = this->video_stream_info();
-    ss << "width=" << video_stream_info.frame_width
-       << "; height=" << video_stream_info.frame_height << ";";
+    ss << "width=" << video_stream_info.frame_size.width
+       << "; height=" << video_stream_info.frame_size.height << ";";
   }
   ss << " framerate=" << dmp_info_.video_fps;
   return ss.str();
@@ -216,12 +217,12 @@ SbPlayerSampleInfo VideoDmpReader::GetPlayerSampleInfo(SbMediaType type,
 
   switch (type) {
     case kSbMediaTypeAudio: {
-      SB_DCHECK(index < audio_access_units_.size());
+      SB_DCHECK_LT(index, audio_access_units_.size());
       const AudioAccessUnit& audio_au = audio_access_units_[index];
       return ConvertToPlayerSampleInfo(audio_au);
     }
     case kSbMediaTypeVideo: {
-      SB_DCHECK(index < video_access_units_.size());
+      SB_DCHECK_LT(index, video_access_units_.size());
       const VideoAccessUnit& video_au = video_access_units_[index];
       return ConvertToPlayerSampleInfo(video_au);
     }
@@ -230,20 +231,20 @@ SbPlayerSampleInfo VideoDmpReader::GetPlayerSampleInfo(SbMediaType type,
   return SbPlayerSampleInfo();
 }
 
-const media::AudioSampleInfo& VideoDmpReader::GetAudioSampleInfo(size_t index) {
+const AudioSampleInfo& VideoDmpReader::GetAudioSampleInfo(size_t index) {
   EnsureSampleLoaded(kSbMediaTypeAudio, index);
 
-  SB_DCHECK(index < audio_access_units_.size());
+  SB_DCHECK_LT(index, audio_access_units_.size());
   const AudioAccessUnit& au = audio_access_units_[index];
   return au.audio_sample_info();
 }
 
 void VideoDmpReader::ParseHeader(uint32_t* dmp_writer_version) {
   SB_DCHECK(dmp_writer_version);
-  SB_DCHECK(!reverse_byte_order_.has_engaged());
+  SB_DCHECK(!reverse_byte_order_.has_value());
 
   int64_t file_size = file_reader_.GetSize();
-  SB_CHECK(file_size >= 0);
+  SB_CHECK_GE(file_size, 0);
 
   reverse_byte_order_ = false;
   uint32_t byte_order_mark;
@@ -251,7 +252,7 @@ void VideoDmpReader::ParseHeader(uint32_t* dmp_writer_version) {
   if (byte_order_mark != kByteOrderMark) {
     std::reverse(reinterpret_cast<uint8_t*>(&byte_order_mark),
                  reinterpret_cast<uint8_t*>(&byte_order_mark + 1));
-    SB_CHECK(byte_order_mark == kByteOrderMark);
+    SB_CHECK_EQ(byte_order_mark, kByteOrderMark);
     reverse_byte_order_ = true;
   }
 
@@ -276,8 +277,8 @@ bool VideoDmpReader::ParseOneRecord() {
       if (dmp_info_.audio_codec != kSbMediaAudioCodecNone) {
         Read(read_cb_, reverse_byte_order_.value(),
              &dmp_info_.audio_sample_info);
-        SB_DCHECK(dmp_info_.audio_codec ==
-                  dmp_info_.audio_sample_info.stream_info.codec);
+        SB_DCHECK_EQ(dmp_info_.audio_codec,
+                     dmp_info_.audio_sample_info.stream_info.codec);
       }
       break;
     case kRecordTypeVideoConfig:
@@ -298,7 +299,7 @@ bool VideoDmpReader::ParseOneRecord() {
 }
 
 void VideoDmpReader::Parse() {
-  SB_DCHECK(!reverse_byte_order_.has_engaged());
+  SB_DCHECK(!reverse_byte_order_.has_value());
 
   uint32_t dmp_writer_version = 0;
   ParseHeader(&dmp_writer_version);
@@ -311,6 +312,15 @@ void VideoDmpReader::Parse() {
   }
 
   while (ParseOneRecord()) {
+  }
+
+  if (dmp_info_.audio_codec == kSbMediaAudioCodecIamf &&
+      !dmp_info_.iamf_primary_profile.has_value()) {
+    auto result =
+        IamfMimeUtil::ParseIamfSequenceHeaderObu(audio_access_units_[0].data());
+    SB_CHECK(result) << result.error();
+    dmp_info_.iamf_primary_profile = result->primary_profile;
+    dmp_info_.iamf_additional_profile = result->additional_profile;
   }
 
   dmp_info_.audio_access_units_size = audio_access_units_.size();
@@ -336,7 +346,7 @@ void VideoDmpReader::Parse() {
         second_timestamp = au.timestamp();
       }
     }
-    SB_DCHECK(first_timestamp < second_timestamp);
+    SB_DCHECK_LT(first_timestamp, second_timestamp);
     int64_t frame_duration = second_timestamp - first_timestamp;
     dmp_info_.video_fps = 1'000'000LL / frame_duration;
 
@@ -355,21 +365,21 @@ void VideoDmpReader::Parse() {
 }
 
 void VideoDmpReader::EnsureSampleLoaded(SbMediaType type, size_t index) {
-  if (!reverse_byte_order_.has_engaged()) {
+  if (!reverse_byte_order_.has_value()) {
     uint32_t dmp_writer_version = 0;
     ParseHeader(&dmp_writer_version);
-    SB_DCHECK(dmp_writer_version == kSupportedWriterVersion);
+    SB_DCHECK_EQ(dmp_writer_version, kSupportedWriterVersion);
   }
 
   if (type == kSbMediaTypeAudio) {
     while (index >= audio_access_units_.size() && ParseOneRecord()) {
     }
-    SB_CHECK(index < audio_access_units_.size());
+    SB_CHECK_LT(index, audio_access_units_.size());
   } else {
-    SB_DCHECK(type == kSbMediaTypeVideo);
+    SB_DCHECK_EQ(type, kSbMediaTypeVideo);
     while (index >= video_access_units_.size() && ParseOneRecord()) {
     }
-    SB_CHECK(index < video_access_units_.size());
+    SB_CHECK_LT(index, video_access_units_.size());
   }
 }
 
@@ -390,7 +400,7 @@ VideoDmpReader::AudioAccessUnit VideoDmpReader::ReadAudioAccessUnit() {
   std::vector<uint8_t> data(size);
   Read(read_cb_, data.data(), size);
 
-  media::AudioSampleInfo audio_sample_info;
+  AudioSampleInfo audio_sample_info;
   Read(read_cb_, reverse_byte_order_.value(), &audio_sample_info);
 
   return AudioAccessUnit(timestamp,
@@ -415,7 +425,7 @@ VideoDmpReader::VideoAccessUnit VideoDmpReader::ReadVideoAccessUnit() {
   std::vector<uint8_t> data(size);
   Read(read_cb_, data.data(), size);
 
-  media::VideoSampleInfo video_sample_info;
+  VideoSampleInfo video_sample_info;
   Read(read_cb_, reverse_byte_order_.value(), &video_sample_info);
 
   return VideoAccessUnit(timestamp,
@@ -429,8 +439,4 @@ VideoDmpReader::Registry* VideoDmpReader::GetRegistry() {
   return &s_registry;
 }
 
-}  // namespace video_dmp
-}  // namespace player
-}  // namespace starboard
-}  // namespace shared
 }  // namespace starboard

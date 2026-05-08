@@ -6,6 +6,7 @@
  */
 #include "bench/Benchmark.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkString.h"
 #include "include/core/SkVertices.h"
@@ -77,7 +78,7 @@ public:
         };
         const SkPoint pts[] = { { 200.f / 4.f, 0.f }, { 3.f * 200.f / 4, 200.f } };
 
-        return SkGradientShader::MakeLinear(pts, colors, nullptr, SK_ARRAY_COUNT(colors),
+        return SkGradientShader::MakeLinear(pts, colors, nullptr, std::size(colors),
                                             SkTileMode::kMirror);
     }
 
@@ -338,7 +339,7 @@ public:
     const char* onGetName() override { return fName.c_str(); }
 
     bool isSuitableFor(Backend backend) override {
-        return backend == kNonRendering_Backend;
+        return backend == Backend::kNonRendering;
     }
 
     void onDraw(int loops, SkCanvas*) override {

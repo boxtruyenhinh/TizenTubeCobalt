@@ -1,20 +1,17 @@
-load("//bazel:macros.bzl", "generated_cc_atom")
+load("//bazel:skia_rules.bzl", "skia_filegroup")
 
-generated_cc_atom(
-    name = "SkResources_src",
-    srcs = ["SkResources.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//experimental/ffmpeg:SkVideoDecoder_hdr",
-        "//include/codec:SkCodec_hdr",
-        "//include/core:SkBitmap_hdr",
-        "//include/core:SkData_hdr",
-        "//include/core:SkImage_hdr",
-        "//include/private:SkTPin_hdr",
-        "//include/utils:SkAnimCodecPlayer_hdr",
-        "//include/utils:SkBase64_hdr",
-        "//modules/skresources/include:SkResources_hdr",
-        "//src/core:SkOSFile_hdr",
-        "//src/utils:SkOSPath_hdr",
+package(
+    default_applicable_licenses = ["//:license"],
+)
+
+licenses(["notice"])
+
+skia_filegroup(
+    name = "srcs",
+    srcs = [
+        "SkAnimCodecPlayer.cpp",
+        "SkAnimCodecPlayer.h",
+        "SkResources.cpp",
     ],
+    visibility = ["//modules/skresources:__pkg__"],
 )

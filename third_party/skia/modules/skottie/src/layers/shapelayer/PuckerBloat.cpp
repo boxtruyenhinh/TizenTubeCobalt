@@ -5,16 +5,26 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkM44.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/private/base/SkAssert.h"
+#include "modules/jsonreader/SkJSONReader.h"
 #include "modules/skottie/src/Adapter.h"
-#include "modules/skottie/src/SkottieJson.h"
 #include "modules/skottie/src/SkottiePriv.h"
 #include "modules/skottie/src/SkottieValue.h"
 #include "modules/skottie/src/layers/shapelayer/ShapeLayer.h"
 #include "modules/sksg/include/SkSGGeometryEffect.h"
+#include "modules/sksg/include/SkSGGeometryNode.h"
+#include "modules/sksg/include/SkSGNode.h"
 #include "src/core/SkGeometry.h"
 
+#include <utility>
 #include <vector>
+
+class SkMatrix;
 
 namespace skottie::internal {
 
@@ -39,7 +49,7 @@ public:
     SG_ATTRIBUTE(Amount, float, fAmount)
 
 private:
-    SkPath onRevalidateEffect(const sk_sp<GeometryNode>& geo) override {
+    SkPath onRevalidateEffect(const sk_sp<GeometryNode>& geo, const SkMatrix&) override {
         struct CubicInfo {
             SkPoint ctrl0, ctrl1, pt; // corresponding to SkPath::cubicTo() params, respectively.
         };

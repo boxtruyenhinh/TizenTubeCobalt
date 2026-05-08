@@ -17,12 +17,12 @@
 
 #include <memory>
 
-#include "SkStream.h"
-#include "SkString.h"
 #include "base/memory/ref_counted.h"
 #include "cobalt/renderer/rasterizer/skia/skia/src/ports/SkFontStyleSet_cobalt.h"
 #include "cobalt/renderer/rasterizer/skia/skia/src/ports/SkStream_cobalt.h"
-#include "third_party/skia/src/ports/SkFontHost_FreeType_common.h"
+#include "include/core/SkStream.h"
+#include "include/core/SkString.h"
+#include "third_party/skia/src/ports/SkTypeface_FreeType.h"
 
 class SkFontMgr_Cobalt;
 
@@ -32,7 +32,9 @@ class SkTypeface_Cobalt : public SkTypeface_FreeType {
       ComputedVariationPosition;
 
   SkTypeface_Cobalt(
-      int face_index, SkFontStyle style, bool is_fixed_pitch,
+      int face_index,
+      SkFontStyle style,
+      bool is_fixed_pitch,
       const SkString& family_name,
       scoped_refptr<font_character_map::CharacterMap> character_map);
 
@@ -43,7 +45,8 @@ class SkTypeface_Cobalt : public SkTypeface_FreeType {
  protected:
   sk_sp<SkTypeface> onMakeClone(const SkFontArguments& args) const override;
 
-  void onCharsToGlyphs(const SkUnichar uni[], int count,
+  void onCharsToGlyphs(const SkUnichar uni[],
+                       int count,
                        SkGlyphID glyphs[]) const override;
 
   void onGetFamilyName(SkString* family_name) const override;
@@ -71,8 +74,11 @@ class SkTypeface_Cobalt : public SkTypeface_FreeType {
 class SkTypeface_CobaltStream : public SkTypeface_Cobalt {
  public:
   SkTypeface_CobaltStream(
-      std::unique_ptr<SkStreamAsset> stream, int face_index, SkFontStyle style,
-      bool is_fixed_pitch, const SkString& family_name,
+      std::unique_ptr<SkStreamAsset> stream,
+      int face_index,
+      SkFontStyle style,
+      bool is_fixed_pitch,
+      const SkString& family_name,
       scoped_refptr<font_character_map::CharacterMap> character_map);
 
   void onGetFontDescriptor(SkFontDescriptor* descriptor,
@@ -91,8 +97,11 @@ class SkTypeface_CobaltStream : public SkTypeface_Cobalt {
 class SkTypeface_CobaltStreamProvider : public SkTypeface_Cobalt {
  public:
   SkTypeface_CobaltStreamProvider(
-      SkFileMemoryChunkStreamProvider* stream_provider, int face_index,
-      SkFontStyle style, bool is_fixed_pitch, const SkString& family_name,
+      SkFileMemoryChunkStreamProvider* stream_provider,
+      int face_index,
+      SkFontStyle style,
+      bool is_fixed_pitch,
+      const SkString& family_name,
       bool disable_synthetic_bolding,
       const ComputedVariationPosition& computed_variation_position,
       scoped_refptr<font_character_map::CharacterMap> character_map);

@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -116,6 +116,30 @@ TEST(JsonEncoder, EscapesFFFF) {
   std::unique_ptr<ParserHandler> writer = NewJSONEncoder(&out, &status);
   writer->HandleString16(span<uint16_t>(chars.data(), chars.size()));
   EXPECT_EQ("\"abc\\uffffd\"", out);
+}
+
+TEST(JsonEncoder, Passes0x7FString8) {
+  std::vector<uint8_t> chars = {'a', 0x7f, 'b'};
+  std::string out;
+  Status status;
+  std::unique_ptr<ParserHandler> writer = NewJSONEncoder(&out, &status);
+  writer->HandleString8(span<uint8_t>(chars.data(), chars.size()));
+  EXPECT_EQ(
+      "\"a\x7f"
+      "b\"",
+      out);
+}
+
+TEST(JsonEncoder, Passes0x7FString16) {
+  std::vector<uint16_t> chars16 = {'a', 0x7f, 'b'};
+  std::string out;
+  Status status;
+  std::unique_ptr<ParserHandler> writer = NewJSONEncoder(&out, &status);
+  writer->HandleString16(span<uint16_t>(chars16.data(), chars16.size()));
+  EXPECT_EQ(
+      "\"a\x7f"
+      "b\"",
+      out);
 }
 
 TEST(JsonEncoder, IncompleteUtf8Sequence) {
@@ -680,15 +704,16 @@ using ContainerTestTypes = ::testing::Types<std::vector<uint8_t>, std::string>;
 TYPED_TEST_SUITE(ConvertJSONToCBORTest, ContainerTestTypes);
 
 TYPED_TEST(ConvertJSONToCBORTest, RoundTripValidJson) {
-  for (const std::string& json_in : {
-           "{\"msg\":\"Hello, world.\",\"lst\":[1,2,3]}",
-           "3.1415",
-           "false",
-           "true",
-           "\"Hello, world.\"",
-           "[1,2,3]",
-           "[]",
-       }) {
+  const std::array<std::string, 7> jsons = {{
+      "{\"msg\":\"Hello, world.\",\"lst\":[1,2,3]}",
+      "3.1415",
+      "false",
+      "true",
+      "\"Hello, world.\"",
+      "[1,2,3]",
+      "[]",
+  }};
+  for (const std::string& json_in : jsons) {
     SCOPED_TRACE(json_in);
     TypeParam json(json_in.begin(), json_in.end());
     std::vector<uint8_t> cbor;

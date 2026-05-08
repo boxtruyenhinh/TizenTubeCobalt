@@ -24,7 +24,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClock : public QuicClock {
 
   ~QuicChromiumClock() override;
 
-#if defined(STARBOARD)
+#if BUILDFLAG(IS_COBALT)
   void ZeroApproximateNow();
 #endif
 

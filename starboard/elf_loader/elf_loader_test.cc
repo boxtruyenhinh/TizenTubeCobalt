@@ -13,10 +13,8 @@
 // limitations under the License.
 
 #include "starboard/elf_loader/elf_loader_impl.h"
-
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace elf_loader {
 
 namespace {
@@ -34,4 +32,3 @@ TEST_F(ElfLoaderTest, Initialize) {
 
 }  // namespace
 }  // namespace elf_loader
-}  // namespace starboard

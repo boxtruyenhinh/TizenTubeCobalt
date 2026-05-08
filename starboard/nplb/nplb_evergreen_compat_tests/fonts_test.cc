@@ -17,19 +17,20 @@
 #include <string>
 #include <vector>
 
-#include "starboard/common/log.h"
 #include "starboard/configuration.h"
-#include "starboard/file.h"
-#include "starboard/nplb/nplb_evergreen_compat_tests/checks.h"
+#include "starboard/configuration_constants.h"
 #include "starboard/system.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-// These tests are not applicable to AOSP
-#if SB_IS(EVERGREEN_COMPATIBLE) && !defined(ANDROID)
+#if !SB_IS(EVERGREEN_COMPATIBLE)
+#error These tests apply only to EVERGREEN_COMPATIBLE platforms.
+#endif
 
-namespace starboard {
+#if defined(ANDROID)
+#error These tests are not applicable to AOSP
+#endif
+
 namespace nplb {
-namespace nplb_evergreen_compat_tests {
 
 namespace {
 
@@ -60,8 +61,4 @@ TEST(FontsTest, VerifySystemFontsConfigDirectory) {
 }
 
 }  // namespace
-}  // namespace nplb_evergreen_compat_tests
 }  // namespace nplb
-}  // namespace starboard
-
-#endif  // SB_IS(EVERGREEN_COMPATIBLE) && !defined(ANDROID)

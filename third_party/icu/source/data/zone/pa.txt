@@ -258,6 +258,9 @@ pa{
         "America:Chihuahua"{
             ec{"ਚਿਹੁਆਹੁਆ"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"ਸਿਉਡਾਡ ਹੁਆਰੇਜ਼"}
+        }
         "America:Coral_Harbour"{
             ec{"ਐਟੀਕੋਕਨ"}
         }
@@ -1223,6 +1226,9 @@ pa{
         "Pacific:Johnston"{
             ec{"ਜੋਨਸਟਨ"}
         }
+        "Pacific:Kanton"{
+            ec{"ਕੈਂਟੋਨ"}
+        }
         "Pacific:Kiritimati"{
             ec{"ਕਿਰਿਤਿਮਤੀ"}
         }
@@ -1921,10 +1927,9 @@ pa{
             lg{"ਯਕੇਤਰਿਨਬਰਗ ਵੇਲਾ"}
             ls{"ਯਕੇਤਰਿਨਬਰਗ ਮਿਆਰੀ ਵੇਲਾ"}
         }
-        fallbackFormat{"{1} ({0})"}
-        gmtFormat{"GMT{0}"}
-        gmtZeroFormat{"GMT"}
-        hourFormat{"+HH:mm;-HH:mm"}
+        "meta:Yukon"{
+            ls{"ਯੂਕੋਨ ਸਮਾਂ"}
+        }
         regionFormat{"{0} ਵੇਲਾ"}
         regionFormatDaylight{"{0} ਪ੍ਰਕਾਸ਼ ਵੇਲਾ"}
         regionFormatStandard{"{0} ਮਿਆਰੀ ਵੇਲਾ"}

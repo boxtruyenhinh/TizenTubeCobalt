@@ -5,19 +5,44 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkString.h"
 #include "include/effects/SkTableMaskFilter.h"
-#include "include/private/SkFixed.h"
-#include "include/private/SkTPin.h"
+
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkFlattenable.h"
+#include "include/core/SkImageFilter.h"
+#include "include/core/SkMaskFilter.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
+#include "include/effects/SkImageFilters.h"
+#include "include/private/base/SkAlign.h"
+#include "include/private/base/SkFixed.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkTPin.h"
+#include "src/core/SkMask.h"
+#include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
+
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <utility>
+
+class SkMatrix;
+class SkPaint;
 
 class SkTableMaskFilterImpl : public SkMaskFilterBase {
 public:
     explicit SkTableMaskFilterImpl(const uint8_t table[256]);
 
     SkMask::Format getFormat() const override;
-    bool filterMask(SkMask*, const SkMask&, const SkMatrix&, SkIPoint*) const override;
+    bool filterMask(SkMaskBuilder*, const SkMask&, const SkMatrix&, SkIPoint*) const override;
+    SkMaskFilterBase::Type type() const override { return SkMaskFilterBase::Type::kTable; }
+    std::pair<sk_sp<SkImageFilter>, bool> asImageFilter(const SkMatrix&,
+                                                        const SkPaint&) const override;
 
 protected:
     ~SkTableMaskFilterImpl() override;
@@ -32,6 +57,8 @@ private:
     uint8_t fTable[256];
 
     using INHERITED = SkMaskFilter;
+
+    friend class SkTableMaskFilter;
 };
 
 SkTableMaskFilterImpl::SkTableMaskFilterImpl() {
@@ -46,22 +73,22 @@ SkTableMaskFilterImpl::SkTableMaskFilterImpl(const uint8_t table[256]) {
 
 SkTableMaskFilterImpl::~SkTableMaskFilterImpl() {}
 
-bool SkTableMaskFilterImpl::filterMask(SkMask* dst, const SkMask& src,
-                                 const SkMatrix&, SkIPoint* margin) const {
+bool SkTableMaskFilterImpl::filterMask(SkMaskBuilder* dst, const SkMask& src,
+                                       const SkMatrix&, SkIPoint* margin) const {
     if (src.fFormat != SkMask::kA8_Format) {
         return false;
     }
 
-    dst->fBounds = src.fBounds;
-    dst->fRowBytes = SkAlign4(dst->fBounds.width());
-    dst->fFormat = SkMask::kA8_Format;
-    dst->fImage = nullptr;
+    dst->bounds() = src.fBounds;
+    dst->rowBytes() = SkAlign4(dst->fBounds.width());
+    dst->format() = SkMask::kA8_Format;
+    dst->image() = nullptr;
 
     if (src.fImage) {
-        dst->fImage = SkMask::AllocImage(dst->computeImageSize());
+        dst->image() = SkMaskBuilder::AllocImage(dst->computeImageSize());
 
         const uint8_t* srcP = src.fImage;
-        uint8_t* dstP = dst->fImage;
+        uint8_t* dstP = dst->image();
         const uint8_t* table = fTable;
         int dstWidth = dst->fBounds.width();
         int extraZeros = dst->fRowBytes - dstWidth;
@@ -104,6 +131,14 @@ sk_sp<SkFlattenable> SkTableMaskFilterImpl::CreateProc(SkReadBuffer& buffer) {
     return sk_sp<SkFlattenable>(SkTableMaskFilter::Create(table));
 }
 
+std::pair<sk_sp<SkImageFilter>, bool> SkTableMaskFilterImpl::asImageFilter(const SkMatrix&,
+                                                                           const SkPaint&) const {
+    sk_sp<SkColorFilter> colorFilter = SkColorFilters::TableARGB(fTable,
+                                                                 nullptr,
+                                                                 nullptr,
+                                                                 nullptr);
+    return std::make_pair(SkImageFilters::ColorFilter(colorFilter, nullptr), false);
+}
 ///////////////////////////////////////////////////////////////////////////////
 
 SkMaskFilter* SkTableMaskFilter::Create(const uint8_t table[256]) {
@@ -124,7 +159,7 @@ SkMaskFilter* SkTableMaskFilter::CreateClip(uint8_t min, uint8_t max) {
 
 void SkTableMaskFilter::MakeGammaTable(uint8_t table[256], SkScalar gamma) {
     const float dx = 1 / 255.0f;
-    const float g = SkScalarToFloat(gamma);
+    const float g = gamma;
 
     float x = 0;
     for (int i = 0; i < 256; i++) {
@@ -166,4 +201,10 @@ void SkTableMaskFilter::MakeClipTable(uint8_t table[256], uint8_t min,
     }
     SkDebugf("\n\n");
 #endif
+}
+
+void SkTableMaskFilter::RegisterFlattenables() {
+    SK_REGISTER_FLATTENABLE(SkTableMaskFilterImpl);
+    // Previous name
+    SkFlattenable::Register("SkTableMF", SkTableMaskFilterImpl::CreateProc);
 }

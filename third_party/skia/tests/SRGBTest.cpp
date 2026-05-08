@@ -5,12 +5,20 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkRasterPipeline.h"
+#include "src/core/SkRasterPipelineOpContexts.h"
+#include "src/core/SkRasterPipelineOpList.h"
 #include "tests/Test.h"
 
-#include <math.h>
+#include <cstdint>
+#include <cstring>
 
 DEF_TEST(srgb_roundtrip, r) {
     uint32_t reds[256];
@@ -18,7 +26,7 @@ DEF_TEST(srgb_roundtrip, r) {
         reds[i] = i;
     }
 
-    SkRasterPipeline_MemoryCtx ptr = { reds, 0 };
+    SkRasterPipelineContexts::MemoryCtx ptr = { reds, 0 };
 
     sk_sp<SkColorSpace> sRGB = SkColorSpace::MakeSRGB(),
                         linear = sRGB->makeLinearGamma();
@@ -28,16 +36,16 @@ DEF_TEST(srgb_roundtrip, r) {
                            reencode {linear.get(),upm,    sRGB.get(),upm};
 
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::load_8888,  &ptr);
+    p.append(SkRasterPipelineOp::load_8888,  &ptr);
     linearize.apply(&p);
     reencode .apply(&p);
-    p.append(SkRasterPipeline::store_8888, &ptr);
+    p.append(SkRasterPipelineOp::store_8888, &ptr);
 
     p.run(0,0,256,1);
 
     for (int i = 0; i < 256; i++) {
         if (reds[i] != (uint32_t)i) {
-            ERRORF(r, "%d doesn't round trip, %d", i, reds[i]);
+            ERRORF(r, "%d doesn't round trip, %u", i, reds[i]);
         }
     }
 }
@@ -47,7 +55,7 @@ DEF_TEST(srgb_edge_cases, r) {
     float colors[4][4] = { {0,1,1,1}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0} };
     auto& color = colors[0];
 
-    SkRasterPipeline_MemoryCtx dst = { &color, 0 };
+    SkRasterPipelineContexts::MemoryCtx dst = { &color, 0 };
 
     sk_sp<SkColorSpace> sRGB = SkColorSpace::MakeSRGB(),
                         linear = sRGB->makeLinearGamma();
@@ -57,9 +65,9 @@ DEF_TEST(srgb_edge_cases, r) {
 
     SkSTArenaAlloc<256> alloc;
     SkRasterPipeline p(&alloc);
-    p.append_constant_color(&alloc, color);
+    p.appendConstantColor(&alloc, color);
     steps.apply(&p);
-    p.append(SkRasterPipeline::store_f32, &dst);
+    p.append(SkRasterPipelineOp::store_f32, &dst);
     p.run(0,0,4,1);
 
     if (color[0] != 0.0f) {
@@ -92,7 +100,7 @@ DEF_TEST(srgb_roundtrip_extended, r) {
         rgba[i] = expected(i);
     }
 
-    SkRasterPipeline_MemoryCtx ptr = { rgba, 0 };
+    SkRasterPipelineContexts::MemoryCtx ptr = { rgba, 0 };
 
     sk_sp<SkColorSpace> cs = SkColorSpace::MakeSRGB();
     sk_sp<SkColorSpace> linear = cs->makeLinearGamma();
@@ -102,10 +110,10 @@ DEF_TEST(srgb_roundtrip_extended, r) {
                            reencode {linear.get(),upm,      cs.get(),upm};
 
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::load_f32,  &ptr);
+    p.append(SkRasterPipelineOp::load_f32,  &ptr);
     linearize.apply(&p);
     reencode .apply(&p);
-    p.append(SkRasterPipeline::store_f32, &ptr);
+    p.append(SkRasterPipelineOp::store_f32, &ptr);
     p.run(0,0,kSteps,1);
 
     auto close = [=](float x, float y) {

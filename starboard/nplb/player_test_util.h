@@ -25,7 +25,6 @@
 #include "starboard/shared/starboard/player/video_dmp_reader.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace starboard {
 namespace nplb {
 
 struct SbPlayerTestConfig {
@@ -55,16 +54,16 @@ struct SbPlayerTestConfig {
   const char* max_video_capabilities;
 };
 
-std::vector<const char*> GetAudioTestFiles();
+std::vector<const char*> GetStereoAudioTestFiles();
 std::vector<const char*> GetVideoTestFiles();
 std::vector<SbPlayerOutputMode> GetPlayerOutputModes();
 std::vector<const char*> GetKeySystems();
-
-std::vector<SbPlayerTestConfig> GetSupportedSbPlayerTestConfigs(
-    const char* key_system = "");
+std::vector<SbPlayerTestConfig> GetAllPlayerTestConfigs();
 
 std::string GetSbPlayerTestConfigName(
     ::testing::TestParamInfo<SbPlayerTestConfig> info);
+
+void SkipTestIfNotSupported(const SbPlayerTestConfig& config);
 
 void DummyDeallocateSampleFunc(SbPlayer player,
                                void* context,
@@ -91,7 +90,7 @@ SbPlayer CallSbPlayerCreate(
     SbMediaVideoCodec video_codec,
     SbMediaAudioCodec audio_codec,
     SbDrmSystem drm_system,
-    const shared::starboard::media::AudioStreamInfo* audio_stream_info,
+    const starboard::AudioStreamInfo* audio_stream_info,
     const char* max_video_capabilities,
     SbPlayerDeallocateSampleFunc sample_deallocate_func,
     SbPlayerDecoderStatusFunc decoder_status_func,
@@ -104,7 +103,7 @@ SbPlayer CallSbPlayerCreate(
 void CallSbPlayerWriteSamples(
     SbPlayer player,
     SbMediaType sample_type,
-    shared::starboard::player::video_dmp::VideoDmpReader* dmp_reader,
+    starboard::VideoDmpReader* dmp_reader,
     int start_index,
     int number_of_samples_to_write,
     int64_t timestamp_offset = 0,
@@ -121,6 +120,5 @@ bool IsPartialAudioSupported();
 bool IsAudioPassthroughUsed(const SbPlayerTestConfig& config);
 
 }  // namespace nplb
-}  // namespace starboard
 
 #endif  // STARBOARD_NPLB_PLAYER_TEST_UTIL_H_

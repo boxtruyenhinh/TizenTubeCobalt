@@ -37,7 +37,7 @@
 bool SbAccessibilityGetDisplaySettings(
     SbAccessibilityDisplaySettings* out_setting) {
   if (!out_setting ||
-      !starboard::common::MemoryIsZero(
+      !starboard::MemoryIsZero(
         out_setting, sizeof(SbAccessibilityDisplaySettings))) {
     return false;
   }
