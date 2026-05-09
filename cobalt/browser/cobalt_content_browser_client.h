@@ -136,6 +136,9 @@ class CobaltContentBrowserClient : public content::ShellContentBrowserClient {
   void DispatchBlur();
   void DispatchFocus();
 
+  // User agent override support
+  static std::string GetUserAgentOverride();
+
   void AddPendingWindowReceiver(
       mojo::PendingReceiver<cobalt::media::mojom::PlatformWindowProvider>
           receiver);

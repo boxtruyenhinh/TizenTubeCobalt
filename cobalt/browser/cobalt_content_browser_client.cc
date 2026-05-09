@@ -15,6 +15,7 @@
 #include "cobalt/browser/cobalt_content_browser_client.h"
 
 #include <string>
+#include <variant>
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
@@ -44,6 +45,7 @@
 #include "cobalt/browser/metrics/cobalt_metrics_services_manager_client.h"
 #include "cobalt/browser/mojom/h5vcc_settings.mojom.h"
 #include "cobalt/browser/user_agent/user_agent_platform_info.h"
+#include "cobalt/browser/global_features.h"
 #include "cobalt/common/features/starboard_features_initialization.h"
 #include "cobalt/media/service/platform_window_provider_service.h"
 #include "cobalt/shell/browser/shell.h"
@@ -152,6 +154,9 @@ static void JNI_CobaltContentBrowserClient_DispatchFocus(JNIEnv*) {
 #endif  // BUILDFLAG(IS_ANDROID)
 
 std::string GetCobaltUserAgent() {
+  if (!CobaltContentBrowserClient::GetUserAgentOverride().empty()) {
+    return CobaltContentBrowserClient::GetUserAgentOverride();
+  }
   const UserAgentPlatformInfo platform_info;
   static const std::string user_agent_str = platform_info.ToString();
   return user_agent_str;
@@ -631,5 +636,17 @@ void CobaltContentBrowserClient::SetUserAgentCrashAnnotation() {
 #endif  // BUILDFLAG(IS_STARBOARD)
 }
 #endif  // !BUILDFLAG(IS_ANDROIDTV)
+
+std::string CobaltContentBrowserClient::GetUserAgentOverride() {
+  const auto& settings = GlobalFeatures::GetInstance()->GetSettings();
+  const auto it = settings.find("user_agent_override");
+  if (it != settings.end()) {
+    if (const auto* ua_override = std::get_if<std::string>(&it->second);
+        ua_override != nullptr && !ua_override->empty()) {
+      return *ua_override;
+    }
+  }
+  return std::string();
+}
 
 }  // namespace cobalt
