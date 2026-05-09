@@ -1,25 +1,46 @@
-# ![Logo](chrome/app/theme/chromium/product_logo_64.png) Chromium
+,# 💠 TizenTube Cobalt
 
-[![codecov](https://codecov.io/github/youtube/cobalt/branch/main/graph/badge.svg?token=RR6MKKNYNV)](https://codecov.io/github/youtube/cobalt)
-[![android](https://github.com/youtube/cobalt/actions/workflows/android.yaml/badge.svg?branch=main&event=push)](https://github.com/youtube/cobalt/actions/workflows/android.yaml?query=event%3Apush+branch%3Amain)
-[![linux](https://github.com/youtube/cobalt/actions/workflows/linux.yaml/badge.svg?branch=main&event=push)](https://github.com/youtube/cobalt/actions/workflows/linux.yaml?query=event%3Apush+branch%3Amain)
+<p align="center">
+    <img width="700px" src=".github/assets/TizenTube_Cobalt-Official_Banner.png">
+    <br>
+</p>
 
-Chromium is an open-source browser project that aims to build a safer, faster,
-and more stable way for all users to experience the web.
+**TizenTube Cobalt** is an app based on [Cobalt](https://cobalt.dev) that enhances your favourite streaming website viewing experience by removing ads, adding [SponsorBlock](https://sponsor.ajay.app/) support, and providing useful features like video speed control.
 
-The project's web site is https://www.chromium.org.
+<details>
+<summary><strong>What is Cobalt?</strong></summary>
 
-To check out the source code locally, don't use `git clone`! Instead,
-follow [the instructions on how to get the code](docs/get_the_code.md).
+Cobalt is a lightweight, cross-platform application container and runtime for HTML5-based apps, originally developed by Google for embedded and resource-constrained devices (like smart TVs, set-top boxes, and game consoles). It implements a subset of the W3C HTML5 standard and runs web apps with high performance on a wide range of hardware.
 
-Documentation in the source is rooted in [docs/README.md](docs/README.md).
+</details>
 
-Learn how to [Get Around the Chromium Source Code Directory
-Structure](https://www.chromium.org/developers/how-tos/getting-around-the-chrome-source-code).
+## ✨ Features
 
-For historical reasons, there are some small top level directories. Now the
-guidance is that new top level directories are for product (e.g. Chrome,
-Android WebView, Ash). Even if these products have multiple executables, the
-code should be in subdirectories of the product.
+- 🛑 **Ad Blocker**: Enjoy your favourite streaming website without interruptions from ads.
+- ❗ **SponsorBlock Support**: Automatically skip sponsored segments in videos.
+- ⏭️ **Video Speed Control**: Adjust playback speed to your preference.
+- 🔺 **[DeArrow](https://dearrow.ajay.app/) Support**: Remove clickbait and misleading video titles.
+- ➕ **More to come!** Request features via [issues](https://github.com/reisxd/TizenTube/issues/new).
 
-If you found a bug, please file it at https://crbug.com/new.
+## ⬇️ Download
+
+Get the latest release for your platform:
+
+[**Download Latest Release**](https://github.com/reisxd/TizenTubeCobalt/releases/latest)
+
+AFTVNews code: `6366500`
+
+For a better experience, preferably use TizenTube Cobalt on a [**Google TV certified device.**](https://www.androidtv-guide.com/)
+
+## ❔ How to Install
+
+1. Download the latest release from the link above.
+2. Sideload or install the app on your device (using a file manager, ADB, or platform-specific method).
+3. Open the app and enjoy an enhanced streaming experience!
+
+## ℹ️ Community & Support
+
+- [Discord Server](https://discord.gg/m2P7v8Y2qR)
+- [Telegram Channel](https://t.me/tizentubecobaltofficial)
+- [Matrix Space](https://matrix.to/#/!BLE5ubNYktI30e8K0j:matrix.6513006.xyz)
+- [Report Issues / Request Features](https://github.com/reisxd/TizenTube/issues)
