@@ -1,2 +1,4 @@
 /.cobaltrc
 /build
+
+/keystore.properties
