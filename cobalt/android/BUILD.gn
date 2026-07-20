@@ -9,7 +9,7 @@ jinja_template("cobalt_manifest") {
   input = "//cobalt/shell/android/shell_apk/AndroidManifest.xml.jinja2"
   output = cobalt_manifest
   variables = [
-    "manifest_package=io.gh.reisxd.tizentube.cobalt",
+    "manifest_package=com.google.android.youtube.tv",
     "build_type=$build_type",
   ]
 }
@@ -271,9 +271,9 @@ android_apk("cobalt_apk") {
   include_size_info = is_official_build
   version_code = "202"
   version_name = "2.0.2"
-  keystore_path = "../../../../.android/debug.keystore"
-  keystore_name = "androiddebugkey"
-  keystore_password = "android"
+  keystore_path = "../../../../.android/release-keystore/boxtruyenhinh_os.jks"
+  keystore_name = getenv("BOXTV_KEY_ALIAS")
+  keystore_password = getenv("BOXTV_KEYSTORE_PASSWORD")
 }
 
 robolectric_binary("cobalt_coat_junit_tests") {

@@ -66,15 +66,15 @@ android {
 
     signingConfigs {
         // A signing config that matches what is implicitly used for the "debug" build type.
-        debugConfig {
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
-            storeFile file("${System.getProperty('user.home')}/.android/debug.keystore")
-            storePassword 'android'
+        releaseConfig {
+            keyAlias System.getenv('BOXTV_KEY_ALIAS')
+            keyPassword System.getenv('BOXTV_KEYSTORE_PASSWORD')
+            storeFile file("${System.getProperty('user.home')}/.android/release-keystore/boxtruyenhinh_os.jks")
+            storePassword System.getenv('BOXTV_KEYSTORE_PASSWORD')
         }
     }
     defaultConfig {
-        applicationId "com.boxtruyenhinh.tizentube.cobalt"
+        applicationId "com.google.android.youtube.tv"
         minSdkVersion MIN_SUPPORTED_SDK_VERSION
         targetSdkVersion LATEST_SUPPORTED_SDK_VERSION
         compileSdkVersion LATEST_SUPPORTED_SDK_VERSION
@@ -109,7 +109,7 @@ android {
             externalNativeBuild {
                 cmake.arguments "-DCOBALT_CONFIG=debug"
             }
-            signingConfig signingConfigs.debugConfig
+            signingConfig signingConfigs.releaseConfig
             enableUnitTestCoverage true
         }
         devel {
@@ -118,7 +118,7 @@ android {
             externalNativeBuild {
                 cmake.arguments "-DCOBALT_CONFIG=devel"
             }
-            signingConfig signingConfigs.debugConfig
+            signingConfig signingConfigs.releaseConfig
             enableUnitTestCoverage true
         }
         qa {
@@ -127,7 +127,7 @@ android {
             externalNativeBuild {
                 cmake.arguments "-DCOBALT_CONFIG=qa"
             }
-            signingConfig signingConfigs.debugConfig
+            signingConfig signingConfigs.releaseConfig
             enableUnitTestCoverage true
         }
         release {
@@ -136,7 +136,7 @@ android {
             externalNativeBuild {
                 cmake.arguments "-DCOBALT_CONFIG=gold"
             }
-            signingConfig signingConfigs.debugConfig
+            signingConfig signingConfigs.releaseConfig
         }
     }
     sourceSets {
