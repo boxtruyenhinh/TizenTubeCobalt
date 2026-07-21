@@ -798,11 +798,26 @@ public abstract class CobaltActivity extends Activity {
      * Google Assistant mới dùng CLEAR_TOP nên không đi
      * vào nhánh tương thích này.
      */
-    if ((intent.getFlags()
-            & Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        == 0) {
+    boolean forwardedByVoiceProxy =
+        intent.getBooleanExtra(
+            "dev.cobalt.app.extra.LEGACY_KATNISS_22",
+            false);
+
+    boolean hasLegacyClearTask =
+        (intent.getFlags()
+                & Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            != 0;
+
+    /*
+     * Intent gốc của Katniss 2.2 có CLEAR_TASK.
+     * Voice proxy loại bỏ cờ đó để bảo vệ task Cobalt và đánh dấu
+     * Intent bằng EXTRA_LEGACY_KATNISS_22.
+     */
+    if (!forwardedByVoiceProxy
+        && !hasLegacyClearTask) {
       return false;
     }
+
 
     Uri uri = intent.getData();
 

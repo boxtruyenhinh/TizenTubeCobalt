@@ -64,21 +64,13 @@
         <profileable android:shell="true" android:enabled="true" />
         {% block main_activity %}
         <activity android:name="dev.cobalt.app.MainActivity"
+                  android:exported="true"
                   android:launchMode="singleTask"
-                  android:theme="@style/CobaltTheme"
-                  android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|smallestScreenSize|screenLayout|uiMode"
-                  android:windowSoftInputMode="adjustResize"
-                  android:supportsPictureInPicture="true"
-                  android:hardwareAccelerated="true"
-                  android:exported="true">
-            <meta-data android:name="cobalt.APP_URL" android:value="https://www.youtube.com/tv?additionalDataUrl=http://localhost:8012/apps/YouTube"/>
-            <meta-data android:name="cobalt.ENABLE_SPLASH_SCREEN" android:value="true"/>
-            <meta-data android:name="com.google.android.tv.pip.category" android:value="communication" />
-            <meta-data android:name="cobalt.EVERGREEN_LITE" android:value="false"/>
-            {# ENABLE_FEATURES accepts a semi-colon-separated list of Chromium features. #}
-            {# Always enable Perfetto tracing for development. This manifest is only used for the development shell (CoAT) and does not affect the production Kimono app. #}
-            <meta-data android:name="cobalt.ENABLE_FEATURES" android:value="EnablePerfettoSystemTracing"/>
-            <meta-data android:name="android.app.lib_name" android:value="cobalt"/>
+                  android:taskAffinity="{{ manifest_package }}.voice_proxy"
+                  android:theme="@android:style/Theme.Translucent.NoTitleBar"
+                  android:noHistory="true"
+                  android:excludeFromRecents="true"
+                  android:finishOnTaskLaunch="true">
             <intent-filter>
               <action android:name="android.intent.action.MAIN"/>
               <category android:name="android.intent.category.LAUNCHER"/>
@@ -98,6 +90,24 @@
               <data android:host="youtu.be"/>
               <data android:pathPattern=".*"/>
             </intent-filter>
+        </activity>
+
+        <activity android:name="dev.cobalt.app.CobaltMainActivity"
+                  android:launchMode="singleTask"
+                  android:theme="@style/CobaltTheme"
+                  android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|smallestScreenSize|screenLayout|uiMode"
+                  android:windowSoftInputMode="adjustResize"
+                  android:supportsPictureInPicture="true"
+                  android:hardwareAccelerated="true"
+                  android:exported="false">
+            <meta-data android:name="cobalt.APP_URL" android:value="https://www.youtube.com/tv?additionalDataUrl=http://localhost:8012/apps/YouTube"/>
+            <meta-data android:name="cobalt.ENABLE_SPLASH_SCREEN" android:value="true"/>
+            <meta-data android:name="com.google.android.tv.pip.category" android:value="communication" />
+            <meta-data android:name="cobalt.EVERGREEN_LITE" android:value="false"/>
+            {# ENABLE_FEATURES accepts a semi-colon-separated list of Chromium features. #}
+            {# Always enable Perfetto tracing for development. This manifest is only used for the development shell (CoAT) and does not affect the production Kimono app. #}
+            <meta-data android:name="cobalt.ENABLE_FEATURES" android:value="EnablePerfettoSystemTracing"/>
+            <meta-data android:name="android.app.lib_name" android:value="cobalt"/>
         </activity>
         {% endblock %}
         <!-- The following service entries exist in order to allow us to
