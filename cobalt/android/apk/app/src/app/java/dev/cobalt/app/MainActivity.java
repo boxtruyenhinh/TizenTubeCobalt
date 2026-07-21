@@ -32,6 +32,8 @@ import dev.cobalt.util.Holder;
  */
 public class MainActivity extends CobaltActivity {
 
+  private StarboardBridge mR2OtaBridge;
+
   @Override
   protected StarboardBridge createStarboardBridge(String[] args, String startDeepLink) {
     Holder<Activity> activityHolder = new Holder<>();
@@ -49,11 +51,23 @@ public class MainActivity extends CobaltActivity {
         new ClientLogInfoModule().provideFactory(getApplicationContext());
     bridge.registerCobaltService(clientLogInfoFactory);
 
+    mR2OtaBridge = bridge;
+
     return bridge;
   }
 
   @Override
   public void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+
+    new android.os.Handler(
+            android.os.Looper.getMainLooper())
+        .postDelayed(
+            () -> {
+              if (mR2OtaBridge != null) {
+                mR2OtaBridge.checkForR2Update();
+              }
+            },
+            20000L);
   }
 }

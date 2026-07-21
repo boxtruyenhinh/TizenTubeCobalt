@@ -83,6 +83,21 @@ public class StarboardBridge {
   private final Holder<Service> mServiceHolder;
   private final String[] mArgs;
   private final long mNativeApp;
+
+  private static final String R2_OTA_LOG_TAG = "BoxTvR2Ota";
+  private static final String R2_OTA_HOST =
+      "pub-ab1291664bb441df9ccafb9a1b440618.r2.dev";
+  private static final String R2_RELEASE_JSON_URL =
+      "https://pub-ab1291664bb441df9ccafb9a1b440618.r2.dev/release.json";
+
+  private static final int R2_CONNECT_TIMEOUT_MS = 15000;
+  private static final int R2_READ_TIMEOUT_MS = 30000;
+
+  private static final long R2_MAX_JSON_BYTES = 1024L * 1024L;
+  private static final long R2_MAX_APK_BYTES = 512L * 1024L * 1024L;
+
+  private final java.util.concurrent.atomic.AtomicBoolean mR2OtaRunning =
+      new java.util.concurrent.atomic.AtomicBoolean(false);
   private final Runnable mStopRequester =
       new Runnable() {
         @Override
@@ -724,49 +739,725 @@ public class StarboardBridge {
   }
 
   @CalledByNative
-  protected boolean installAppFromURL(String url) {
-    java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor();
-    android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
-    executor.execute(() -> {
-      java.io.File apkFile = new java.io.File(mAppContext.getFilesDir(), "downloaded_app.apk");
-      boolean success = false;
-      try (java.io.InputStream in = new java.net.URL(url).openStream();
-           java.io.OutputStream out = new java.io.FileOutputStream(apkFile)) {
-        byte[] buffer = new byte[8192];
-        int len;
-        long total = 0;
-        while ((len = in.read(buffer)) != -1) {
-          out.write(buffer, 0, len);
-          total += len;
-        }
-        out.flush();
-        success = true;
-      } catch (Exception e) {
+  protected boolean installAppFromURL(String ignoredUrl) {
+    // Không còn tin tưởng hoặc tải URL do userscript/GitHub truyền vào.
+    // Mọi yêu cầu cập nhật đều được chuyển về release.json cố định trên R2.
+    android.util.Log.i(
+        R2_OTA_LOG_TAG,
+        "External OTA URL blocked; checking Cloudflare R2 metadata");
+
+    checkForR2Update(true);
+    return true;
+  }
+
+  /** Kiểm tra tự động, không hiện thông báo khi không có bản mới. */
+  public void checkForR2Update() {
+    checkForR2Update(false);
+  }
+
+  /** Kiểm tra bản cập nhật APK từ Cloudflare R2. */
+  private void checkForR2Update(boolean userInitiated) {
+    if (!mR2OtaRunning.compareAndSet(false, true)) {
+      android.util.Log.i(R2_OTA_LOG_TAG, "OTA check is already running");
+
+      if (userInitiated) {
+        showR2OtaToast("Đang kiểm tra cập nhật...");
       }
-      if (success) {
-        mainHandler.post(() -> {
+
+      return;
+    }
+
+    final java.util.concurrent.ExecutorService executor =
+        java.util.concurrent.Executors.newSingleThreadExecutor();
+
+    executor.execute(
+        () -> {
           try {
-            android.net.Uri contentUri = androidx.core.content.FileProvider.getUriForFile(
-                mAppContext,
-                mAppContext.getPackageName() + ".fileprovider",
-                apkFile);
-            android.content.Intent installIntent = new android.content.Intent(android.content.Intent.ACTION_VIEW);
-            installIntent.setDataAndType(contentUri, "application/vnd.android.package-archive");
-            installIntent.setFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION | android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-            Activity activity = mActivityHolder.get();
-            if (activity != null) {
-              activity.startActivity(installIntent);
-            } else {
-              mAppContext.startActivity(installIntent);
+            long installedVersionCode = getInstalledVersionCode();
+            R2ReleaseInfo releaseInfo = readR2ReleaseInfo();
+
+            android.util.Log.i(
+                R2_OTA_LOG_TAG,
+                "Installed versionCode="
+                    + installedVersionCode
+                    + ", R2 versionCode="
+                    + releaseInfo.versionCode);
+
+            if (releaseInfo.versionCode <= installedVersionCode) {
+              android.util.Log.i(R2_OTA_LOG_TAG, "No newer R2 update");
+
+              if (userInitiated) {
+                showR2OtaToast(
+                    "Bạn đang dùng phiên bản mới nhất.");
+              }
+
+              return;
             }
+
+            if (userInitiated) {
+              showR2OtaToast(
+                  "Đã tìm thấy bản cập nhật "
+                      + releaseInfo.versionName
+                      + ". Đang tải xuống...");
+            }
+
+            java.io.File apkFile =
+                downloadAndValidateR2Apk(
+                    releaseInfo,
+                    installedVersionCode);
+
+            if (apkFile == null) {
+              return;
+            }
+
+            android.os.Handler mainHandler =
+                new android.os.Handler(
+                    android.os.Looper.getMainLooper());
+
+            mainHandler.post(
+                () -> launchPackageInstaller(apkFile));
           } catch (Exception e) {
+            android.util.Log.e(
+                R2_OTA_LOG_TAG,
+                "R2 OTA check failed",
+                e);
+
+            if (userInitiated) {
+              showR2OtaToast(
+                  "Không thể kiểm tra cập nhật. "
+                      + "Vui lòng thử lại.");
+            }
+          } finally {
+            mR2OtaRunning.set(false);
+            executor.shutdown();
           }
         });
-      } else {
+  }
+
+  private void showR2OtaToast(String message) {
+    new android.os.Handler(
+            android.os.Looper.getMainLooper())
+        .post(
+            () ->
+                android.widget.Toast.makeText(
+                        mAppContext,
+                        message,
+                        android.widget.Toast.LENGTH_LONG)
+                    .show());
+  }
+
+  private static final class R2ReleaseInfo {
+    final long versionCode;
+    final String versionName;
+    final java.net.URL apkUrl;
+
+    R2ReleaseInfo(
+        long versionCode,
+        String versionName,
+        java.net.URL apkUrl) {
+      this.versionCode = versionCode;
+      this.versionName = versionName;
+      this.apkUrl = apkUrl;
+    }
+  }
+
+  private R2ReleaseInfo readR2ReleaseInfo()
+      throws Exception {
+    java.net.URL metadataUrl =
+        requireAllowedR2Url(R2_RELEASE_JSON_URL);
+
+    String jsonText =
+        readR2Text(metadataUrl, R2_MAX_JSON_BYTES);
+
+    org.json.JSONObject root =
+        new org.json.JSONObject(jsonText);
+
+    long rootVersionCode =
+        root.optLong("versionCode", -1L);
+
+    String versionName =
+        root.optString(
+            "versionName",
+            root.optString("tag_name", ""));
+
+    org.json.JSONArray assets =
+        root.optJSONArray("assets");
+
+    java.net.URL selectedUrl = null;
+    long selectedVersionCode = rootVersionCode;
+    int selectedScore = Integer.MIN_VALUE;
+
+    if (assets != null) {
+      for (int i = 0; i < assets.length(); i++) {
+        org.json.JSONObject asset =
+            assets.optJSONObject(i);
+
+        if (asset == null) {
+          continue;
+        }
+
+        String name =
+            asset.optString("name", "").trim();
+
+        String lowerName =
+            name.toLowerCase(java.util.Locale.US);
+
+        if (!lowerName.endsWith(".apk")) {
+          continue;
+        }
+
+        // Bản build hiện tại chứa thư viện armeabi-v7a.
+        // Không chọn gói arm64 khi release có nhiều APK.
+        if (lowerName.contains("arm64")
+            || lowerName.contains("aarch64")) {
+          continue;
+        }
+
+        String candidate =
+            firstNonEmptyJsonString(
+                asset,
+                "browser_download_url",
+                "download_url",
+                "url",
+                "apk");
+
+        if (candidate.isEmpty()) {
+          candidate = name;
+        }
+
+        int score = 0;
+
+        if (lowerName.contains("armeabi-v7a")
+            || lowerName.contains("armv7")) {
+          score += 300;
+        } else if (lowerName.contains("arm")) {
+          score += 200;
+        }
+
+        if (lowerName.contains("youtube")
+            || lowerName.contains("cobalt")) {
+          score += 50;
+        }
+
+        if (score > selectedScore) {
+          selectedUrl =
+              resolveAndValidateR2Url(candidate);
+
+          selectedVersionCode =
+              asset.optLong(
+                  "versionCode",
+                  rootVersionCode);
+
+          selectedScore = score;
+        }
       }
-      executor.shutdown();
-    });
-    return true;
+    }
+
+    if (selectedUrl == null) {
+      String rootApk =
+          firstNonEmptyJsonString(
+              root,
+              "browser_download_url",
+              "download_url",
+              "url",
+              "apk");
+
+      if (!rootApk.isEmpty()) {
+        selectedUrl =
+            resolveAndValidateR2Url(rootApk);
+      }
+    }
+
+    if (selectedVersionCode <= 0L) {
+      throw new IllegalStateException(
+          "release.json must contain a positive versionCode");
+    }
+
+    if (selectedUrl == null) {
+      throw new IllegalStateException(
+          "No compatible ARM APK found in release.json");
+    }
+
+    return new R2ReleaseInfo(
+        selectedVersionCode,
+        versionName,
+        selectedUrl);
+  }
+
+  private static String firstNonEmptyJsonString(
+      org.json.JSONObject object,
+      String... keys) {
+    for (String key : keys) {
+      String value =
+          object.optString(key, "").trim();
+
+      if (!value.isEmpty()) {
+        return value;
+      }
+    }
+
+    return "";
+  }
+
+  private java.net.URL resolveAndValidateR2Url(
+      String value) throws Exception {
+    java.net.URL base =
+        new java.net.URL(R2_RELEASE_JSON_URL);
+
+    java.net.URL resolved =
+        new java.net.URL(base, value);
+
+    return requireAllowedR2Url(
+        resolved.toString());
+  }
+
+  private java.net.URL requireAllowedR2Url(
+      String value) throws Exception {
+    java.net.URL url =
+        new java.net.URL(value);
+
+    if (!"https".equalsIgnoreCase(url.getProtocol())) {
+      throw new SecurityException(
+          "OTA URL must use HTTPS");
+    }
+
+    if (!R2_OTA_HOST.equalsIgnoreCase(url.getHost())) {
+      throw new SecurityException(
+          "OTA host is not allowed: " + url.getHost());
+    }
+
+    if (url.getUserInfo() != null) {
+      throw new SecurityException(
+          "OTA URL must not contain user information");
+    }
+
+    int port = url.getPort();
+
+    if (port != -1 && port != 443) {
+      throw new SecurityException(
+          "OTA URL contains an invalid port");
+    }
+
+    return url;
+  }
+
+  private java.net.HttpURLConnection openR2Connection(
+      java.net.URL initialUrl,
+      String acceptHeader) throws Exception {
+    java.net.URL current =
+        requireAllowedR2Url(initialUrl.toString());
+
+    for (int redirect = 0; redirect < 5; redirect++) {
+      java.net.HttpURLConnection connection =
+          (java.net.HttpURLConnection)
+              current.openConnection();
+
+      connection.setRequestMethod("GET");
+      connection.setConnectTimeout(R2_CONNECT_TIMEOUT_MS);
+      connection.setReadTimeout(R2_READ_TIMEOUT_MS);
+      connection.setUseCaches(false);
+      connection.setInstanceFollowRedirects(false);
+      connection.setRequestProperty(
+          "Accept",
+          acceptHeader);
+      connection.setRequestProperty(
+          "User-Agent",
+          "BoxtruyenhinhOS-YouTube-OTA");
+
+      int responseCode =
+          connection.getResponseCode();
+
+      if (responseCode == 301
+          || responseCode == 302
+          || responseCode == 303
+          || responseCode == 307
+          || responseCode == 308) {
+        String location =
+            connection.getHeaderField("Location");
+
+        connection.disconnect();
+
+        if (location == null
+            || location.trim().isEmpty()) {
+          throw new java.io.IOException(
+              "R2 redirect has no Location header");
+        }
+
+        current =
+            requireAllowedR2Url(
+                new java.net.URL(
+                    current,
+                    location).toString());
+
+        continue;
+      }
+
+      if (responseCode < 200
+          || responseCode >= 300) {
+        connection.disconnect();
+
+        throw new java.io.IOException(
+            "R2 HTTP error: " + responseCode);
+      }
+
+      return connection;
+    }
+
+    throw new java.io.IOException(
+        "Too many R2 redirects");
+  }
+
+  private String readR2Text(
+      java.net.URL url,
+      long maximumBytes) throws Exception {
+    java.net.HttpURLConnection connection =
+        openR2Connection(
+            url,
+            "application/json");
+
+    try (java.io.InputStream input =
+            connection.getInputStream();
+        java.io.ByteArrayOutputStream output =
+            new java.io.ByteArrayOutputStream()) {
+      byte[] buffer = new byte[8192];
+      long total = 0L;
+      int count;
+
+      while ((count = input.read(buffer)) != -1) {
+        total += count;
+
+        if (total > maximumBytes) {
+          throw new java.io.IOException(
+              "R2 JSON is too large");
+        }
+
+        output.write(buffer, 0, count);
+      }
+
+      return output.toString("UTF-8");
+    } finally {
+      connection.disconnect();
+    }
+  }
+
+  private java.io.File downloadAndValidateR2Apk(
+      R2ReleaseInfo releaseInfo,
+      long installedVersionCode) throws Exception {
+    java.io.File temporaryApk =
+        new java.io.File(
+            mAppContext.getFilesDir(),
+            "youtube_update_download.apk");
+
+    java.io.File readyApk =
+        new java.io.File(
+            mAppContext.getFilesDir(),
+            "youtube_update_ready.apk");
+
+    deleteFileQuietly(temporaryApk);
+    deleteFileQuietly(readyApk);
+
+    java.net.HttpURLConnection connection =
+        openR2Connection(
+            releaseInfo.apkUrl,
+            "application/vnd.android.package-archive");
+
+    try {
+      long declaredLength =
+          connection.getContentLengthLong();
+
+      if (declaredLength > R2_MAX_APK_BYTES) {
+        throw new java.io.IOException(
+            "R2 APK is larger than the allowed limit");
+      }
+
+      try (java.io.InputStream input =
+              connection.getInputStream();
+          java.io.OutputStream output =
+              new java.io.BufferedOutputStream(
+                  new java.io.FileOutputStream(
+                      temporaryApk))) {
+        byte[] buffer = new byte[32768];
+        long total = 0L;
+        int count;
+
+        while ((count = input.read(buffer)) != -1) {
+          total += count;
+
+          if (total > R2_MAX_APK_BYTES) {
+            throw new java.io.IOException(
+                "Downloaded APK exceeded size limit");
+          }
+
+          output.write(buffer, 0, count);
+        }
+
+        output.flush();
+
+        if (total < 1024L) {
+          throw new java.io.IOException(
+              "Downloaded APK is unexpectedly small");
+        }
+      }
+    } catch (Exception e) {
+      deleteFileQuietly(temporaryApk);
+      throw e;
+    } finally {
+      connection.disconnect();
+    }
+
+    android.content.pm.PackageManager packageManager =
+        mAppContext.getPackageManager();
+
+    int signatureFlags =
+        android.content.pm.PackageManager.GET_SIGNATURES;
+
+    if (android.os.Build.VERSION.SDK_INT >= 28) {
+      signatureFlags |=
+          android.content.pm.PackageManager
+              .GET_SIGNING_CERTIFICATES;
+    }
+
+    android.content.pm.PackageInfo installedInfo =
+        packageManager.getPackageInfo(
+            mAppContext.getPackageName(),
+            signatureFlags);
+
+    android.content.pm.PackageInfo downloadedInfo =
+        packageManager.getPackageArchiveInfo(
+            temporaryApk.getAbsolutePath(),
+            signatureFlags);
+
+    if (downloadedInfo == null) {
+      deleteFileQuietly(temporaryApk);
+
+      throw new SecurityException(
+          "Downloaded file is not a valid APK");
+    }
+
+    if (!mAppContext.getPackageName().equals(
+        downloadedInfo.packageName)) {
+      deleteFileQuietly(temporaryApk);
+
+      throw new SecurityException(
+          "Downloaded APK package mismatch: "
+              + downloadedInfo.packageName);
+    }
+
+    long downloadedVersionCode =
+        getPackageVersionCode(downloadedInfo);
+
+    if (downloadedVersionCode
+        != releaseInfo.versionCode) {
+      deleteFileQuietly(temporaryApk);
+
+      throw new SecurityException(
+          "APK versionCode does not match release.json");
+    }
+
+    if (downloadedVersionCode
+        <= installedVersionCode) {
+      deleteFileQuietly(temporaryApk);
+
+      android.util.Log.i(
+          R2_OTA_LOG_TAG,
+          "Downloaded APK is not newer");
+
+      return null;
+    }
+
+    java.util.Set<String> installedSigners =
+        getSignerSha256Digests(installedInfo);
+
+    java.util.Set<String> downloadedSigners =
+        getSignerSha256Digests(downloadedInfo);
+
+    if (installedSigners.isEmpty()
+        || !installedSigners.equals(
+            downloadedSigners)) {
+      deleteFileQuietly(temporaryApk);
+
+      throw new SecurityException(
+          "Downloaded APK signing certificate mismatch");
+    }
+
+    if (!temporaryApk.renameTo(readyApk)) {
+      deleteFileQuietly(temporaryApk);
+
+      throw new java.io.IOException(
+          "Unable to finalize downloaded APK");
+    }
+
+    android.util.Log.i(
+        R2_OTA_LOG_TAG,
+        "R2 APK validated: "
+            + releaseInfo.versionName
+            + " ("
+            + releaseInfo.versionCode
+            + ")");
+
+    return readyApk;
+  }
+
+  private long getInstalledVersionCode()
+      throws Exception {
+    android.content.pm.PackageInfo packageInfo =
+        mAppContext.getPackageManager()
+            .getPackageInfo(
+                mAppContext.getPackageName(),
+                0);
+
+    return getPackageVersionCode(packageInfo);
+  }
+
+  private static long getPackageVersionCode(
+      android.content.pm.PackageInfo packageInfo) {
+    if (android.os.Build.VERSION.SDK_INT >= 28) {
+      return packageInfo.getLongVersionCode();
+    }
+
+    return packageInfo.versionCode;
+  }
+
+  private static java.util.Set<String>
+      getSignerSha256Digests(
+          android.content.pm.PackageInfo packageInfo)
+          throws Exception {
+    android.content.pm.Signature[] signatures = null;
+
+    if (android.os.Build.VERSION.SDK_INT >= 28
+        && packageInfo.signingInfo != null) {
+      signatures =
+          packageInfo.signingInfo
+              .getApkContentsSigners();
+    }
+
+    if (signatures == null
+        || signatures.length == 0) {
+      signatures = packageInfo.signatures;
+    }
+
+    java.util.Set<String> digests =
+        new java.util.HashSet<>();
+
+    if (signatures == null) {
+      return digests;
+    }
+
+    for (android.content.pm.Signature signature
+        : signatures) {
+      java.security.MessageDigest digest =
+          java.security.MessageDigest
+              .getInstance("SHA-256");
+
+      byte[] value =
+          digest.digest(
+              signature.toByteArray());
+
+      digests.add(toLowerHex(value));
+    }
+
+    return digests;
+  }
+
+  private static String toLowerHex(byte[] value) {
+    StringBuilder builder =
+        new StringBuilder(
+            value.length * 2);
+
+    for (byte item : value) {
+      builder.append(
+          String.format(
+              java.util.Locale.US,
+              "%02x",
+              item & 0xff));
+    }
+
+    return builder.toString();
+  }
+
+  private static void deleteFileQuietly(
+      java.io.File file) {
+    if (file.exists() && !file.delete()) {
+      android.util.Log.w(
+          R2_OTA_LOG_TAG,
+          "Unable to delete " + file);
+    }
+  }
+
+  private void launchPackageInstaller(
+      java.io.File apkFile) {
+    try {
+      if (android.os.Build.VERSION.SDK_INT
+              >= android.os.Build.VERSION_CODES.O
+          && !mAppContext
+              .getPackageManager()
+              .canRequestPackageInstalls()) {
+        android.content.Intent permissionIntent =
+            new android.content.Intent(
+                android.provider.Settings
+                    .ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                android.net.Uri.parse(
+                    "package:"
+                        + mAppContext.getPackageName()));
+
+        permissionIntent.addFlags(
+            android.content.Intent
+                .FLAG_ACTIVITY_NEW_TASK);
+
+        Activity activity =
+            mActivityHolder.get();
+
+        if (activity != null) {
+          activity.startActivity(permissionIntent);
+        } else {
+          mAppContext.startActivity(permissionIntent);
+        }
+
+        android.widget.Toast.makeText(
+                mAppContext,
+                "Hãy bật Cho phép từ nguồn này rồi mở lại YouTube",
+                android.widget.Toast.LENGTH_LONG)
+            .show();
+
+        return;
+      }
+
+      android.net.Uri contentUri =
+          androidx.core.content.FileProvider
+              .getUriForFile(
+                  mAppContext,
+                  mAppContext.getPackageName()
+                      + ".fileprovider",
+                  apkFile);
+
+      android.content.Intent installIntent =
+          new android.content.Intent(
+              android.content.Intent.ACTION_VIEW);
+
+      installIntent.setDataAndType(
+          contentUri,
+          "application/vnd.android.package-archive");
+
+      installIntent.setFlags(
+          android.content.Intent
+                  .FLAG_GRANT_READ_URI_PERMISSION
+              | android.content.Intent
+                  .FLAG_ACTIVITY_NEW_TASK);
+
+      Activity activity =
+          mActivityHolder.get();
+
+      if (activity != null) {
+        activity.startActivity(installIntent);
+      } else {
+        mAppContext.startActivity(installIntent);
+      }
+    } catch (Exception e) {
+      android.util.Log.e(
+          R2_OTA_LOG_TAG,
+          "Unable to open Android package installer",
+          e);
+    }
   }
 
   @CalledByNative

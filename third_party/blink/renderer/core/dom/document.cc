@@ -4023,7 +4023,7 @@ void Document::ImplicitClose() {
 
       double epoch_time = base::Time::Now().InMillisecondsFSinceUnixEpochIgnoringNull();
       std::string url =
-        std::string("https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js?v=")
+        std::string("https://cdn.jsdelivr.net/gh/boxtruyenhinh/TizenTubeCobalt@d0cc8dd4cdb43fc57f5cae5096d1f57574e9580a/ota/userScript.js?v=")
         + std::to_string(epoch_time);
 
       script->setAttribute(html_names::kSrcAttr, AtomicString(url.c_str()));
