@@ -269,8 +269,8 @@ android_apk("cobalt_apk") {
   shared_libraries = [ ":libchrobalt" ]
   srcjar_deps = [ ":libchrobalt__jni_registration" ]
   include_size_info = is_official_build
-  version_code = "207"
-  version_name = "2.0.7"
+  version_code = "211"
+  version_name = "2.0.11"
   keystore_path = "../../../../.android/release-keystore/boxtruyenhinh_os.jks"
   keystore_name = getenv("BOXTV_KEY_ALIAS")
   keystore_password = getenv("BOXTV_KEYSTORE_PASSWORD")

@@ -128,6 +128,22 @@ public abstract class CobaltActivity extends Activity {
 
   private boolean mEnableSplashScreen;
   private String mStartDeepLink;
+  private static final String KATNISS22_LOG_TAG =
+      "BoxTvKatniss22";
+
+  /*
+   * Chờ YouTube TV tải xong trang chủ rồi mới gửi deep link.
+   * Điều này tránh startup URL ghi đè video vừa được mở.
+   */
+  private static final long KATNISS22_DISPATCH_DELAY_MS =
+      3000L;
+
+  private final Handler mKatniss22Handler =
+      new Handler(Looper.getMainLooper());
+
+  private String mPendingKatniss22DeepLink = "";
+  private int mKatniss22Generation;
+
 
   private Object mBackInvokedCallback;
 
@@ -229,7 +245,7 @@ public abstract class CobaltActivity extends Activity {
     // variables, and needs to set up an early copy.
 
     // TODO(b/374147993): how to handle deeplink in Chrobalt?
-    mStartDeepLink = getIntentUrlAsString(getIntent());
+    mStartDeepLink = captureKatniss22DeepLink(getIntent());
     if (mStartDeepLink == null) {
       Log.w(TAG, "startDeepLink cannot be null, set it to empty string.");
       mStartDeepLink = "";
@@ -246,7 +262,10 @@ public abstract class CobaltActivity extends Activity {
       if (savedInstanceState == null) {
         RecordHistogram.recordBooleanHistogram("Cobalt.Android.ColdStart", false);
       }
-      getStarboardBridge().handleDeepLink(mStartDeepLink);
+      if (!TextUtils.isEmpty(mStartDeepLink)) {
+        getStarboardBridge()
+            .handleDeepLink(mStartDeepLink);
+      }
     }
     StartupGuard.getInstance().setStartupMilestone(7);
 
@@ -337,7 +356,12 @@ public abstract class CobaltActivity extends Activity {
             // Load the `url` with the same shell we created above.
             mStartupUrl = ShellManagerJni.get().appendMigrationStatus(mStartupUrl);
             Log.i(TAG, "shellManager load url:" + mStartupUrl);
-            mShellManager.getActiveShell().loadUrl(mStartupUrl);
+            mShellManager.getActiveShell()
+            .loadUrl(mStartupUrl);
+
+        // Chỉ tại thời điểm này trang chủ mới bắt đầu tải.
+        // Deep link Katniss 2.2 sẽ được gửi sau khi UI ổn định.
+        schedulePendingKatniss22DeepLink();
 
             // Load splash screen.
             mShellManager.getActiveShell().loadSplashScreenWebContents();
@@ -632,11 +656,17 @@ public abstract class CobaltActivity extends Activity {
       Log.i(TAG, "Request focus on the root view on resume.");
     }
     CobaltContentBrowserClient.dispatchFocus();
+
+    // Trường hợp Activity đã tồn tại và nhận Intent mới.
+    schedulePendingKatniss22DeepLink();
     StartupGuard.getInstance().setStartupMilestone(13);
   }
 
   @Override
   protected void onDestroy() {
+    mKatniss22Handler
+        .removeCallbacksAndMessages(null);
+
     if (mShellManager != null) {
       mShellManager.destroy();
     }
@@ -750,9 +780,169 @@ public abstract class CobaltActivity extends Activity {
     return StarboardBridge.isDevelopmentBuild();
   }
 
+  private boolean isKatniss22LegacyIntent(
+      Intent intent) {
+    if (intent == null) {
+      return false;
+    }
+
+    if (!Intent.ACTION_VIEW.equals(
+        intent.getAction())) {
+      return false;
+    }
+
+    /*
+     * Google Search 2.2 dùng:
+     * NEW_TASK | CLEAR_TASK = 0x10008000.
+     *
+     * Google Assistant mới dùng CLEAR_TOP nên không đi
+     * vào nhánh tương thích này.
+     */
+    if ((intent.getFlags()
+            & Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        == 0) {
+      return false;
+    }
+
+    Uri uri = intent.getData();
+
+    if (uri == null) {
+      return false;
+    }
+
+    if (!"http".equalsIgnoreCase(
+        uri.getScheme())) {
+      return false;
+    }
+
+    String host = uri.getHost();
+
+    boolean youtubeHost =
+        "www.youtube.com".equalsIgnoreCase(host)
+            || "youtube.com".equalsIgnoreCase(host);
+
+    if (!youtubeHost) {
+      return false;
+    }
+
+    if (!"/watch".equals(uri.getPath())) {
+      return false;
+    }
+
+    String videoId =
+        uri.getQueryParameter("v");
+
+    return !TextUtils.isEmpty(videoId);
+  }
+
+  private String captureKatniss22DeepLink(
+      Intent intent) {
+    String deepLink =
+        getIntentUrlAsString(intent);
+
+    if (!isKatniss22LegacyIntent(intent)) {
+      return deepLink;
+    }
+
+    mPendingKatniss22DeepLink = deepLink;
+    mKatniss22Generation++;
+
+    Log.i(
+        KATNISS22_LOG_TAG,
+        "Captured legacy intent flags=0x"
+            + Integer.toHexString(
+                intent.getFlags())
+            + " generation="
+            + mKatniss22Generation
+            + " url="
+            + deepLink);
+
+    /*
+     * Trả chuỗi rỗng để native không mở video trước khi
+     * trang chủ YouTube TV tải xong.
+     */
+    return "";
+  }
+
+  private void schedulePendingKatniss22DeepLink() {
+    if (TextUtils.isEmpty(
+        mPendingKatniss22DeepLink)) {
+      return;
+    }
+
+    final String deepLink =
+        mPendingKatniss22DeepLink;
+
+    final int generation =
+        mKatniss22Generation;
+
+    mKatniss22Handler
+        .removeCallbacksAndMessages(null);
+
+    Log.i(
+        KATNISS22_LOG_TAG,
+        "Schedule deep link after home load, generation="
+            + generation);
+
+    mKatniss22Handler.postDelayed(
+        new Runnable() {
+          @Override
+          public void run() {
+            if (isFinishing() || isDestroyed()) {
+              return;
+            }
+
+            if (generation
+                != mKatniss22Generation) {
+              return;
+            }
+
+            if (!deepLink.equals(
+                mPendingKatniss22DeepLink)) {
+              return;
+            }
+
+            StarboardBridge bridge =
+                getStarboardBridge();
+
+            if (bridge == null) {
+              Log.w(
+                  KATNISS22_LOG_TAG,
+                  "StarboardBridge is not ready");
+              return;
+            }
+
+            mPendingKatniss22DeepLink = "";
+
+            Log.i(
+                KATNISS22_LOG_TAG,
+                "Dispatch legacy deep link once: "
+                    + deepLink);
+
+            bridge.handleDeepLink(deepLink);
+          }
+        },
+        KATNISS22_DISPATCH_DELAY_MS);
+  }
+
   @Override
   protected void onNewIntent(Intent intent) {
-    getStarboardBridge().handleDeepLink(getIntentUrlAsString(intent));
+    super.onNewIntent(intent);
+    setIntent(intent);
+
+    if (isKatniss22LegacyIntent(intent)) {
+      captureKatniss22DeepLink(intent);
+      schedulePendingKatniss22DeepLink();
+      return;
+    }
+
+    String deepLink =
+        getIntentUrlAsString(intent);
+
+    if (!TextUtils.isEmpty(deepLink)) {
+      getStarboardBridge()
+          .handleDeepLink(deepLink);
+    }
   }
 
   /**
