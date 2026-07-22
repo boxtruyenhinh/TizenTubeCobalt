@@ -88,7 +88,7 @@ public class StarboardBridge {
   private static final String R2_OTA_HOST =
       "pub-ab1291664bb441df9ccafb9a1b440618.r2.dev";
   private static final String R2_RELEASE_JSON_URL =
-      "https://pub-ab1291664bb441df9ccafb9a1b440618.r2.dev/release.json";
+      "https://pub-ab1291664bb441df9ccafb9a1b440618.r2.dev/lock/release.json";
 
   private static final int R2_CONNECT_TIMEOUT_MS = 15000;
   private static final int R2_READ_TIMEOUT_MS = 30000;
@@ -741,10 +741,10 @@ public class StarboardBridge {
   @CalledByNative
   protected boolean installAppFromURL(String ignoredUrl) {
     // Không còn tin tưởng hoặc tải URL do userscript/GitHub truyền vào.
-    // Mọi yêu cầu cập nhật đều được chuyển về release.json cố định trên R2.
+    // Mọi yêu cầu cập nhật của nhánh Lock đều đọc lock/release.json cố định trên R2.
     android.util.Log.i(
         R2_OTA_LOG_TAG,
-        "External OTA URL blocked; checking Cloudflare R2 metadata");
+        "External APK URL blocked; checking Cloudflare R2 Lock metadata");
 
     checkForR2Update(true);
     return true;
@@ -872,6 +872,23 @@ public class StarboardBridge {
     org.json.JSONObject root =
         new org.json.JSONObject(jsonText);
 
+    String releaseChannel =
+        root.optString("channel", "").trim();
+
+    if (!"lock".equalsIgnoreCase(releaseChannel)) {
+      throw new IllegalStateException(
+          "Lock release.json must use channel=lock");
+    }
+
+    String releasePackageName =
+        root.optString("packageName", "").trim();
+
+    if (!"com.google.android.youtube.tv".equals(
+        releasePackageName)) {
+      throw new IllegalStateException(
+          "Lock release.json packageName is invalid");
+    }
+
     long rootVersionCode =
         root.optLong("versionCode", -1L);
 
@@ -976,6 +993,17 @@ public class StarboardBridge {
     if (selectedUrl == null) {
       throw new IllegalStateException(
           "No compatible ARM APK found in release.json");
+    }
+
+    String selectedPath = selectedUrl.getPath();
+
+    if (selectedPath == null
+        || !selectedPath.startsWith("/lock/")
+        || !selectedPath
+            .toLowerCase(java.util.Locale.US)
+            .endsWith(".apk")) {
+      throw new SecurityException(
+          "Lock APK URL must stay inside /lock/");
     }
 
     return new R2ReleaseInfo(
