@@ -131,6 +131,9 @@ public abstract class CobaltActivity extends Activity {
   private static final String KATNISS22_LOG_TAG =
       "BoxTvKatniss22";
 
+  private static final String RESOLVED_ASSISTANT_EXTRA =
+      "dev.cobalt.app.extra.RESOLVED_ASSISTANT";
+
   /*
    * Chờ YouTube TV tải xong trang chủ rồi mới gửi deep link.
    * Điều này tránh startup URL ghi đè video vừa được mở.
@@ -143,6 +146,7 @@ public abstract class CobaltActivity extends Activity {
 
   private String mPendingKatniss22DeepLink = "";
   private int mKatniss22Generation;
+  private boolean mCobaltWebContentsReady;
 
 
   private Object mBackInvokedCallback;
@@ -358,6 +362,8 @@ public abstract class CobaltActivity extends Activity {
             Log.i(TAG, "shellManager load url:" + mStartupUrl);
             mShellManager.getActiveShell()
             .loadUrl(mStartupUrl);
+
+        mCobaltWebContentsReady = true;
 
         // Chỉ tại thời điểm này trang chủ mới bắt đầu tải.
         // Deep link Katniss 2.2 sẽ được gửi sau khi UI ổn định.
@@ -850,12 +856,46 @@ public abstract class CobaltActivity extends Activity {
     return !TextUtils.isEmpty(videoId);
   }
 
+  private boolean isResolvedAssistantIntent(
+      Intent intent) {
+    if (intent == null
+        || !intent.getBooleanExtra(
+            RESOLVED_ASSISTANT_EXTRA,
+            false)
+        || !Intent.ACTION_VIEW.equals(
+            intent.getAction())) {
+      return false;
+    }
+
+    Uri uri = intent.getData();
+
+    if (uri == null
+        || !"/watch".equals(uri.getPath())
+        || TextUtils.isEmpty(
+            uri.getQueryParameter("v"))) {
+      return false;
+    }
+
+    String host = uri.getHost();
+
+    return "youtube.com".equalsIgnoreCase(host)
+        || "www.youtube.com".equalsIgnoreCase(host)
+        || "m.youtube.com".equalsIgnoreCase(host);
+  }
+
   private String captureKatniss22DeepLink(
       Intent intent) {
     String deepLink =
         getIntentUrlAsString(intent);
 
-    if (!isKatniss22LegacyIntent(intent)) {
+    boolean legacyKatniss22 =
+        isKatniss22LegacyIntent(intent);
+
+    boolean resolvedAssistant =
+        isResolvedAssistantIntent(intent);
+
+    if (!legacyKatniss22
+        && !resolvedAssistant) {
       return deepLink;
     }
 
@@ -864,24 +904,66 @@ public abstract class CobaltActivity extends Activity {
 
     Log.i(
         KATNISS22_LOG_TAG,
-        "Captured legacy intent flags=0x"
-            + Integer.toHexString(
-                intent.getFlags())
+        "Captured voice deep link type="
+            + (legacyKatniss22
+                ? "katniss22"
+                : "assistant")
             + " generation="
             + mKatniss22Generation
             + " url="
             + deepLink);
 
     /*
-     * Trả chuỗi rỗng để native không mở video trước khi
-     * trang chủ YouTube TV tải xong.
+     * Cold start: trả rỗng để startup URL không mở video quá sớm.
+     * Warm start: onNewIntent() sẽ gửi pending URL ngay lập tức.
      */
     return "";
+  }
+
+  private boolean dispatchPendingKatniss22DeepLinkNow() {
+    if (TextUtils.isEmpty(
+        mPendingKatniss22DeepLink)) {
+      return false;
+    }
+
+    StarboardBridge bridge =
+        getStarboardBridge();
+
+    if (bridge == null) {
+      return false;
+    }
+
+    final String deepLink =
+        mPendingKatniss22DeepLink;
+
+    mKatniss22Handler
+        .removeCallbacksAndMessages(null);
+
+    mPendingKatniss22DeepLink = "";
+
+    Log.i(
+        KATNISS22_LOG_TAG,
+        "Dispatch warm voice deep link immediately: "
+            + deepLink);
+
+    bridge.handleDeepLink(deepLink);
+    return true;
   }
 
   private void schedulePendingKatniss22DeepLink() {
     if (TextUtils.isEmpty(
         mPendingKatniss22DeepLink)) {
+      return;
+    }
+
+    /*
+     * Cold start chỉ bắt đầu đếm 3 giây sau khi WebContents
+     * và startup URL đã thực sự được tạo.
+     */
+    if (!mCobaltWebContentsReady) {
+      Log.i(
+          KATNISS22_LOG_TAG,
+          "Wait for WebContents before scheduling voice deep link");
       return;
     }
 
@@ -896,7 +978,7 @@ public abstract class CobaltActivity extends Activity {
 
     Log.i(
         KATNISS22_LOG_TAG,
-        "Schedule deep link after home load, generation="
+        "Schedule cold voice deep link after home load, generation="
             + generation);
 
     mKatniss22Handler.postDelayed(
@@ -931,7 +1013,7 @@ public abstract class CobaltActivity extends Activity {
 
             Log.i(
                 KATNISS22_LOG_TAG,
-                "Dispatch legacy deep link once: "
+                "Dispatch cold voice deep link once: "
                     + deepLink);
 
             bridge.handleDeepLink(deepLink);
@@ -945,9 +1027,24 @@ public abstract class CobaltActivity extends Activity {
     super.onNewIntent(intent);
     setIntent(intent);
 
-    if (isKatniss22LegacyIntent(intent)) {
+    boolean legacyKatniss22 =
+        isKatniss22LegacyIntent(intent);
+
+    boolean resolvedAssistant =
+        isResolvedAssistantIntent(intent);
+
+    if (legacyKatniss22
+        || resolvedAssistant) {
       captureKatniss22DeepLink(intent);
-      schedulePendingKatniss22DeepLink();
+
+      /*
+       * Activity và StarboardBridge đang tồn tại:
+       * gửi video mới trước khi Activity resume video cũ.
+       */
+      if (!dispatchPendingKatniss22DeepLinkNow()) {
+        schedulePendingKatniss22DeepLink();
+      }
+
       return;
     }
 
