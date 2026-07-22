@@ -5,6 +5,7 @@
 package dev.cobalt.app;
 
 import android.app.Activity;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
@@ -30,7 +31,13 @@ public final class RomCompatibilityGuard {
       "BoxTvRomGuard";
 
   private static final int BACKGROUND_COLOR =
-      Color.rgb(96, 96, 96);
+      Color.rgb(18, 18, 18);
+
+  private static final int BUTTON_COLOR =
+      Color.rgb(40, 40, 40);
+
+  private static final int BUTTON_FOCUSED_COLOR =
+      Color.rgb(72, 72, 72);
 
   /*
    * Kiểm tra marker dài trước để log nhận diện đúng tên ROM.
@@ -212,8 +219,22 @@ public final class RomCompatibilityGuard {
         18);
 
     closeButton.setAllCaps(false);
+    closeButton.setTextColor(Color.WHITE);
+
+    closeButton.setBackgroundTintList(
+        ColorStateList.valueOf(
+            BUTTON_COLOR));
+
     closeButton.setFocusable(true);
     closeButton.setFocusableInTouchMode(true);
+
+    closeButton.setOnFocusChangeListener(
+        (view, hasFocus) ->
+            closeButton.setBackgroundTintList(
+                ColorStateList.valueOf(
+                    hasFocus
+                        ? BUTTON_FOCUSED_COLOR
+                        : BUTTON_COLOR)));
 
     int buttonWidth =
         dpToPx(activity, 240);
