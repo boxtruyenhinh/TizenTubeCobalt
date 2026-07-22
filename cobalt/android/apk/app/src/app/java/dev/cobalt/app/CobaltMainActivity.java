@@ -60,6 +60,12 @@ public class CobaltMainActivity extends CobaltActivity {
   public void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
 
+    if (!RomCompatibilityGuard.isSupportedDevice()) {
+      RomCompatibilityGuard.showUnsupportedScreen(this);
+      return;
+    }
+
+
     new android.os.Handler(
             android.os.Looper.getMainLooper())
         .postDelayed(

@@ -58,6 +58,12 @@ public final class MainActivity extends Activity {
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+
+    if (!RomCompatibilityGuard.isSupportedDevice()) {
+      RomCompatibilityGuard.showUnsupportedScreen(this);
+      return;
+    }
+
     forwardToCobalt(getIntent());
   }
 
@@ -65,6 +71,12 @@ public final class MainActivity extends Activity {
   protected void onNewIntent(Intent intent) {
     super.onNewIntent(intent);
     setIntent(intent);
+
+    if (!RomCompatibilityGuard.isSupportedDevice()) {
+      RomCompatibilityGuard.showUnsupportedScreen(this);
+      return;
+    }
+
     forwardToCobalt(intent);
   }
 
